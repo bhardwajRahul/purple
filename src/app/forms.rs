@@ -1195,6 +1195,9 @@ pub enum SnippetFormField {
     Name,
     Command,
     Description,
+    /// Default target hosts. Not a text field: Space opens the host
+    /// multi-select picker; the chosen aliases live in `SnippetForm::default_hosts`.
+    DefaultHosts,
 }
 
 impl SnippetFormField {
@@ -1202,7 +1205,24 @@ impl SnippetFormField {
         SnippetFormField::Name,
         SnippetFormField::Command,
         SnippetFormField::Description,
+        SnippetFormField::DefaultHosts,
     ];
+
+    /// True for the picker fields (currently just `DefaultHosts`): Space opens a
+    /// picker and the field takes no typed text. Mirrors `FormField::is_picker`.
+    pub fn is_picker(self) -> bool {
+        matches!(self, SnippetFormField::DefaultHosts)
+    }
+
+    /// Field kind for [`crate::ui::design::FieldKind`], driving the dynamic
+    /// footer hint (`Space pick` vs none). Mirrors `FormField::kind`.
+    pub fn kind(self) -> crate::ui::design::FieldKind {
+        if self.is_picker() {
+            crate::ui::design::FieldKind::Picker
+        } else {
+            crate::ui::design::FieldKind::Text
+        }
+    }
 
     pub fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|f| *f == self).unwrap_or(0);
@@ -1219,6 +1239,7 @@ impl SnippetFormField {
             SnippetFormField::Name => "Name",
             SnippetFormField::Command => "Command",
             SnippetFormField::Description => "Description",
+            SnippetFormField::DefaultHosts => "Default hosts",
         }
     }
 }
@@ -1229,6 +1250,10 @@ pub struct SnippetForm {
     pub name: String,
     pub command: String,
     pub description: String,
+    /// Default target host aliases, chosen via the host picker (the
+    /// `DefaultHosts` field). Seeded from the snippet's saved targets on edit;
+    /// persisted on submit. Empty means no default hosts.
+    pub default_hosts: Vec<String>,
     pub focused_field: SnippetFormField,
     pub cursor_pos: usize,
 }
@@ -1239,6 +1264,7 @@ impl SnippetForm {
             name: String::new(),
             command: String::new(),
             description: String::new(),
+            default_hosts: Vec::new(),
             focused_field: SnippetFormField::Name,
             cursor_pos: 0,
         }
@@ -1249,6 +1275,9 @@ impl SnippetForm {
             name: snippet.name.clone(),
             command: snippet.command.clone(),
             description: snippet.description.clone(),
+            // The caller seeds default_hosts from the store's saved targets;
+            // a Snippet carries no host association of its own.
+            default_hosts: Vec::new(),
             focused_field: SnippetFormField::Name,
             cursor_pos: snippet.name.chars().count(),
         }
@@ -1273,20 +1302,27 @@ impl SnippetForm {
             SnippetFormField::Name => &self.name,
             SnippetFormField::Command => &self.command,
             SnippetFormField::Description => &self.description,
+            // Not a text field; no editable value.
+            SnippetFormField::DefaultHosts => "",
         }
     }
 
-    pub fn focused_value_mut(&mut self) -> &mut String {
+    /// Mutable text value of the focused field, or `None` for the non-text
+    /// `DefaultHosts` field (so keystroke handlers no-op there).
+    pub fn focused_value_mut(&mut self) -> Option<&mut String> {
         match self.focused_field {
-            SnippetFormField::Name => &mut self.name,
-            SnippetFormField::Command => &mut self.command,
-            SnippetFormField::Description => &mut self.description,
+            SnippetFormField::Name => Some(&mut self.name),
+            SnippetFormField::Command => Some(&mut self.command),
+            SnippetFormField::Description => Some(&mut self.description),
+            SnippetFormField::DefaultHosts => None,
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
         let pos = self.cursor_pos;
-        let val = self.focused_value_mut();
+        let Some(val) = self.focused_value_mut() else {
+            return;
+        };
         let byte_pos = char_to_byte_pos(val, pos);
         val.insert(byte_pos, c);
         self.cursor_pos = pos + 1;
@@ -1297,7 +1333,9 @@ impl SnippetForm {
             return;
         }
         let pos = self.cursor_pos;
-        let val = self.focused_value_mut();
+        let Some(val) = self.focused_value_mut() else {
+            return;
+        };
         let byte_pos = char_to_byte_pos(val, pos);
         let prev = char_to_byte_pos(val, pos - 1);
         val.drain(prev..byte_pos);
@@ -1371,7 +1409,9 @@ impl SnippetParamFormState {
     pub fn insert_char(&mut self, c: char) {
         let idx = self.focused_index;
         let pos = self.cursor_pos;
-        let val = &mut self.values[idx];
+        let Some(val) = self.values.get_mut(idx) else {
+            return;
+        };
         let byte_pos = char_to_byte_pos(val, pos);
         val.insert(byte_pos, c);
         self.cursor_pos = pos + 1;
@@ -1383,7 +1423,9 @@ impl SnippetParamFormState {
         }
         let idx = self.focused_index;
         let pos = self.cursor_pos;
-        let val = &mut self.values[idx];
+        let Some(val) = self.values.get_mut(idx) else {
+            return;
+        };
         let byte_pos = char_to_byte_pos(val, pos);
         let prev = char_to_byte_pos(val, pos - 1);
         val.drain(prev..byte_pos);

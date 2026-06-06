@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     ])
     .split(inner);
 
-    picker_helpers::render_search_input(frame, rows[0], &query);
+    picker_helpers::render_search_input(frame, rows[0], &query, true);
     picker_helpers::render_picker_separator(frame, rows[1]);
 
     if visible.is_empty() {

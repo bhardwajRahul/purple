@@ -136,8 +136,33 @@ pub fn key_push_no_pubkey(name: &str) -> String {
     )
 }
 
-/// Toast when the user committed the picker with zero hosts selected.
-pub const KEY_PUSH_NONE_SELECTED: &str = "Select at least one host with Space.";
+/// Toast when the user committed a host picker with zero hosts selected.
+/// Shared by the key-push picker and the snippet host picker.
+pub const PICKER_NONE_SELECTED: &str = "Select at least one host with Space.";
+
+/// Shown in a host picker when the type-to-filter query matches no hosts.
+pub const PICKER_NO_MATCHES: &str = "No matching hosts.";
+
+/// Title for the snippet host picker (snippet -> hosts run flow).
+pub fn snippet_host_picker_title(snippet_name: &str, selected: usize, total: usize) -> String {
+    format!(
+        "Run {} \u{203A} Select Hosts ({} of {} selected)",
+        snippet_name, selected, total
+    )
+}
+
+/// Title for the host picker when opened from the edit form to choose a
+/// snippet's default target hosts (no run is launched).
+pub fn snippet_default_hosts_picker_title(
+    snippet_name: &str,
+    selected: usize,
+    total: usize,
+) -> String {
+    format!(
+        "Default hosts for {} \u{203A} Select ({} of {} selected)",
+        snippet_name, selected, total
+    )
+}
 
 /// Toast shown when the user tries to select a vault-ssh host. These
 /// hosts are managed via signed certs (`V`), not static authorized_keys

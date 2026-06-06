@@ -972,3 +972,268 @@ fn read_bounded_massive_overflow_stays_at_cap() {
     let out = super::read_bounded(&mut cursor, max, "alias", "stdout");
     assert_eq!(out.len(), max);
 }
+
+// =========================================================================
+// filtered_indices
+// =========================================================================
+
+#[test]
+fn filtered_indices_returns_all_when_query_is_none_or_empty() {
+    let store = SnippetStore {
+        snippets: vec![
+            Snippet {
+                name: "a".into(),
+                command: "ls".into(),
+                description: String::new(),
+            },
+            Snippet {
+                name: "b".into(),
+                command: "df".into(),
+                description: String::new(),
+            },
+        ],
+        ..Default::default()
+    };
+    assert_eq!(filtered_indices(&store, None), vec![0, 1]);
+    assert_eq!(filtered_indices(&store, Some("")), vec![0, 1]);
+}
+
+#[test]
+fn filtered_indices_matches_name_command_or_description_case_insensitively() {
+    let store = SnippetStore {
+        snippets: vec![
+            Snippet {
+                name: "Deploy".into(),
+                command: "make".into(),
+                description: "ship".into(),
+            },
+            Snippet {
+                name: "uptime".into(),
+                command: "UPTIME -p".into(),
+                description: String::new(),
+            },
+            Snippet {
+                name: "disk".into(),
+                command: "df".into(),
+                description: "Free space".into(),
+            },
+        ],
+        ..Default::default()
+    };
+    assert_eq!(filtered_indices(&store, Some("deploy")), vec![0]);
+    assert_eq!(filtered_indices(&store, Some("uptime")), vec![1]);
+    assert_eq!(filtered_indices(&store, Some("free")), vec![2]);
+    assert_eq!(filtered_indices(&store, Some("zzz")), Vec::<usize>::new());
+}
+
+// =========================================================================
+// analyze_command (IMPACT card)
+// =========================================================================
+
+// =========================================================================
+// Per-snippet saved targets (hosts= line)
+// =========================================================================
+
+#[test]
+fn parse_reads_hosts_line_into_targets() {
+    let store = SnippetStore::parse("[deploy]\ncommand=make\nhosts=web1, web2 ,web3\n");
+    assert_eq!(store.targets_for("deploy"), &["web1", "web2", "web3"]);
+}
+
+#[test]
+fn parse_without_hosts_has_no_targets() {
+    let store = SnippetStore::parse("[deploy]\ncommand=make\n");
+    assert!(store.targets_for("deploy").is_empty());
+}
+
+#[test]
+fn set_targets_empty_clears() {
+    let mut store = SnippetStore::parse("[d]\ncommand=x\nhosts=a,b\n");
+    assert_eq!(store.targets_for("d").len(), 2);
+    store.set_targets("d", vec![]);
+    assert!(store.targets_for("d").is_empty());
+}
+
+#[test]
+fn orphan_targets_dropped_for_snippet_without_command() {
+    // [empty] carries hosts= but no command, so it is skipped and leaves no
+    // orphan target entry.
+    let store = SnippetStore::parse("[empty]\nhosts=a,b\n\n[valid]\ncommand=ls\n");
+    assert!(store.get("empty").is_none());
+    assert!(store.targets_for("empty").is_empty());
+}
+
+#[test]
+fn remove_drops_targets() {
+    let mut store = SnippetStore::parse("[d]\ncommand=x\nhosts=a,b\n");
+    store.remove("d");
+    assert!(store.targets_for("d").is_empty());
+}
+
+#[test]
+fn targets_round_trip_through_save_and_reload() {
+    // save() is demo-suppressed; hold the demo lock and force non-demo so the
+    // write actually lands, without racing a parallel demo-mode test.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    crate::demo_flag::disable();
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("snippets");
+    let mut store = SnippetStore::parse("[deploy]\ncommand=make\ndescription=ship\n");
+    store.path_override = Some(path.clone());
+    store.set_targets("deploy", vec!["web1".into(), "web2".into()]);
+    store.save().expect("save");
+
+    let reloaded = SnippetStore::parse(&std::fs::read_to_string(&path).expect("read"));
+    assert_eq!(reloaded.targets_for("deploy"), &["web1", "web2"]);
+    // command + description survive alongside the hosts line.
+    let s = reloaded.get("deploy").expect("snippet");
+    assert_eq!(s.command, "make");
+    assert_eq!(s.description, "ship");
+}
+
+#[test]
+fn targets_round_trip_preserves_comma_in_alias() {
+    // A host whose SSH `Host` line uses a comma (e.g. `Host web1,web2`) is a
+    // single concrete alias containing a comma. The comma-joined hosts= line
+    // must not shred it into phantom aliases on reload.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("snippets");
+    let mut store = SnippetStore::parse("[deploy]\ncommand=make\n");
+    store.path_override = Some(path.clone());
+    // An alias containing a comma and one containing a literal percent sign.
+    store.set_targets("deploy", vec!["web1,web2".into(), "ab%2Ccd".into()]);
+    store.save().expect("save");
+
+    let reloaded = SnippetStore::parse(&std::fs::read_to_string(&path).expect("read"));
+    assert_eq!(reloaded.targets_for("deploy"), &["web1,web2", "ab%2Ccd"]);
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
+}
+
+#[test]
+fn count_params_matches_parse_params_len() {
+    for cmd in [
+        "",
+        "echo hi",
+        "echo {{name}}",
+        "{{a}} {{b}} {{a}}",                   // dedup
+        "{{x:default}} {{y}}",                 // with default
+        "{{bad name}} {{ok}}",                 // invalid name skipped
+        "{{a}} {{b}} {{c}} {{d}} {{e}} {{f}}", // several
+    ] {
+        assert_eq!(
+            count_params(cmd),
+            parse_params(cmd).len(),
+            "count_params disagreed with parse_params for {cmd:?}"
+        );
+    }
+}
+
+// analyze_command / CommandImpact is covered in src/snippet_impact_tests.rs.
+
+// =========================================================================
+// substitute_params / parse_params agreement on what is a parameter
+// =========================================================================
+
+#[test]
+fn test_substitute_leaves_invalid_placeholder_literal() {
+    let values = std::collections::HashMap::new();
+    // A space makes the name invalid: parse_params skips it, so substitute must
+    // leave the literal text intact instead of rewriting it to ''.
+    assert_eq!(substitute_params("echo {{a b}}", &values), "echo {{a b}}");
+    // '!' is not a valid name char either.
+    assert_eq!(substitute_params("echo {{a!b}}", &values), "echo {{a!b}}");
+}
+
+#[test]
+fn test_parse_and_substitute_agree_on_parameters() {
+    // parse_params reports no parameter for an invalid name, and substitute
+    // must not silently rewrite that placeholder.
+    assert!(parse_params("echo {{a b}}").is_empty());
+    let values = std::collections::HashMap::new();
+    assert_eq!(substitute_params("echo {{a b}}", &values), "echo {{a b}}");
+    // A valid name is still substituted (and shell-escaped).
+    assert_eq!(parse_params("echo {{name}}").len(), 1);
+    let mut v = std::collections::HashMap::new();
+    v.insert("name".to_string(), "hi there".to_string());
+    assert_eq!(substitute_params("echo {{name}}", &v), "echo 'hi there'");
+}
+
+#[test]
+fn test_validate_param_name_uses_message_module() {
+    assert_eq!(
+        validate_param_name("").unwrap_err(),
+        crate::messages::SNIPPET_PARAM_NAME_EMPTY
+    );
+    assert_eq!(
+        validate_param_name("a b").unwrap_err(),
+        crate::messages::snippet_param_name_invalid("a b")
+    );
+}
+
+// =========================================================================
+// sanitize_output: 8-bit C1 control sequences
+// =========================================================================
+
+#[test]
+fn test_sanitize_strips_8bit_csi() {
+    // U+009B is the single-char (8-bit) CSI introducer. Its parameter bytes
+    // (31m / 0m) must be consumed, not leaked into the TUI as literal text.
+    assert_eq!(sanitize_output("\u{009b}31mred\u{009b}0m"), "red");
+}
+
+// =========================================================================
+// read_pipe_capped: byte cap and line cap
+// =========================================================================
+
+/// Yields `remaining` bytes of `b'x'` with no newline, to exercise the byte cap
+/// against a single unterminated megastream without allocating it up front.
+struct NoNewlineReader {
+    remaining: usize,
+}
+
+impl std::io::Read for NoNewlineReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            return Ok(0);
+        }
+        let n = buf.len().min(self.remaining);
+        for b in &mut buf[..n] {
+            *b = b'x';
+        }
+        self.remaining -= n;
+        Ok(n)
+    }
+}
+
+#[test]
+fn read_pipe_capped_bounds_single_unterminated_line() {
+    // A hostile remote streaming one huge no-newline line must not grow the
+    // buffer past the byte cap (the line cap alone would never fire).
+    let reader = NoNewlineReader {
+        remaining: SSH_OUTPUT_MAX_BYTES + 1_000_000,
+    };
+    let out = read_pipe_capped(reader, "host", "stdout");
+    assert_eq!(out.len(), SSH_OUTPUT_MAX_BYTES);
+    assert!(!out.contains("truncated"));
+}
+
+#[test]
+fn read_pipe_capped_truncates_at_line_cap() {
+    let input = "a\n".repeat(10_050);
+    let out = read_pipe_capped(input.as_bytes(), "host", "stdout");
+    assert!(out.contains("[Output truncated at 10,000 lines]"));
+    // 10,000 kept "a" lines + the truncation marker line.
+    assert_eq!(out.matches('\n').count(), 10_000);
+}

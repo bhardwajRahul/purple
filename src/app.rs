@@ -96,7 +96,7 @@ pub(crate) use reload_state::config_changed;
 pub use reload_state::{ConflictState, ReloadState};
 pub use screen::{ContainerLogsSearch, Screen, StackMember, TopPage, WhatsNewState};
 pub use search::SearchState;
-pub use snippet_state::SnippetState;
+pub use snippet_state::{SnippetHostPick, SnippetHostPickPurpose, SnippetState};
 pub use status_state::{MessageClass, StatusCenter, StatusMessage};
 pub use tag_state::{
     BulkTagAction, BulkTagApplyResult, BulkTagEditorState, BulkTagRow, TagState,

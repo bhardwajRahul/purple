@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  purple       hosts      tunnels      containers      keys                                       │
+│  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ VAULT SSH ─ 4 active ────────────────────────────────────────────────────────────────────────────╮
 │  gateway-vpn   ssh-client-signer/sign/infra  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  7h 0m   │
@@ -185,10 +185,10 @@
 (53,1) fg=DarkGray bg=Reset mod=DIM
 (54,1) fg=DarkGray bg=Reset mod=DIM
 (55,1) fg=DarkGray bg=Reset mod=DIM
-(56,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
-(57,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
-(58,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
-(59,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
+(56,1) fg=DarkGray bg=Reset mod=DIM
+(57,1) fg=DarkGray bg=Reset mod=DIM
+(58,1) fg=DarkGray bg=Reset mod=DIM
+(59,1) fg=DarkGray bg=Reset mod=DIM
 (60,1) fg=DarkGray bg=Reset mod=DIM
 (61,1) fg=DarkGray bg=Reset mod=DIM
 (62,1) fg=DarkGray bg=Reset mod=DIM
@@ -199,10 +199,10 @@
 (67,1) fg=DarkGray bg=Reset mod=DIM
 (68,1) fg=DarkGray bg=Reset mod=DIM
 (69,1) fg=DarkGray bg=Reset mod=DIM
-(70,1) fg=DarkGray bg=Reset mod=DIM
-(71,1) fg=DarkGray bg=Reset mod=DIM
-(72,1) fg=DarkGray bg=Reset mod=DIM
-(73,1) fg=DarkGray bg=Reset mod=DIM
+(70,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
+(71,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
+(72,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
+(73,1) fg=DarkGray bg=Reset mod=BOLD|DIM|UNDERLINED
 (74,1) fg=DarkGray bg=Reset mod=DIM
 (75,1) fg=DarkGray bg=Reset mod=DIM
 (76,1) fg=DarkGray bg=Reset mod=DIM

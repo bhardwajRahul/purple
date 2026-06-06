@@ -56,6 +56,7 @@ pub(super) fn handle_key(app: &mut App, key: KeyEvent, events_tx: &mpsc::Sender<
         crate::app::TopPage::Containers => {
             super::containers_overview::handle_key(app, key, events_tx);
         }
+        crate::app::TopPage::Snippets => super::snippets_overview::handle_key(app, key),
         crate::app::TopPage::Keys => super::keys_overview::handle_key(app, key),
         crate::app::TopPage::Hosts => {
             if app.search.query().is_some() {

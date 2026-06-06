@@ -195,6 +195,7 @@ fn render_key_list_card(frame: &mut Frame, app: &mut App, area: Rect) {
         let sel = app.keys.list_state().selected().unwrap_or(0) + 1;
         design::main_block_line(card_title("KEYS", Some(&format!("{}/{}", sel, total))))
     };
+    let block = crate::ui::host_list::with_update_badge(block, app, area.width);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 

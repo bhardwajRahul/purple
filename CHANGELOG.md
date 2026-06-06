@@ -1,3 +1,12 @@
+## 3.22.0 - 2026-06-06
+
+- feat: Snippets get a tab to run, vet and track on hosts.
+- feat: Browse and search every snippet, add, edit and delete in place, then run the one you want without leaving the keyboard.
+- feat: Pick a snippet, select any set of hosts from a grouped picker and confirm. Purple runs the command on every host you chose, with output collected in one panel or streamed live in your terminal.
+- feat: See a command's blast radius before you run it. Each snippet shows whether it is read-only and safe to fan out, writes state, needs care or is irreversible, with plain callouts like runs as root or fetches and runs remote code.
+- feat: Know a snippet's track record at a glance. Purple records every run and shows a reliability percentage, a trend chart and the last outcome, so you can judge a command before trusting it across a fleet.
+- feat: Save default hosts on a snippet so your routine runs come pre-selected. Open, confirm and go.
+
 ## 3.21.1 - 2026-05-31
 
 - feat: Your cloud hosts stay grouped under their provider.

@@ -244,6 +244,9 @@ impl AnimationState {
                 crate::app::TopPage::Containers => {
                     app.containers_overview.view_mode() == crate::app::ViewMode::Detailed
                 }
+                crate::app::TopPage::Snippets => {
+                    app.snippets.view_mode() == crate::app::ViewMode::Detailed
+                }
                 _ => app.hosts_state.view_mode() == crate::app::ViewMode::Detailed,
             };
             let start_progress =

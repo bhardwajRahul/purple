@@ -907,6 +907,7 @@ fn handle_pending_snippet(
     terminal.exit()?;
 
     let multi = aliases.len() > 1;
+    let mut ok_count = 0usize;
     for alias in &aliases {
         let askpass = app
             .hosts_state
@@ -944,6 +945,7 @@ fn handle_pending_snippet(
         ) {
             Ok(r) => {
                 if r.status.success() {
+                    ok_count += 1;
                     app.history.record(alias);
                     app.record_key_use(alias, key_activity::now_secs());
                     app.hosts_state.invalidate_render_cache();
@@ -965,6 +967,18 @@ fn handle_pending_snippet(
             println!();
         }
     }
+
+    // Record the terminal-mode run in the per-snippet ledger so the detail
+    // TRACK RECORD verdict and trend chart reflect it.
+    let now = key_activity::now_secs();
+    let paths = app.env().paths().cloned();
+    app.snippets.runs_mut().record_run_and_flush(
+        &snip.name,
+        aliases.len(),
+        ok_count,
+        now,
+        paths.as_ref(),
+    );
 
     if !multi {
         println!("\n{}", crate::messages::cli::DONE);

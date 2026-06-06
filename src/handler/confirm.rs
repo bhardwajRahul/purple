@@ -947,6 +947,26 @@ pub(super) fn handle_key_push_key(
     effects.apply(app);
 }
 
+/// Confirm dialog for `Screen::ConfirmRunSnippet`. On Yes, run the chosen
+/// snippet against the committed hosts (this sets the next screen itself via
+/// `run_flow_snippet`). On No/Esc, return to the host picker with the selection
+/// intact. y/n/Esc are the only effective inputs (`route_confirm_key`).
+pub(super) fn handle_run_snippet_confirm_key(
+    app: &mut App,
+    key: KeyEvent,
+    events_tx: &mpsc::Sender<AppEvent>,
+) {
+    match route_confirm_key(key) {
+        ConfirmAction::Yes => {
+            super::snippet::run_flow_snippet(app, events_tx);
+        }
+        ConfirmAction::No => {
+            app.set_screen(Screen::SnippetHostPicker);
+        }
+        ConfirmAction::Ignored => {}
+    }
+}
+
 /// Spawn the background push worker. Reads the pubkey from disk on the
 /// main thread (cheap) so we surface an early error toast before
 /// committing to the run. On read failure we abort and stay on
@@ -1254,5 +1274,53 @@ mod key_push_confirm_tests {
         let toast = app.status_center.toast().expect("toast set");
         assert!(toast.is_error());
         assert!(toast.text.contains("validation"));
+    }
+
+    #[test]
+    fn run_snippet_confirm_no_returns_to_picker() {
+        let scratch = tempfile::tempdir().expect("tempdir").keep();
+        let config = SshConfigFile {
+            elements: SshConfigFile::parse_content("Host h1\n  HostName 1.1.1.1\n"),
+            path: scratch.join("cfg"),
+            crlf: false,
+            bom: false,
+        };
+        let mut app = App::new(config);
+        app.set_screen(Screen::ConfirmRunSnippet);
+        let (tx, _rx) = mpsc::channel();
+        handle_run_snippet_confirm_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+            &tx,
+        );
+        assert!(matches!(app.screen, Screen::SnippetHostPicker));
+    }
+
+    #[test]
+    fn run_snippet_confirm_yes_with_params_opens_param_form() {
+        let scratch = tempfile::tempdir().expect("tempdir").keep();
+        let config = SshConfigFile {
+            elements: SshConfigFile::parse_content("Host h1\n  HostName 1.1.1.1\n"),
+            path: scratch.join("cfg"),
+            crlf: false,
+            bom: false,
+        };
+        let mut app = App::new(config);
+        // A parametrised snippet: Yes prompts for params rather than spawning ssh.
+        app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+            name: "deploy".into(),
+            command: "echo {{msg}}".into(),
+            description: String::new(),
+        }));
+        app.snippets.set_flow_targets(vec!["h1".into()]);
+        app.set_screen(Screen::ConfirmRunSnippet);
+        let (tx, _rx) = mpsc::channel();
+        handle_run_snippet_confirm_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            &tx,
+        );
+        assert!(matches!(app.screen, Screen::SnippetParamForm));
+        assert!(app.snippets.form_return_to_tab());
     }
 }

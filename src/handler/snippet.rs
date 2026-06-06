@@ -89,7 +89,12 @@ impl SnippetCtx<'_> {
             snippet.name,
             editing
         );
+        // Seed the form's default-hosts field from the snippet's saved targets so
+        // it shows (and round-trips) the current defaults. Read before the form
+        // is replaced to avoid an overlapping borrow.
+        let saved_targets = self.snippets.store().targets_for(&snippet.name).to_vec();
         *self.snippets.form_mut() = crate::app::SnippetForm::from_snippet(snippet);
+        self.snippets.form_mut().default_hosts = saved_targets;
         self.snippets.set_flow_targets(target_aliases);
         self.snippets.set_form_editing(Some(editing));
         self.set_screen(Screen::SnippetForm);
@@ -106,7 +111,12 @@ impl SnippetCtx<'_> {
         self.snippets.set_form_baseline(None);
         self.snippets.set_flow_targets(target_aliases);
         self.snippets.set_form_editing(None);
-        self.set_screen(Screen::SnippetPicker);
+        let screen = if self.snippets.form_return_to_tab() {
+            Screen::HostList
+        } else {
+            Screen::SnippetPicker
+        };
+        self.set_screen(screen);
     }
 
     /// Capture a baseline of the snippet form for the dirty-check on Esc.
@@ -117,29 +127,55 @@ impl SnippetCtx<'_> {
                 name: self.snippets.form().name.clone(),
                 command: self.snippets.form().command.clone(),
                 description: self.snippets.form().description.clone(),
+                default_hosts: self.snippets.form().default_hosts.clone(),
             }));
+    }
+
+    /// Open the host multi-select picker to choose the edit form's default
+    /// hosts. Pre-selects the form's current default hosts that still exist.
+    /// Guards the empty-host case so the picker never opens with no rows.
+    fn open_default_hosts_picker(&mut self) {
+        if self.hosts.list().is_empty() {
+            self.notify_warning(crate::messages::PICKER_NO_HOSTS);
+            return;
+        }
+        self.snippets.reset_host_pick();
+        self.snippets.host_pick_mut().purpose = crate::app::SnippetHostPickPurpose::EditDefault;
+        let existing: std::collections::HashSet<String> =
+            self.hosts.list().iter().map(|h| h.alias.clone()).collect();
+        let seed: Vec<String> = self
+            .snippets
+            .form()
+            .default_hosts
+            .iter()
+            .filter(|a| existing.contains(*a))
+            .cloned()
+            .collect();
+        for alias in seed {
+            self.snippets.host_pick_mut().selected.insert(alias);
+        }
+        // Carry the form's identity so the picker title reads correctly; the
+        // EditDefault commit writes back to the form, it does not run.
+        let snippet = crate::snippet::Snippet {
+            name: self.snippets.form().name.clone(),
+            command: self.snippets.form().command.clone(),
+            description: self.snippets.form().description.clone(),
+        };
+        self.snippets.set_flow_snippet(Some(snippet));
+        log::debug!(
+            "[purple] open default-hosts picker: {} preselected",
+            self.snippets.host_pick().selected.len()
+        );
+        self.set_screen(Screen::SnippetHostPicker);
     }
 
     /// Indices of snippets matching the active picker search query. Mirrors
     /// `App::filtered_snippet_indices` on the slice.
     fn filtered_snippet_indices(&self) -> Vec<usize> {
-        match self.ui.snippet_search() {
-            None => (0..self.snippets.store().snippets.len()).collect(),
-            Some(query) if query.is_empty() => (0..self.snippets.store().snippets.len()).collect(),
-            Some(query) => self
-                .snippets
-                .store()
-                .snippets
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| {
-                    crate::app::contains_ci(&s.name, query)
-                        || crate::app::contains_ci(&s.command, query)
-                        || crate::app::contains_ci(&s.description, query)
-                })
-                .map(|(i, _)| i)
-                .collect(),
-        }
+        crate::snippet::filtered_indices(
+            self.snippets.store(),
+            self.ui.snippet_search().map(String::as_str),
+        )
     }
 }
 
@@ -171,9 +207,117 @@ pub(super) fn open_snippet_picker(app: &mut App, aliases: Vec<String>) {
     ctx.set_screen(Screen::SnippetPicker);
 }
 
+/// Run the snippet chosen on the Snippets tab against the committed
+/// `flow_targets`, reusing the standard param-or-output flow. Called from the
+/// run-snippet confirm handler after the user confirms.
+pub(super) fn run_flow_snippet(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
+    let Some(snippet) = app.snippets.take_flow_snippet() else {
+        return;
+    };
+    let targets = app.snippets.flow_targets().to_vec();
+    let terminal = app.snippets.flow_terminal();
+    debug!(
+        "[purple] snippet run confirmed: name={:?} hosts={} terminal={}",
+        snippet.name,
+        targets.len(),
+        terminal
+    );
+    // A parametrised run opens the param form; mark it tab-origin so it renders
+    // over the tab and Esc returns there rather than to the host-list picker.
+    app.snippets.set_form_return_to_tab(true);
+    let mut ctx = ctx_from_app(app);
+    run_or_prompt_params(&mut ctx, snippet, targets, terminal, events_tx);
+}
+
 pub(super) fn handle_picker_key(app: &mut App, key: KeyEvent, events_tx: &mpsc::Sender<AppEvent>) {
+    if !matches!(app.screen, Screen::SnippetPicker) {
+        return;
+    }
+    // The picker is always picker-origin, so forms opened here return to it.
+    app.snippets.set_form_return_to_tab(false);
+    // Delete confirmation takes precedence over the main keymap, but `?` still
+    // opens help and search mode still owns input (mirrors picker_key's order).
+    if app.ui.snippet_search().is_none()
+        && key.code != KeyCode::Char('?')
+        && app.snippets.pending_delete().is_some()
+    {
+        confirm_pending_snippet_delete(app, key);
+        return;
+    }
     let mut ctx = ctx_from_app(app);
     picker_key(&mut ctx, key, events_tx);
+}
+
+/// Resolve a pending snippet delete from a confirm key. `y` removes the snippet
+/// and saves, rolling back on failure; `n`/`Esc` cancels. Shared by the
+/// host-list snippet picker and the Snippets tab. No-op when nothing is
+/// pending. Adjusts both the picker cursor and the tab cursor so neither runs
+/// off the end of the shortened list.
+pub(super) fn confirm_pending_snippet_delete(app: &mut App, key: KeyEvent) {
+    match super::route_confirm_key(key) {
+        super::ConfirmAction::Yes => {
+            let Some(sel) = app.snippets.take_pending_delete() else {
+                return;
+            };
+            if sel < app.snippets.store().snippets.len() {
+                let removed = app.snippets.store_mut().snippets.remove(sel);
+                if let Err(e) = app.snippets.store_mut().save() {
+                    warn!("[config] snippet delete save failed, rolling back: {e}");
+                    app.snippets.store_mut().snippets.insert(sel, removed);
+                    app.notify_error(crate::messages::failed_to_save(&e));
+                } else {
+                    let len = app.snippets.store().snippets.len();
+                    // Picker cursor (store-indexed).
+                    if len == 0 {
+                        app.ui.snippet_picker_state_mut().select(None);
+                    } else if sel >= len {
+                        app.ui.snippet_picker_state_mut().select(Some(len - 1));
+                    }
+                    // Snippets-tab cursor (filtered-index). The renderer also
+                    // re-clamps, but keep both cursors in range after a delete.
+                    let filtered =
+                        crate::snippet::filtered_indices(app.snippets.store(), app.search.query())
+                            .len();
+                    let tab_sel = app.snippets.list_state().selected();
+                    if filtered == 0 {
+                        app.snippets.list_state_mut().select(None);
+                    } else if tab_sel.is_some_and(|i| i >= filtered) {
+                        app.snippets.list_state_mut().select(Some(filtered - 1));
+                    }
+                    debug!("[purple] snippet removed: {}", removed.name);
+                    // Drop the run ledger entry too, so recreating the same name
+                    // starts with a clean TRACK RECORD instead of inheriting the
+                    // deleted snippet's verdict and trend chart.
+                    let paths = app.env().paths().cloned();
+                    app.snippets.runs_mut().remove(&removed.name);
+                    if let Err(e) = app.snippets.runs().flush(paths.as_ref()) {
+                        warn!("[config] snippet_runs flush after delete failed: {e}");
+                    }
+                    app.notify(crate::messages::snippet_removed(&removed.name));
+                }
+            }
+        }
+        super::ConfirmAction::No => app.snippets.cancel_delete(),
+        super::ConfirmAction::Ignored => {}
+    }
+}
+
+/// Open a blank snippet add form from the Snippets tab. The form returns to the
+/// tab on close (no target hosts; the tab is snippet-centric).
+pub(super) fn open_add_form_for_tab(app: &mut App) {
+    app.snippets.set_form_return_to_tab(true);
+    let mut ctx = ctx_from_app(app);
+    ctx.open_snippet_add_form(Vec::new());
+}
+
+/// Open an edit form for the snippet at `editing` from the Snippets tab.
+pub(super) fn open_edit_form_for_tab(app: &mut App, editing: usize) {
+    let Some(snippet) = app.snippets.store().snippets.get(editing).cloned() else {
+        return;
+    };
+    app.snippets.set_form_return_to_tab(true);
+    let mut ctx = ctx_from_app(app);
+    ctx.open_snippet_edit_form(&snippet, Vec::new(), editing);
 }
 
 fn picker_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<AppEvent>) {
@@ -194,38 +338,8 @@ fn picker_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<AppE
         return;
     }
 
-    // Handle pending snippet delete confirmation via the shared confirm router.
-    if ctx.snippets.pending_delete().is_some() && key.code != KeyCode::Char('?') {
-        match super::route_confirm_key(key) {
-            super::ConfirmAction::Yes => {
-                let Some(sel) = ctx.snippets.take_pending_delete() else {
-                    return;
-                };
-                if sel < ctx.snippets.store().snippets.len() {
-                    let removed = ctx.snippets.store_mut().snippets.remove(sel);
-                    if let Err(e) = ctx.snippets.store_mut().save() {
-                        ctx.snippets.store_mut().snippets.insert(sel, removed);
-                        ctx.notify_error(crate::messages::failed_to_save(&e));
-                    } else {
-                        if ctx.snippets.store().snippets.is_empty() {
-                            ctx.ui.snippet_picker_state_mut().select(None);
-                        } else if sel >= ctx.snippets.store().snippets.len() {
-                            ctx.ui
-                                .snippet_picker_state_mut()
-                                .select(Some(ctx.snippets.store().snippets.len() - 1));
-                        }
-                        debug!("[purple] snippet removed: {}", removed.name);
-                        ctx.notify(crate::messages::snippet_removed(&removed.name));
-                    }
-                }
-            }
-            super::ConfirmAction::No => {
-                ctx.snippets.cancel_delete();
-            }
-            super::ConfirmAction::Ignored => {}
-        }
-        return;
-    }
+    // Pending snippet-delete confirmation is resolved in `handle_picker_key`
+    // (shared with the Snippets tab) before this dispatch runs.
 
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
@@ -637,7 +751,13 @@ fn param_form_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<
                 ctx.forms.dismiss_discard_confirm();
                 ctx.snippets.close_param_form();
                 ctx.snippets.set_param_snippet(None);
-                ctx.set_screen(Screen::SnippetPicker);
+                ctx.snippets.set_flow_snippet(None);
+                let screen = if ctx.snippets.form_return_to_tab() {
+                    Screen::HostList
+                } else {
+                    Screen::SnippetPicker
+                };
+                ctx.set_screen(screen);
             }
             super::ConfirmAction::No => {
                 ctx.forms.dismiss_discard_confirm();
@@ -654,7 +774,13 @@ fn param_form_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<
             } else {
                 ctx.snippets.close_param_form();
                 ctx.snippets.set_param_snippet(None);
-                ctx.set_screen(Screen::SnippetPicker);
+                ctx.snippets.set_flow_snippet(None);
+                let screen = if ctx.snippets.form_return_to_tab() {
+                    Screen::HostList
+                } else {
+                    Screen::SnippetPicker
+                };
+                ctx.set_screen(screen);
             }
         }
         KeyCode::Tab | KeyCode::Down if form.focused_index + 1 < form.params.len() => {
@@ -676,7 +802,10 @@ fn param_form_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<
             form.cursor_pos -= 1;
         }
         KeyCode::Right => {
-            let len = form.values[form.focused_index].chars().count();
+            let len = form
+                .values
+                .get(form.focused_index)
+                .map_or(0, |v| v.chars().count());
             if form.cursor_pos < len {
                 form.cursor_pos += 1;
             }
@@ -770,6 +899,12 @@ fn form_key(ctx: &mut SnippetCtx, key: KeyEvent) {
         KeyCode::Enter => {
             submit_snippet_form(ctx, &target_aliases, editing);
         }
+        // SPACE GUARD MUST PRECEDE the generic Char(c) arm: Space on a picker
+        // field (Default hosts) opens the host picker instead of inserting a
+        // literal space.
+        KeyCode::Char(' ') if ctx.snippets.form().focused_field.is_picker() => {
+            ctx.open_default_hosts_picker();
+        }
         KeyCode::Char(c) => {
             ctx.snippets.form_mut().insert_char(c);
         }
@@ -815,24 +950,44 @@ fn submit_snippet_form(ctx: &mut SnippetCtx, target_aliases: &[String], editing:
         description: new_description,
     };
 
-    // Save a snapshot for rollback
-    let snapshot = ctx.snippets.store().snippets.clone();
+    // The form owns the default hosts (seeded from the saved targets on open, so
+    // they carry across a rename unless the user changed them). Persist them
+    // under the new name below.
+    let new_default_hosts = ctx.snippets.form().default_hosts.clone();
 
-    // If editing and name changed, remove the old one
-    if let Some(old_name) = &old_name {
-        if *old_name != snippet.name {
-            ctx.snippets.store_mut().remove(old_name);
-        }
+    // Snapshot both snippets AND targets for rollback: a rename mutates targets
+    // (remove drops the old name's entry), so a failed save must restore both.
+    let snapshot_snippets = ctx.snippets.store().snippets.clone();
+    let snapshot_targets = ctx.snippets.store().targets.clone();
+
+    // On a rename, drop the old name's entry; run history is migrated after a
+    // successful save.
+    let rename_from = old_name.as_ref().filter(|o| **o != snippet.name).cloned();
+    if let Some(old) = &rename_from {
+        ctx.snippets.store_mut().remove(old);
     }
 
+    let new_name = snippet.name.clone();
     let is_new = editing.is_none();
     ctx.snippets.store_mut().set(snippet);
+    ctx.snippets
+        .store_mut()
+        .set_targets(&new_name, new_default_hosts);
 
     if let Err(e) = ctx.snippets.store_mut().save() {
         warn!("[config] snippet store save failed, rolling back: {e}");
-        ctx.snippets.store_mut().snippets = snapshot;
+        ctx.snippets.store_mut().snippets = snapshot_snippets;
+        ctx.snippets.store_mut().targets = snapshot_targets;
         ctx.notify_error(crate::messages::failed_to_save(&e));
         return;
+    }
+    // Save succeeded: migrate the run ledger so the renamed snippet keeps its
+    // TRACK RECORD verdict and trend chart, then persist the move.
+    if let Some(old) = &rename_from {
+        ctx.snippets.runs_mut().rename(old, &new_name);
+        if let Err(e) = ctx.snippets.runs().flush(ctx.env.paths()) {
+            warn!("[config] snippet_runs flush after rename failed: {e}");
+        }
     }
 
     // Re-select in picker
@@ -845,7 +1000,10 @@ fn submit_snippet_form(ctx: &mut SnippetCtx, target_aliases: &[String], editing:
         .position(|s| s.name == name);
     ctx.ui.snippet_picker_state_mut().select(new_idx);
 
-    debug!("[purple] snippet saved: {name} (new={is_new})");
+    debug!(
+        "[purple] snippet saved: {name} (new={is_new}, default_hosts={})",
+        ctx.snippets.store().targets_for(&name).len()
+    );
     if is_new {
         ctx.notify(crate::messages::snippet_added(&name));
     } else {
@@ -894,6 +1052,19 @@ mod param_form_tests {
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
         assert!(matches!(app.screen, Screen::SnippetPicker));
+        assert!(app.snippets.param_form().is_none());
+    }
+
+    #[test]
+    fn esc_on_clean_form_returns_to_host_list_when_tab_origin() {
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let mut app = make_app();
+        // Opened from the Snippets tab: Esc returns there (HostList), not the
+        // host-list snippet picker.
+        app.snippets.set_form_return_to_tab(true);
+        let (tx, _rx) = mpsc::channel();
+        handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
+        assert!(matches!(app.screen, Screen::HostList));
         assert!(app.snippets.param_form().is_none());
     }
 
@@ -988,6 +1159,20 @@ mod param_form_tests {
         handle_param_form_key(&mut app, k(KeyCode::Char('x')), &tx);
         assert!(app.forms.is_discard_pending());
         assert!(app.snippets.param_form().is_some());
+    }
+
+    // Defensive: production never opens a param form with zero params (the run
+    // path guards on parse_params non-empty), but Right/Char must not panic if
+    // it ever does.
+    #[test]
+    fn empty_param_form_right_and_char_do_not_panic() {
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let mut app = make_app(); // param_form is SnippetParamFormState::new(&[])
+        let (tx, _rx) = mpsc::channel();
+        handle_param_form_key(&mut app, k(KeyCode::Right), &tx);
+        handle_param_form_key(&mut app, k(KeyCode::Char('x')), &tx);
+        assert!(matches!(app.screen, Screen::SnippetParamForm));
+        assert!(app.snippets.param_form().expect("form").values.is_empty());
     }
 }
 

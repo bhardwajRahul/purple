@@ -1166,6 +1166,284 @@ fn visual_snippet_picker() {
 }
 
 #[test]
+fn visual_snippet_host_picker() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    app.snippets.host_pick_mut().list_state.select(Some(0));
+    app.screen = Screen::SnippetHostPicker;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_host_picker", &actual);
+}
+
+#[test]
+fn visual_snippet_host_picker_selected() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    let first_two: Vec<String> = app
+        .hosts_state
+        .list()
+        .iter()
+        .take(2)
+        .map(|h| h.alias.clone())
+        .collect();
+    for a in first_two {
+        app.snippets.host_pick_mut().selected.insert(a);
+    }
+    app.snippets.host_pick_mut().list_state.select(Some(0));
+    app.screen = Screen::SnippetHostPicker;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_host_picker_selected", &actual);
+}
+
+/// Opened from the edit form to choose default hosts: the title reads "Default
+/// hosts for ..." and the footer commits with "save" (no run is launched).
+#[test]
+fn visual_snippet_host_picker_edit_default() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    app.snippets.host_pick_mut().purpose = crate::app::SnippetHostPickPurpose::EditDefault;
+    if let Some(alias) = app.hosts_state.list().first().map(|h| h.alias.clone()) {
+        app.snippets.host_pick_mut().selected.insert(alias);
+    }
+    app.snippets.host_pick_mut().list_state.select(Some(0));
+    app.screen = Screen::SnippetHostPicker;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_host_picker_edit_default", &actual);
+}
+
+/// With the host list grouped by provider, the picker shows group-header rows
+/// (aggregate checkbox + name + count) with their hosts indented beneath, so a
+/// whole group can be toggled at once.
+#[test]
+fn visual_snippet_host_picker_grouped() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.hosts_state.set_group_by(crate::app::GroupBy::Provider);
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    app.snippets.host_pick_mut().list_state.select(Some(0));
+    app.screen = Screen::SnippetHostPicker;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_host_picker_grouped", &actual);
+}
+
+/// Type-to-filter active: a search line shows the live query and match count,
+/// and the list is a flat fuzzy-ranked set of matching hosts (groups dropped).
+#[test]
+fn visual_snippet_host_picker_filtered() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    app.snippets.host_pick_mut().query = "aws".to_string();
+    app.snippets.host_pick_mut().filtering = true;
+    app.snippets.host_pick_mut().list_state.select(Some(0));
+    app.screen = Screen::SnippetHostPicker;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_host_picker_filtered", &actual);
+}
+
+#[test]
+fn visual_confirm_run_snippet() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.snippets.set_flow_snippet(Some(crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    }));
+    let targets: Vec<String> = app
+        .hosts_state
+        .list()
+        .iter()
+        .take(3)
+        .map(|h| h.alias.clone())
+        .collect();
+    app.snippets.set_flow_targets(targets);
+    app.screen = Screen::ConfirmRunSnippet;
+    let actual = render_screen(&mut app);
+    assert_golden("confirm_run_snippet", &actual);
+}
+
+#[test]
+fn visual_snippets_overview() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.snippets.list_state_mut().select(Some(0));
+    let actual = render_screen(&mut app);
+    assert_golden("snippets_overview", &actual);
+}
+
+#[test]
+fn visual_snippets_overview_empty() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.snippets.store_mut().snippets.clear();
+    let actual = render_screen(&mut app);
+    assert_golden("snippets_overview_empty", &actual);
+}
+
+#[test]
+fn visual_snippets_overview_search() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.search.set_query(Some("deploy".to_string()));
+    app.snippets.list_state_mut().select(Some(0));
+    let actual = render_screen(&mut app);
+    assert_golden("snippets_overview_search", &actual);
+}
+
+/// At 160 cols with the detail panel enabled (default Detailed view), the
+/// command + parameters card renders alongside the list. Selects a
+/// parametrised snippet so the Parameters section is exercised.
+#[test]
+fn visual_snippets_overview_with_detail() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    let deploy_idx = app
+        .snippets
+        .store()
+        .snippets
+        .iter()
+        .position(|s| s.name == "deploy")
+        .expect("demo snippets include deploy");
+    app.snippets.list_state_mut().select(Some(deploy_idx));
+    let backend = TestBackend::new(160, 40);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut anim = AnimationState::default();
+    terminal
+        .draw(|frame| ui::render(frame, &mut app, &mut anim))
+        .expect("render frame");
+    let buf = terminal.backend().buffer().clone();
+    let actual = serialize_buffer(&buf);
+    assert_golden("snippets_overview_with_detail", &actual);
+}
+
+/// A destructive snippet with no run history: the IMPACT card flags `prune`
+/// and no TRACK RECORD card renders (static cards only).
+#[test]
+fn visual_snippets_overview_destructive() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    let idx = app
+        .snippets
+        .store()
+        .snippets
+        .iter()
+        .position(|s| s.name == "container-prune")
+        .expect("demo snippets include container-prune");
+    app.snippets.list_state_mut().select(Some(idx));
+    let backend = TestBackend::new(160, 40);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut anim = AnimationState::default();
+    terminal
+        .draw(|frame| ui::render(frame, &mut app, &mut anim))
+        .expect("render frame");
+    let buf = terminal.backend().buffer().clone();
+    let actual = serialize_buffer(&buf);
+    assert_golden("snippets_overview_destructive", &actual);
+}
+
+/// A piped snippet with a mixed run history: IMPACT flags pipe + redirect, the
+/// TRACK RECORD verdict sits in the amber tier and the trend chart dips to the
+/// 0 baseline on the failed run.
+#[test]
+fn visual_snippets_overview_mixed_runs() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    let idx = app
+        .snippets
+        .store()
+        .snippets
+        .iter()
+        .position(|s| s.name == "backup-db")
+        .expect("demo snippets include backup-db");
+    app.snippets.list_state_mut().select(Some(idx));
+    let backend = TestBackend::new(160, 40);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut anim = AnimationState::default();
+    terminal
+        .draw(|frame| ui::render(frame, &mut app, &mut anim))
+        .expect("render frame");
+    let buf = terminal.backend().buffer().clone();
+    let actual = serialize_buffer(&buf);
+    assert_golden("snippets_overview_mixed_runs", &actual);
+}
+
+/// At 160 cols with the detail toggled off (Compact), the list spans full
+/// width. Contrasts with `visual_snippets_overview_with_detail`.
+#[test]
+fn visual_snippets_overview_compact() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.snippets.toggle_view_mode(); // Detailed -> Compact
+    app.snippets.list_state_mut().select(Some(0));
+    let backend = TestBackend::new(160, 40);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut anim = AnimationState::default();
+    terminal
+        .draw(|frame| ui::render(frame, &mut app, &mut anim))
+        .expect("render frame");
+    let buf = terminal.backend().buffer().clone();
+    let actual = serialize_buffer(&buf);
+    assert_golden("snippets_overview_compact", &actual);
+}
+
+/// The add form opened from the tab renders over the tab (not the host-list
+/// picker) because `form_return_to_tab` is set.
+#[test]
+fn visual_snippets_overview_add_form() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.snippets.set_form_return_to_tab(true);
+    app.snippets.set_form_editing(None);
+    app.screen = Screen::SnippetForm;
+    let actual = render_screen(&mut app);
+    assert_golden("snippets_overview_add_form", &actual);
+}
+
+/// The delete confirmation popup renders over the Snippets tab.
+#[test]
+fn visual_snippets_overview_delete_confirm() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.snippets.list_state_mut().select(Some(0));
+    app.snippets.request_delete(0);
+    let actual = render_screen(&mut app);
+    assert_golden("snippets_overview_delete_confirm", &actual);
+}
+
+#[test]
 fn visual_snippet_form() {
     let _g = setup();
     let mut app = demo::build_demo_app();
@@ -1175,6 +1453,26 @@ fn visual_snippet_form() {
     app.screen = Screen::SnippetForm;
     let actual = render_screen(&mut app);
     assert_golden("snippet_form", &actual);
+}
+
+/// The Default hosts field focused: it shows the chosen aliases and the footer
+/// carries the Space-pick hint (the field opens the host picker, it takes no
+/// typed text).
+#[test]
+fn visual_snippet_form_default_hosts() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    *app.snippets.form_mut() = crate::app::SnippetForm::from_snippet(&crate::snippet::Snippet {
+        name: "deploy".into(),
+        command: "make deploy".into(),
+        description: "Ship the app".into(),
+    });
+    app.snippets.form_mut().default_hosts = vec!["bastion-ams".into(), "db-primary".into()];
+    app.snippets.form_mut().focused_field = crate::app::SnippetFormField::DefaultHosts;
+    app.snippets.set_form_editing(Some(0));
+    app.screen = Screen::SnippetForm;
+    let actual = render_screen(&mut app);
+    assert_golden("snippet_form_default_hosts", &actual);
 }
 
 #[test]
@@ -1439,6 +1737,19 @@ fn visual_jump_over_containers() {
     app.recompute_jump_hits();
     let actual = render_screen(&mut app);
     assert_golden("jump_over_containers", &actual);
+}
+
+#[test]
+fn visual_jump_over_snippets() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.top_page = crate::app::TopPage::Snippets;
+    app.jump = Some(crate::app::JumpState::for_mode(
+        crate::app::JumpMode::Snippets,
+    ));
+    app.recompute_jump_hits();
+    let actual = render_screen(&mut app);
+    assert_golden("jump_over_snippets", &actual);
 }
 
 #[test]

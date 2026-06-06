@@ -81,33 +81,12 @@ impl KeyActivityLog {
         let Some(path) = activity_path(paths) else {
             return Self::default();
         };
-        match std::fs::read_to_string(&path) {
-            Ok(s) => match serde_json::from_str::<Self>(&s) {
-                Ok(mut log) => {
-                    log.prune(now_secs());
-                    log
-                }
-                Err(e) => {
-                    let backup = path.with_extension(format!("json.corrupt-{}", now_secs()));
-                    if let Err(rename_err) = std::fs::rename(&path, &backup) {
-                        debug!(
-                            "[purple] key_activity: parse failed and could not preserve corrupt file: parse={e} rename={rename_err}",
-                        );
-                    } else {
-                        debug!(
-                            "[purple] key_activity: parse failed, preserved corrupt file at {}: {e}",
-                            backup.display(),
-                        );
-                    }
-                    Self::default()
-                }
-            },
-            Err(e) => {
-                if e.kind() != io::ErrorKind::NotFound {
-                    debug!("[purple] key_activity: read failed: {e}");
-                }
-                Self::default()
+        match crate::fs_util::read_json_recovering::<Self>(&path, now_secs()) {
+            Some(mut log) => {
+                log.prune(now_secs());
+                log
             }
+            None => Self::default(),
         }
     }
 
@@ -145,9 +124,7 @@ impl KeyActivityLog {
         let Some(path) = activity_path(paths) else {
             return Ok(());
         };
-        let body = serde_json::to_vec_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        fs_util::atomic_write(&path, &body)
+        fs_util::write_json_pretty(&path, self)
     }
 
     /// One-shot record. For non-TUI call sites (CLI mode) that do not

@@ -31,20 +31,26 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         matches!(return_screen, Screen::HostList) && matches!(app.top_page, TopPage::Tunnels);
     let is_containers_tab =
         matches!(return_screen, Screen::HostList) && matches!(app.top_page, TopPage::Containers);
+    let is_snippets_tab =
+        matches!(return_screen, Screen::HostList) && matches!(app.top_page, TopPage::Snippets);
     let is_keys_tab =
         matches!(return_screen, Screen::HostList) && matches!(app.top_page, TopPage::Keys);
     let is_host_list = !is_tunnels_tab
         && !is_containers_tab
+        && !is_snippets_tab
         && !is_keys_tab
         && matches!(return_screen, Screen::HostList | Screen::Welcome { .. });
     // All top-level tabs share the same overlay chrome: logo, version,
     // wiki/issues info block, two-column body. Sub-screens use a
     // smaller compact layout.
-    let is_main_view = is_host_list || is_tunnels_tab || is_containers_tab || is_keys_tab;
+    let is_main_view =
+        is_host_list || is_tunnels_tab || is_containers_tab || is_snippets_tab || is_keys_tab;
     let title_text = if is_tunnels_tab {
         "Tunnels"
     } else if is_containers_tab {
         "Containers"
+    } else if is_snippets_tab {
+        "Snippets"
     } else if is_keys_tab {
         "Keys"
     } else {
@@ -58,6 +64,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         tunnels_overview_columns()
     } else if is_containers_tab {
         containers_overview_columns()
+    } else if is_snippets_tab {
+        snippets_overview_columns()
     } else if is_keys_tab {
         keys_overview_columns()
     } else {
@@ -595,6 +603,45 @@ fn keys_overview_columns() -> (Vec<Line<'static>>, Vec<Line<'static>>) {
         help_line_short("green", "> 5 min left"),
         help_line_short("amber", "2 – 5 min left"),
         help_line_short("red", "< 2 min, soon"),
+        blank(),
+        section_header("TABS"),
+        blank(),
+        help_line_short("Tab", "switch tabs"),
+        help_line_short("n", "what's new"),
+        help_line_short("q", "quit"),
+    ];
+
+    (col1, col2)
+}
+
+fn snippets_overview_columns() -> (Vec<Line<'static>>, Vec<Line<'static>>) {
+    let col1 = vec![
+        blank(),
+        section_header("NAVIGATE"),
+        blank(),
+        help_line("j/k ↑↓", "up / down"),
+        help_line("PgDn/PgUp", "page down / up"),
+        help_line("g/G", "first / last"),
+        help_line("/", "search (scoped)"),
+        help_line("Esc", "clear filter"),
+        blank(),
+        section_header("ACTIONS"),
+        blank(),
+        help_line("Enter/r", "run on hosts"),
+        help_line("!", "run in terminal"),
+        help_line("a", "add snippet"),
+        help_line("e", "edit snippet"),
+        help_line("d", "delete snippet"),
+        help_line("v", "toggle detail"),
+    ];
+
+    let col2 = vec![
+        blank(),
+        section_header("RUN FLOW"),
+        blank(),
+        help_line_short("1.", "pick a snippet"),
+        help_line_short("2.", "choose hosts"),
+        help_line_short("3.", "confirm + run"),
         blank(),
         section_header("TABS"),
         blank(),
@@ -1149,6 +1196,53 @@ mod tests {
                 "containers-overview help missing '{desc}'"
             );
         }
+    }
+
+    #[test]
+    fn snippets_overview_columns_cover_tab_specific_shortcuts() {
+        let (col1, col2) = snippets_overview_columns();
+        let text: String = col1
+            .iter()
+            .chain(col2.iter())
+            .map(|l| l.to_string())
+            .collect();
+        for desc in &[
+            "run on hosts",
+            "run in terminal",
+            "add snippet",
+            "edit snippet",
+            "delete snippet",
+            "toggle detail",
+            "switch tabs",
+        ] {
+            assert!(
+                text.contains(desc),
+                "snippets-overview help missing '{desc}'"
+            );
+        }
+    }
+
+    #[test]
+    fn help_on_snippets_tab_renders_tab_columns() {
+        let mut app = help_test_app(Screen::HostList);
+        app.top_page = TopPage::Snippets;
+        let text = render_to_text(&mut app, 100, 40);
+        assert!(
+            text.contains("RUN FLOW"),
+            "snippets-tab help must show RUN FLOW section header"
+        );
+        assert!(
+            text.contains("run on hosts"),
+            "snippets-tab help must show Enter/r shortcut"
+        );
+        assert!(
+            text.contains("add snippet"),
+            "snippets-tab help must show 'a' shortcut"
+        );
+        assert!(
+            !text.contains("MANAGE TUNNELS"),
+            "snippets-tab help must not show tunnels section headers"
+        );
     }
 
     #[test]

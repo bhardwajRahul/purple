@@ -341,22 +341,6 @@ impl App {
     }
     /// Return indices of snippets matching the search query.
     pub fn filtered_snippet_indices(&self) -> Vec<usize> {
-        match &self.ui.snippet_search {
-            None => (0..self.snippets.store.snippets.len()).collect(),
-            Some(query) if query.is_empty() => (0..self.snippets.store.snippets.len()).collect(),
-            Some(query) => self
-                .snippets
-                .store
-                .snippets
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| {
-                    super::contains_ci(&s.name, query)
-                        || super::contains_ci(&s.command, query)
-                        || super::contains_ci(&s.description, query)
-                })
-                .map(|(i, _)| i)
-                .collect(),
-        }
+        crate::snippet::filtered_indices(self.snippets.store(), self.ui.snippet_search.as_deref())
     }
 }

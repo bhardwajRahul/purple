@@ -3341,6 +3341,32 @@ fn make_snippet_app() -> App {
 }
 
 #[test]
+fn zzz_probe_rename_preserves_targets() {
+    let mut app = make_snippet_app();
+    app.snippets
+        .store_mut()
+        .set_targets("check-disk", vec!["h1".to_string()]);
+    let _ = app.snippets.store_mut().save();
+    *app.snippets.form_mut() =
+        crate::app::SnippetForm::from_snippet(&app.snippets.store().snippets[0].clone());
+    // Mirror open_snippet_edit_form, which seeds the field from saved targets.
+    app.snippets.form_mut().default_hosts = vec!["h1".to_string()];
+    app.snippets.form_mut().name = "renamed-disk".to_string();
+    app.snippets.form_mut().cursor_pos = 12;
+    app.snippets.set_flow_targets(vec!["myserver".to_string()]);
+    app.snippets.set_form_editing(Some(0));
+    app.screen = Screen::SnippetForm;
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert!(app.snippets.store().get("renamed-disk").is_some());
+    assert_eq!(
+        app.snippets.store().targets_for("renamed-disk"),
+        &["h1"],
+        "saved default targets should survive a rename"
+    );
+}
+
+#[test]
 fn test_snippet_picker_nav_down_up() {
     let mut app = make_snippet_app();
     let (tx, _rx) = mpsc::channel();
@@ -3468,6 +3494,15 @@ fn test_snippet_picker_d_rollback_on_save_failure() {
     if unsafe { libc::getuid() } == 0 {
         return;
     }
+    // save() is a no-op under the global demo flag, so a parallel demo-enabling
+    // test would make the forced failure succeed and the rollback never fire.
+    // Serialise and disable demo mode for the duration.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
     let mut app = make_snippet_app();
     // Point to a non-writable path to force save failure
     app.snippets.store_mut().path_override = Some(PathBuf::from("/nonexistent/dir/snippets"));
@@ -3481,6 +3516,10 @@ fn test_snippet_picker_d_rollback_on_save_failure() {
     assert_eq!(app.snippets.store().snippets.len(), 2);
     assert_eq!(app.snippets.store().snippets[0].name, "check-disk");
     assert!(app.status_center.toast().unwrap().is_error());
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
 }
 
 // =========================================================================
@@ -3498,6 +3537,21 @@ fn test_snippet_form_esc_returns_to_picker() {
 
     let _ = handle_key_event(&mut app, key(KeyCode::Esc), &tx);
     assert!(matches!(app.screen, Screen::SnippetPicker));
+}
+
+#[test]
+fn test_snippet_form_esc_returns_to_host_list_when_tab_origin() {
+    let mut app = make_snippet_app();
+    *app.snippets.form_mut() = crate::app::SnippetForm::new();
+    app.snippets.set_flow_targets(vec!["myserver".to_string()]);
+    app.snippets.set_form_editing(None);
+    // Opened from the Snippets tab: a clean Esc returns to the tab (HostList).
+    app.snippets.set_form_return_to_tab(true);
+    app.screen = Screen::SnippetForm;
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Esc), &tx);
+    assert!(matches!(app.screen, Screen::HostList));
 }
 
 #[test]
@@ -3524,6 +3578,12 @@ fn test_snippet_form_tab_cycles_fields() {
     assert_eq!(
         app.snippets.form_mut().focused_field,
         crate::app::SnippetFormField::Description
+    );
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    assert_eq!(
+        app.snippets.form_mut().focused_field,
+        crate::app::SnippetFormField::DefaultHosts
     );
 
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
@@ -3642,6 +3702,12 @@ fn test_snippet_form_submit_rollback_on_save_failure() {
     if unsafe { libc::getuid() } == 0 {
         return;
     }
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
     let mut app = make_snippet_app();
     // Force save failure
     app.snippets.store_mut().path_override = Some(PathBuf::from("/nonexistent/dir/snippets"));
@@ -3659,6 +3725,10 @@ fn test_snippet_form_submit_rollback_on_save_failure() {
     assert_eq!(app.snippets.store().snippets.len(), 2);
     assert!(app.snippets.store().get("new-cmd").is_none());
     assert!(app.status_center.toast().unwrap().is_error());
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
 }
 
 #[test]
@@ -3669,7 +3739,18 @@ fn test_snippet_form_edit_rename_rollback_on_save_failure() {
     if unsafe { libc::getuid() } == 0 {
         return;
     }
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
     let mut app = make_snippet_app();
+    // The snippet being renamed has saved default targets; a failed rename-save
+    // must restore them, not just the snippet name.
+    app.snippets
+        .store_mut()
+        .set_targets("check-disk", vec!["h1".to_string(), "h2".to_string()]);
     // Force save failure
     app.snippets.store_mut().path_override = Some(PathBuf::from("/nonexistent/dir/snippets"));
     *app.snippets.form_mut() =
@@ -3686,6 +3767,68 @@ fn test_snippet_form_edit_rename_rollback_on_save_failure() {
     assert_eq!(app.snippets.store().snippets.len(), 2);
     assert!(app.snippets.store().get("check-disk").is_some());
     assert!(app.snippets.store().get("renamed").is_none());
+    // Targets restored too: the rename dropped them, the rollback brings them back.
+    assert_eq!(
+        app.snippets.store().targets_for("check-disk"),
+        &["h1", "h2"]
+    );
+    assert!(app.snippets.store().targets_for("renamed").is_empty());
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
+}
+
+#[test]
+fn test_snippet_form_rename_preserves_targets_and_run_history() {
+    // save() and the post-rename ledger flush are demo-suppressed; serialise and
+    // disable demo mode so the rename actually persists in this test.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
+    let mut app = make_snippet_app();
+    // The snippet being renamed has saved default targets and recorded runs.
+    app.snippets
+        .store_mut()
+        .set_targets("check-disk", vec!["h1".to_string()]);
+    app.snippets.runs_mut().record(
+        "check-disk",
+        crate::snippet_runs::RunRecord {
+            ts: 1,
+            hosts: 2,
+            ok: 2,
+            failed: 0,
+        },
+    );
+    *app.snippets.form_mut() =
+        crate::app::SnippetForm::from_snippet(&app.snippets.store().snippets[0].clone());
+    // open_snippet_edit_form seeds the form's default_hosts from the saved
+    // targets; mirror that here so the rename carries them via the form.
+    app.snippets.form_mut().default_hosts = vec!["h1".to_string()];
+    app.snippets.form_mut().name = "diskcheck".to_string();
+    app.snippets.form_mut().cursor_pos = 9;
+    app.snippets.set_form_editing(Some(0));
+    app.screen = Screen::SnippetForm;
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+
+    // Snippet renamed.
+    assert!(app.snippets.store().get("diskcheck").is_some());
+    assert!(app.snippets.store().get("check-disk").is_none());
+    // Saved default targets follow the new name; the old name keeps none.
+    assert_eq!(app.snippets.store().targets_for("diskcheck"), &["h1"]);
+    assert!(app.snippets.store().targets_for("check-disk").is_empty());
+    // Run history migrated to the new name.
+    assert_eq!(app.snippets.runs().run_count("diskcheck"), 1);
+    assert_eq!(app.snippets.runs().run_count("check-disk"), 0);
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
 }
 
 #[test]
@@ -6408,14 +6551,14 @@ fn shift_tab_on_host_list_switches_pages() {
         &tx,
     );
 
-    // Four-tab cycle: Hosts <- Keys <- Containers <- Tunnels <- Hosts.
+    // Five-tab cycle: Hosts <- Keys <- Snippets <- Containers <- Tunnels <- Hosts.
     // One BackTab from Hosts lands on Keys.
     assert_eq!(app.top_page, crate::app::TopPage::Keys);
     assert!(matches!(app.screen, Screen::HostList));
 }
 
 #[test]
-fn tab_four_times_returns_to_hosts_page() {
+fn tab_five_times_returns_to_hosts_page() {
     let mut app = make_app("Host web1\n  HostName 1.1.1.1\n");
     assert_eq!(app.top_page, crate::app::TopPage::Hosts);
 
@@ -6425,11 +6568,65 @@ fn tab_four_times_returns_to_hosts_page() {
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
     assert_eq!(app.top_page, crate::app::TopPage::Containers);
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    assert_eq!(app.top_page, crate::app::TopPage::Snippets);
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
     assert_eq!(app.top_page, crate::app::TopPage::Keys);
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
 
     assert_eq!(app.top_page, crate::app::TopPage::Hosts);
     assert!(matches!(app.screen, Screen::HostList));
+}
+
+/// Every top-level tab must honour the standard cross-tab keys. Guards against
+/// a new (or refactored) tab silently dropping `q` / `:` / `n`, the way the
+/// Snippets tab once did. Driven through the real `handle_key_event` dispatch
+/// so it exercises each tab's handler exactly as the running app does.
+const ALL_TOP_PAGES: [crate::app::TopPage; 5] = [
+    crate::app::TopPage::Hosts,
+    crate::app::TopPage::Tunnels,
+    crate::app::TopPage::Containers,
+    crate::app::TopPage::Snippets,
+    crate::app::TopPage::Keys,
+];
+
+#[test]
+fn every_top_page_quits_on_q() {
+    let (tx, _rx) = mpsc::channel();
+    for page in ALL_TOP_PAGES {
+        let mut app = make_app("Host web1\n  HostName 1.1.1.1\n");
+        app.top_page = page;
+        assert!(app.running, "app starts running on {page:?}");
+        let _ = handle_key_event(&mut app, key(KeyCode::Char('q')), &tx);
+        assert!(!app.running, "q must quit on the {page:?} tab");
+    }
+}
+
+#[test]
+fn every_top_page_opens_jump_on_colon() {
+    let (tx, _rx) = mpsc::channel();
+    for page in ALL_TOP_PAGES {
+        let mut app = make_app("Host web1\n  HostName 1.1.1.1\n");
+        app.top_page = page;
+        let _ = handle_key_event(&mut app, key(KeyCode::Char(':')), &tx);
+        assert!(
+            app.jump.is_some(),
+            ": must open the jump palette on the {page:?} tab"
+        );
+    }
+}
+
+#[test]
+fn every_top_page_opens_whats_new_on_n() {
+    let (tx, _rx) = mpsc::channel();
+    for page in ALL_TOP_PAGES {
+        let mut app = make_app("Host web1\n  HostName 1.1.1.1\n");
+        app.top_page = page;
+        let _ = handle_key_event(&mut app, key(KeyCode::Char('n')), &tx);
+        assert!(
+            matches!(app.screen, Screen::WhatsNew(_)),
+            "n must open What's New on the {page:?} tab"
+        );
+    }
 }
 
 #[test]
@@ -9831,12 +10028,13 @@ fn containers_overview_s_keeps_cursor_on_same_alias_after_flip() {
 }
 
 #[test]
-fn containers_overview_tab_advances_to_keys() {
+fn containers_overview_tab_advances_to_snippets() {
     let mut app = make_containers_overview_app();
     let (tx, _rx) = mpsc::channel();
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
-    // Containers -> Keys (cycle: Hosts -> Tunnels -> Containers -> Keys -> Hosts).
-    assert!(matches!(app.top_page, crate::app::TopPage::Keys));
+    // Containers -> Snippets
+    // (cycle: Hosts -> Tunnels -> Containers -> Snippets -> Keys -> Hosts).
+    assert!(matches!(app.top_page, crate::app::TopPage::Snippets));
     assert!(matches!(app.screen, Screen::HostList));
 }
 

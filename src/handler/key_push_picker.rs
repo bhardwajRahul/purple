@@ -190,7 +190,7 @@ fn toggle_select_all_eligible(ctx: &mut KeyPushCtx) {
 /// user gets feedback instead of a silent no-op.
 fn commit_to_confirm(ctx: &mut KeyPushCtx, key_index: usize) {
     if ctx.keys.push().selected.is_empty() {
-        ctx.notify(crate::messages::KEY_PUSH_NONE_SELECTED);
+        ctx.notify(crate::messages::PICKER_NONE_SELECTED);
         return;
     }
     // Preserve picker order (the user just saw the list in this order),

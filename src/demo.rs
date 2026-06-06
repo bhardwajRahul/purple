@@ -1200,6 +1200,54 @@ fn synthetic_digest(container_id: &str) -> String {
     format!("sha256:{}{}", half, half.chars().rev().collect::<String>())
 }
 
+/// Seed the per-snippet run ledger so the Snippets detail TRACK RECORD verdict
+/// and trend chart render with realistic data in `--demo`. Timestamps are
+/// pinned relative to `DEMO_NOW_SECS` so visual goldens stay byte-stable.
+fn seed_demo_snippet_runs(log: &mut crate::snippet_runs::SnippetRunLog) {
+    use crate::key_activity::DEMO_NOW_SECS as NOW;
+    use crate::snippet_runs::RunRecord;
+    let day = 86_400u64;
+    // deploy: a busy, mostly-reliable snippet (one partial failure).
+    let deploy = [
+        (NOW - 9 * day, 3, 3),
+        (NOW - 7 * day, 3, 3),
+        (NOW - 6 * day, 4, 4),
+        (NOW - 5 * day, 4, 3),
+        (NOW - 3 * day, 4, 4),
+        (NOW - 2 * day, 5, 5),
+        (NOW - day, 3, 3),
+        (NOW - 7200, 3, 3),
+    ];
+    for (ts, hosts, ok) in deploy {
+        log.record(
+            "deploy",
+            RunRecord {
+                ts,
+                hosts,
+                ok,
+                failed: hosts - ok,
+            },
+        );
+    }
+    // backup-db: occasional, with one full failure.
+    let backup = [
+        (NOW - 4 * day, 1, 1),
+        (NOW - 2 * day, 1, 0),
+        (NOW - day, 1, 1),
+    ];
+    for (ts, hosts, ok) in backup {
+        log.record(
+            "backup-db",
+            RunRecord {
+                ts,
+                hosts,
+                ok,
+                failed: hosts - ok,
+            },
+        );
+    }
+}
+
 pub fn build_demo_app() -> App {
     crate::demo_flag::enable();
 
@@ -1218,6 +1266,11 @@ pub fn build_demo_app() -> App {
 
     // Snippets
     *app.snippets.store_mut() = SnippetStore::parse(DEMO_SNIPPETS);
+    app.snippets.store_mut().set_targets(
+        "deploy",
+        vec!["prod-eu1".into(), "prod-eu2".into(), "aws-api-prod".into()],
+    );
+    seed_demo_snippet_runs(app.snippets.runs_mut());
 
     // Container cache (timestamps relative to now)
     app.container_state
@@ -2409,6 +2462,19 @@ mod tests {
         let (app, _guard) = demo_app();
         // 5 original + 5 new (deploy, backup-db, log-rotate, container-prune, certbot-renew) = 10
         assert_eq!(app.snippets.store().snippets.len(), 10);
+    }
+
+    #[test]
+    fn demo_app_seeds_snippet_run_ledger() {
+        let (app, _guard) = demo_app();
+        let runs = app.snippets.runs();
+        assert_eq!(runs.run_count("deploy"), 8);
+        assert_eq!(runs.run_count("backup-db"), 3);
+        // deploy is mostly reliable; backup-db has one full failure (2/3).
+        assert!(runs.success_rate("deploy").unwrap() > 0.9);
+        assert!((runs.success_rate("backup-db").unwrap() - 2.0 / 3.0).abs() < 1e-9);
+        // A never-run snippet has no ledger entry.
+        assert_eq!(runs.run_count("uptime"), 0);
     }
 
     #[test]

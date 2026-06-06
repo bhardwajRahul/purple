@@ -495,6 +495,8 @@ pub mod hints {
     pub const SNIPPET_NAME: &str = "check-disk";
     pub const SNIPPET_COMMAND: &str = "df -h";
     pub const SNIPPET_OPTIONAL: &str = "(optional)";
+    /// Default-hosts field placeholder (the field opens a picker on Space).
+    pub const SNIPPET_DEFAULT_HOSTS: &str = "Space to pick hosts";
 
     // ── Provider form ───────────────────────────────────────────────
     pub const PROVIDER_URL: &str = "https://pve.example.com:8006";

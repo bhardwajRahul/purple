@@ -22,9 +22,11 @@ pub(crate) mod keys_overview;
 mod picker_helpers;
 mod provider_list;
 mod snippet_form;
+mod snippet_host_picker;
 mod snippet_output;
 mod snippet_param_form;
 mod snippet_picker;
+mod snippets_overview;
 mod tag_picker;
 pub mod theme;
 mod theme_picker;
@@ -95,6 +97,7 @@ pub fn render(frame: &mut Frame, app: &mut App, anim: &mut crate::animation::Ani
         TopPage::Containers => {
             containers_overview::render(frame, app, anim.spinner_tick, detail_progress)
         }
+        TopPage::Snippets => snippets_overview::render(frame, app, detail_progress),
         TopPage::Keys => keys_overview::render(frame, app, anim.spinner_tick),
     }
     if let Some(s) = status {
@@ -231,7 +234,11 @@ pub fn render(frame: &mut Frame, app: &mut App, anim: &mut crate::animation::Ani
         }
         Screen::SnippetForm => {
             render_overlay(frame, app, anim, |frame, app| {
-                snippet_picker::render(frame, app);
+                if app.snippets.form_return_to_tab() {
+                    snippets_overview::render(frame, app, None);
+                } else {
+                    snippet_picker::render(frame, app);
+                }
                 snippet_form::render(frame, app);
             });
         }
@@ -249,8 +256,21 @@ pub fn render(frame: &mut Frame, app: &mut App, anim: &mut crate::animation::Ani
         }
         Screen::SnippetParamForm => {
             render_overlay(frame, app, anim, |frame, app| {
-                snippet_picker::render(frame, app);
+                if app.snippets.form_return_to_tab() {
+                    snippets_overview::render(frame, app, None);
+                } else {
+                    snippet_picker::render(frame, app);
+                }
                 snippet_param_form::render(frame, app);
+            });
+        }
+        Screen::SnippetHostPicker => {
+            render_overlay(frame, app, anim, snippet_host_picker::render);
+        }
+        Screen::ConfirmRunSnippet => {
+            render_overlay(frame, app, anim, |frame, app| {
+                let aliases = app.snippets.flow_targets().to_vec();
+                confirm_dialog::render_run_snippet(frame, app, &aliases);
             });
         }
         Screen::ConfirmImport { count } => {

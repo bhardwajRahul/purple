@@ -28,6 +28,8 @@ mod picker;
 mod ping;
 mod provider;
 mod snippet;
+pub(crate) mod snippet_host_picker;
+mod snippets_overview;
 mod sync;
 mod tag_picker;
 mod theme_picker;
@@ -104,6 +106,8 @@ pub fn handle_key_event(
         Screen::SnippetForm => snippet::handle_form_key(app, key),
         Screen::SnippetOutput => snippet::handle_output_key(app, key),
         Screen::SnippetParamForm => snippet::handle_param_form_key(app, key, events_tx),
+        Screen::SnippetHostPicker => snippet_host_picker::handle_key(app, key),
+        Screen::ConfirmRunSnippet => confirm::handle_run_snippet_confirm_key(app, key, events_tx),
         Screen::ConfirmHostKeyReset { .. } => confirm::handle_host_key_reset_key(app, key),
         Screen::ConfirmVaultSign => confirm::handle_vault_sign_key(app, key, events_tx),
         Screen::ConfirmImport { .. } => confirm::handle_import_key(app, key),

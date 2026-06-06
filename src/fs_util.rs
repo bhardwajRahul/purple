@@ -3,6 +3,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use log::{debug, error};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Advisory file lock using a `.lock` file.
 /// The lock is released when the `FileLock` is dropped.
@@ -238,6 +240,46 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
     }
 
     result
+}
+
+/// Read and parse a JSON file. On a parse error the corrupt file is preserved
+/// aside as `<path>.corrupt-<now>` (best-effort) before returning `None`, so a
+/// future debugger can recover it. Missing files and other read errors also
+/// return `None`. `now` (epoch seconds) stamps the corrupt-backup name. Shared
+/// by the on-disk JSON ledgers (key activity, snippet runs).
+pub fn read_json_recovering<T: DeserializeOwned>(path: &Path, now: u64) -> Option<T> {
+    match fs::read_to_string(path) {
+        Ok(s) => match serde_json::from_str::<T>(&s) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                let backup = path.with_extension(format!("json.corrupt-{now}"));
+                if let Err(rename_err) = fs::rename(path, &backup) {
+                    debug!(
+                        "[purple] json read: parse failed and could not preserve corrupt file: parse={e} rename={rename_err}",
+                    );
+                } else {
+                    debug!(
+                        "[purple] json read: parse failed, preserved corrupt file at {}: {e}",
+                        backup.display(),
+                    );
+                }
+                None
+            }
+        },
+        Err(e) => {
+            if e.kind() != io::ErrorKind::NotFound {
+                debug!("[purple] json read failed for {}: {e}", path.display());
+            }
+            None
+        }
+    }
+}
+
+/// Serialize `value` as pretty JSON and write it atomically via [`atomic_write`].
+pub fn write_json_pretty<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
+    let body = serde_json::to_vec_pretty(value)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    atomic_write(path, &body)
 }
 
 #[cfg(test)]

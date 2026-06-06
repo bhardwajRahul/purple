@@ -1,6 +1,54 @@
+use std::collections::HashSet;
+
+use ratatui::widgets::ListState;
+
 use crate::app::SnippetFormBaseline;
 use crate::app::forms::{SnippetForm, SnippetOutputState, SnippetParamFormState};
 use crate::snippet::{Snippet, SnippetStore};
+
+/// Why the snippet host picker is open: to run the snippet now, or to pick the
+/// default target hosts for the open edit form. Decides where Enter/Esc return
+/// and whether a run is launched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SnippetHostPickPurpose {
+    /// Select hosts then run (-> `Screen::ConfirmRunSnippet`).
+    #[default]
+    Run,
+    /// Select hosts then write them to the edit form's `default_hosts`
+    /// (-> `Screen::SnippetForm`). An empty selection clears the defaults.
+    EditDefault,
+}
+
+/// Picker half for the snippet -> hosts run flow. Mirrors the picker fields of
+/// `KeyPushState`; snippets carry no worker state of their own because
+/// execution reuses the existing snippet output machinery.
+#[derive(Default)]
+pub struct SnippetHostPick {
+    /// Why the picker is open (run now vs set the edit form's default hosts).
+    pub purpose: SnippetHostPickPurpose,
+    /// Aliases toggled in `Screen::SnippetHostPicker`. Frozen into
+    /// `flow_targets` on Enter.
+    pub selected: HashSet<String>,
+    /// Cursor in the picker's host list.
+    pub list_state: ListState,
+    /// Applied type-to-filter query. Empty means no filter (grouped browse).
+    pub query: String,
+    /// Whether keystrokes currently edit `query` (filter mode entered via `/`)
+    /// rather than acting as selection commands.
+    pub filtering: bool,
+}
+
+impl SnippetHostPick {
+    /// Reset selection, filter and cursor. Called when the picker opens for a
+    /// fresh snippet; pre-selection of saved targets happens after this.
+    pub fn reset(&mut self) {
+        self.selected.clear();
+        self.query.clear();
+        self.filtering = false;
+        self.list_state.select(Some(0));
+        self.purpose = SnippetHostPickPurpose::Run;
+    }
+}
 
 /// Snippet-owned state grouped off the `App` god-struct. Holds the on-disk
 /// snippet store, the edit form, the pending execution payload, the output
@@ -28,6 +76,28 @@ pub struct SnippetState {
     pub(in crate::app) param_snippet: Option<Snippet>,
     /// Snippet name shown by `Screen::SnippetOutput` in its title.
     pub(in crate::app) output_snippet_name: Option<String>,
+    /// Snippet-list cursor for the Snippets tab. Indexes the filtered list
+    /// when `app.search` is active; the handler translates back to a store
+    /// index before any data access.
+    pub(in crate::app) list_state: ListState,
+    /// Detail-panel visibility for the Snippets tab, toggled by `v`. Drives
+    /// the shared detail animation exactly as the Containers tab does.
+    pub(in crate::app) view_mode: crate::app::ViewMode,
+    /// Host picker selection for the snippet -> hosts run flow.
+    pub(in crate::app) host_pick: SnippetHostPick,
+    /// Snippet chosen on the tab, cloned when the host picker opens and read by
+    /// the confirm body and the run step. Cleared when the flow ends.
+    pub(in crate::app) flow_snippet: Option<Snippet>,
+    /// Whether the pending run uses terminal (foreground) mode. Set from the
+    /// host picker (`!` vs Enter), read by the run step.
+    pub(in crate::app) flow_terminal: bool,
+    /// Whether the current snippet form / param form was opened from the
+    /// Snippets tab (vs the host-list snippet picker). Decides where closing
+    /// the form returns and which base page renders behind it.
+    pub(in crate::app) form_return_to_tab: bool,
+    /// Per-snippet run ledger, read by the detail TRACK RECORD verdict and
+    /// trend chart, appended on every run completion.
+    pub(in crate::app) runs: crate::snippet_runs::SnippetRunLog,
 }
 
 impl Default for SnippetState {
@@ -45,6 +115,13 @@ impl Default for SnippetState {
             form_editing: None,
             param_snippet: None,
             output_snippet_name: None,
+            list_state: ListState::default(),
+            view_mode: crate::app::ViewMode::Detailed,
+            host_pick: SnippetHostPick::default(),
+            flow_snippet: None,
+            flow_terminal: false,
+            form_return_to_tab: false,
+            runs: crate::snippet_runs::SnippetRunLog::default(),
         }
     }
 }
@@ -169,6 +246,7 @@ impl SnippetState {
                 self.form.name != b.name
                     || self.form.command != b.command
                     || self.form.description != b.description
+                    || self.form.default_hosts != b.default_hosts
             }
             None => false,
         }
@@ -182,8 +260,17 @@ impl SnippetState {
     pub fn with_store_loaded(paths: Option<&crate::runtime::env::Paths>) -> Self {
         Self {
             store: crate::snippet::SnippetStore::load(paths),
+            runs: crate::snippet_runs::SnippetRunLog::load(paths),
             ..Self::default()
         }
+    }
+
+    pub fn runs(&self) -> &crate::snippet_runs::SnippetRunLog {
+        &self.runs
+    }
+
+    pub fn runs_mut(&mut self) -> &mut crate::snippet_runs::SnippetRunLog {
+        &mut self.runs
     }
 
     /// Open a delete confirmation for the snippet at `idx`. The renderer
@@ -204,6 +291,65 @@ impl SnippetState {
     pub fn close_param_form(&mut self) {
         self.param_form = None;
         self.pending_terminal = false;
+    }
+
+    pub fn list_state(&self) -> &ListState {
+        &self.list_state
+    }
+
+    pub fn list_state_mut(&mut self) -> &mut ListState {
+        &mut self.list_state
+    }
+
+    pub fn view_mode(&self) -> crate::app::ViewMode {
+        self.view_mode
+    }
+
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            crate::app::ViewMode::Detailed => crate::app::ViewMode::Compact,
+            crate::app::ViewMode::Compact => crate::app::ViewMode::Detailed,
+        };
+    }
+
+    pub fn host_pick(&self) -> &SnippetHostPick {
+        &self.host_pick
+    }
+
+    pub fn host_pick_mut(&mut self) -> &mut SnippetHostPick {
+        &mut self.host_pick
+    }
+
+    pub fn reset_host_pick(&mut self) {
+        self.host_pick.reset();
+    }
+
+    pub fn flow_snippet(&self) -> Option<&Snippet> {
+        self.flow_snippet.as_ref()
+    }
+
+    pub fn set_flow_snippet(&mut self, snippet: Option<Snippet>) {
+        self.flow_snippet = snippet;
+    }
+
+    pub fn take_flow_snippet(&mut self) -> Option<Snippet> {
+        self.flow_snippet.take()
+    }
+
+    pub fn flow_terminal(&self) -> bool {
+        self.flow_terminal
+    }
+
+    pub fn set_flow_terminal(&mut self, value: bool) {
+        self.flow_terminal = value;
+    }
+
+    pub fn form_return_to_tab(&self) -> bool {
+        self.form_return_to_tab
+    }
+
+    pub fn set_form_return_to_tab(&mut self, value: bool) {
+        self.form_return_to_tab = value;
     }
 }
 
@@ -305,6 +451,7 @@ mod tests {
             name: "deploy".into(),
             command: "make deploy".into(),
             description: "ship it".into(),
+            default_hosts: Vec::new(),
         }));
         s
     }
@@ -332,5 +479,53 @@ mod tests {
         assert_field_change_is_dirty("name", |f| f.name.push('x'));
         assert_field_change_is_dirty("command", |f| f.command.push('x'));
         assert_field_change_is_dirty("description", |f| f.description.push('x'));
+    }
+
+    #[test]
+    fn default_view_mode_is_detailed() {
+        let s = SnippetState::default();
+        assert_eq!(s.view_mode(), crate::app::ViewMode::Detailed);
+    }
+
+    #[test]
+    fn toggle_view_mode_flips_between_detailed_and_compact() {
+        let mut s = SnippetState::default();
+        s.toggle_view_mode();
+        assert_eq!(s.view_mode(), crate::app::ViewMode::Compact);
+        s.toggle_view_mode();
+        assert_eq!(s.view_mode(), crate::app::ViewMode::Detailed);
+    }
+
+    #[test]
+    fn reset_host_pick_clears_selection_and_resets_cursor() {
+        let mut s = SnippetState::default();
+        s.host_pick_mut().selected.insert("h1".into());
+        s.host_pick_mut().list_state.select(Some(4));
+        s.reset_host_pick();
+        assert!(s.host_pick().selected.is_empty());
+        assert_eq!(s.host_pick().list_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn flow_snippet_set_and_take_round_trips() {
+        let mut s = SnippetState::default();
+        assert!(s.flow_snippet().is_none());
+        s.set_flow_snippet(Some(Snippet {
+            name: "deploy".into(),
+            command: "make deploy".into(),
+            description: String::new(),
+        }));
+        assert_eq!(s.flow_snippet().map(|s| s.name.as_str()), Some("deploy"));
+        let taken = s.take_flow_snippet();
+        assert_eq!(taken.map(|s| s.name), Some("deploy".to_string()));
+        assert!(s.flow_snippet().is_none());
+    }
+
+    #[test]
+    fn flow_terminal_defaults_false_and_sets() {
+        let mut s = SnippetState::default();
+        assert!(!s.flow_terminal());
+        s.set_flow_terminal(true);
+        assert!(s.flow_terminal());
     }
 }

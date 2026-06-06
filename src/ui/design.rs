@@ -1301,6 +1301,37 @@ pub fn section_open(lines: &mut Vec<Line<'static>>, title: &str, width: usize) {
     ]));
 }
 
+/// Push the opening line of a section card with a right-aligned status label
+/// in the top border: `╭─ TITLE ─────── STATUS ─╮`. The `status` spans carry
+/// their own styling (e.g. a colour-by-threshold percentage), so a card can
+/// surface a headline metric in its frame without spending a content row.
+pub fn section_open_with_status(
+    lines: &mut Vec<Line<'static>>,
+    title: &str,
+    status: Vec<Span<'static>>,
+    width: usize,
+) {
+    use unicode_width::UnicodeWidthStr;
+    let border_prefix = format!("{}{} ", BOX_TL, BOX_H); // "╭─ "
+    let title_suffix = " ";
+    let status_w: usize = status.iter().map(|s| s.content.width()).sum();
+    // ╭─ TITLE <fill> STATUS ─╮ : prefix + title + " " + fill + " " + status
+    // + " " + ─ + ╮. The fixed pieces beyond title and status total 8 columns.
+    let reserved = border_prefix.width() + title.width() + title_suffix.width() + status_w + 3;
+    let fill = width.saturating_sub(reserved).saturating_sub(1);
+    let mut spans = vec![
+        Span::styled(border_prefix, theme::border()),
+        Span::styled(title.to_string(), theme::bold()),
+        Span::styled(title_suffix, theme::border()),
+        Span::styled(BOX_H.repeat(fill), theme::border()),
+        Span::styled(" ", theme::border()),
+    ];
+    spans.extend(status);
+    spans.push(Span::styled(format!(" {BOX_H}"), theme::border()));
+    spans.push(Span::styled(BOX_TR, theme::border()));
+    lines.push(Line::from(spans));
+}
+
 /// Push the opening line of a section card without a title: ╭───────╮
 pub fn section_open_notitle(lines: &mut Vec<Line<'static>>, width: usize) {
     let fill = width.saturating_sub(2);

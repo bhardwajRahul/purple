@@ -58,14 +58,19 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         render_field_content(frame, content_area, field, app.snippets.form());
     }
 
-    // Footer below the block. Snippet form has only text fields, so the
-    // dynamic save footer maps to FieldKind::Text (no Space hint).
+    // Footer below the block. The Default hosts field is a picker (Space opens
+    // the host picker), so its footer carries the Space hint; the text fields
+    // map to FieldKind::Text.
     let footer_area = design::render_overlay_footer(frame, block_area);
     if app.forms.is_discard_pending() {
         design::render_discard_prompt(frame, footer_area, app);
     } else {
-        design::form_save_footer(design::FormFooterMode::Expanded(design::FieldKind::Text))
-            .render_with_status(frame, footer_area, app);
+        let kind = app.snippets.form().focused_field.kind();
+        design::form_save_footer(design::FormFooterMode::Expanded(kind)).render_with_status(
+            frame,
+            footer_area,
+            app,
+        );
     }
 }
 
@@ -81,15 +86,35 @@ fn render_field_content(
         SnippetFormField::Name => crate::messages::hints::SNIPPET_NAME,
         SnippetFormField::Command => crate::messages::hints::SNIPPET_COMMAND,
         SnippetFormField::Description => "",
+        SnippetFormField::DefaultHosts => crate::messages::hints::SNIPPET_DEFAULT_HOSTS,
     };
 
-    let field_value = match field {
-        SnippetFormField::Name => &form.name,
-        SnippetFormField::Command => &form.command,
-        SnippetFormField::Description => &form.description,
+    let field_value: String = match field {
+        SnippetFormField::Name => form.name.clone(),
+        SnippetFormField::Command => form.command.clone(),
+        SnippetFormField::Description => form.description.clone(),
+        SnippetFormField::DefaultHosts => {
+            crate::messages::snippet::snippet_default_hosts_summary(&form.default_hosts)
+        }
     };
 
-    let content = if field_value.is_empty() && is_focused {
+    let is_picker = field.is_picker();
+    let content = if is_picker && is_focused {
+        // Picker field: value (or placeholder) plus a right-aligned arrow,
+        // mirroring how host_form renders its picker fields.
+        let arrow_pos = (area.width as usize).saturating_sub(1);
+        let (display, display_style) = if field_value.is_empty() {
+            (placeholder.to_string(), theme::muted())
+        } else {
+            (field_value.clone(), theme::bold())
+        };
+        let gap = arrow_pos.saturating_sub(display.width());
+        Line::from(vec![
+            Span::styled(display, display_style),
+            Span::raw(" ".repeat(gap)),
+            Span::styled(design::PICKER_ARROW, theme::muted()),
+        ])
+    } else if field_value.is_empty() && is_focused {
         if placeholder.is_empty() {
             Line::from(Span::styled(
                 crate::messages::hints::SNIPPET_OPTIONAL,
@@ -101,12 +126,13 @@ fn render_field_content(
     } else if field_value.is_empty() {
         Line::from(Span::raw(""))
     } else {
-        Line::from(Span::styled(field_value.to_string(), theme::bold()))
+        Line::from(Span::styled(field_value.clone(), theme::bold()))
     };
 
     frame.render_widget(Paragraph::new(content), area);
 
-    if is_focused {
+    // The Default hosts field is picker-driven, not text, so it shows no cursor.
+    if is_focused && !is_picker {
         let prefix: String = field_value.chars().take(form.cursor_pos).collect();
         let cursor_x = area
             .x

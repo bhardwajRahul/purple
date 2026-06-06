@@ -8,6 +8,28 @@ use super::design;
 use super::theme;
 use crate::app::{App, Screen};
 
+/// Render the snippet delete confirmation popup. Shared by the host-list
+/// snippet picker and the Snippets tab so the dialog reads identically. Drawn
+/// as a centred destructive popup to match host delete and the other danger
+/// dialogs rather than a footer prompt.
+pub(crate) fn render_delete_popup(frame: &mut Frame, app: &App) {
+    let name = app
+        .snippets
+        .pending_delete()
+        .and_then(|i| app.snippets.store().snippets.get(i))
+        .map(|s| s.name.as_str())
+        .unwrap_or("");
+    design::render_destructive_popup(
+        frame,
+        crate::messages::CONFIRM_SNIPPET_DELETE_TITLE,
+        &crate::messages::confirm_snippet_delete_question(&super::truncate(name, 32)),
+        crate::messages::CONFIRM_SNIPPET_DELETE_DETAIL,
+        "delete",
+        "keep",
+        app,
+    );
+}
+
 pub fn render(frame: &mut Frame, app: &mut App) {
     let host_count = match &app.screen {
         Screen::SnippetPicker | Screen::SnippetForm | Screen::SnippetParamForm => {
@@ -185,24 +207,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             .action("Esc", fl::ESC_CANCEL)
             .render_with_status(frame, footer_area, app);
     } else if app.snippets.pending_delete().is_some() {
-        let name = app
-            .snippets
-            .pending_delete()
-            .and_then(|i| app.snippets.store().snippets.get(i))
-            .map(|s| s.name.as_str())
-            .unwrap_or("");
-        // Destructive confirm renders as centred popup so the
-        // affordance matches host delete and the other danger
-        // dialogs rather than a footer prompt under the picker.
-        design::render_destructive_popup(
-            frame,
-            crate::messages::CONFIRM_SNIPPET_DELETE_TITLE,
-            &crate::messages::confirm_snippet_delete_question(&super::truncate(name, 32)),
-            crate::messages::CONFIRM_SNIPPET_DELETE_DETAIL,
-            "delete",
-            "keep",
-            app,
-        );
+        render_delete_popup(frame, app);
         super::render_footer_with_status(frame, footer_area, Vec::new(), app);
     } else {
         let mut f = design::Footer::new();

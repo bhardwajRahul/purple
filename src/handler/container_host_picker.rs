@@ -27,8 +27,8 @@ pub(crate) fn uncached_aliases(app: &App) -> Vec<String> {
 }
 
 /// Hosts that match the live query, paired with the matching hostname
-/// for display. Same case-insensitive substring match the tunnel host
-/// picker uses.
+/// for display, best match first. Uses the shared fuzzy host ranking, the
+/// same type-to-filter behaviour as the tunnel and snippet host pickers.
 pub(crate) fn filtered_hosts(app: &App) -> Vec<(String, String)> {
     filter_hosts(
         app.ui.container_host_picker_query(),
@@ -38,23 +38,23 @@ pub(crate) fn filtered_hosts(app: &App) -> Vec<(String, String)> {
 }
 
 /// Shared filter used by both the public `filtered_hosts(&App)` (render side)
-/// and the picker slice. Single source of truth for the uncached-host match.
+/// and the picker slice. Single source of truth for the uncached-host match:
+/// the uncached hosts, fuzzy-ranked against the query.
 fn filter_hosts(
     query: &str,
     hosts: &HostState,
     container_state: &ContainerState,
 ) -> Vec<(String, String)> {
-    let query = query.to_lowercase();
-    hosts
+    let candidates: Vec<usize> = hosts
         .list()
         .iter()
-        .filter(|h| !container_state.cache_contains(&h.alias))
-        .filter(|h| {
-            if query.is_empty() {
-                return true;
-            }
-            h.alias.to_lowercase().contains(&query) || h.hostname.to_lowercase().contains(&query)
-        })
+        .enumerate()
+        .filter(|(_, h)| !container_state.cache_contains(&h.alias))
+        .map(|(i, _)| i)
+        .collect();
+    crate::fuzzy::rank_host_indices(hosts.list(), &candidates, query)
+        .into_iter()
+        .filter_map(|i| hosts.list().get(i))
         .map(|h| (h.alias.clone(), h.hostname.clone()))
         .collect()
 }

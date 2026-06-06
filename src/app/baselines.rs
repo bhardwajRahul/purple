@@ -43,6 +43,7 @@ pub struct SnippetFormBaseline {
     pub name: String,
     pub command: String,
     pub description: String,
+    pub default_hosts: Vec<String>,
 }
 
 /// Baseline snapshot of provider form content for dirty-check on Esc.
@@ -410,6 +411,7 @@ impl App {
             name: self.snippets.form.name.clone(),
             command: self.snippets.form.command.clone(),
             description: self.snippets.form.description.clone(),
+            default_hosts: self.snippets.form.default_hosts.clone(),
         });
     }
 

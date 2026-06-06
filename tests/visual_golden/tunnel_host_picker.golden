@@ -1,10 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  purple       hosts      tunnels      containers      keys                                       │
+│  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │     NAME                   FORWARD                                     SPEED     UPTIME    LAST▾ │
 │ ──────────────────╭ Add Tunnel › Select Host (31) ───────────────────────────╮────────────────── │
-│ ▌ ○ bastion-ams   │  type to filter hosts...                                 │              <1m  │
+│ ▌ ○ bastion-ams   │ /  type to filter hosts...                               │              <1m  │
 │   ○ bastion-ams   │ ─────────────────────────────────────────────────────────│              <1m  │
 │   ○ db-primary    │  bastion-ams  140.82.121.3                               │               1h  │
 │   ○ db-primary    │  db-primary  10.30.1.5                                   │               1h  │
@@ -650,10 +650,9 @@
 (18,6) fg=White bg=Magenta mod=BOLD|DIM
 (19,6) fg=White bg=Magenta mod=BOLD|DIM
 (20,6) fg=Reset bg=Reset mod=DIM
-(21,6) fg=Reset bg=Reset mod=DIM
-(22,6) fg=Reset bg=Reset mod=DIM
-(23,6) fg=Reset bg=Reset mod=DIM
-(24,6) fg=Reset bg=Reset mod=DIM
+(21,6) fg=White bg=Magenta mod=BOLD
+(22,6) fg=White bg=Magenta mod=BOLD
+(23,6) fg=White bg=Magenta mod=BOLD
 (25,6) fg=Reset bg=Reset mod=DIM
 (26,6) fg=Reset bg=Reset mod=DIM
 (27,6) fg=Reset bg=Reset mod=DIM
@@ -675,6 +674,8 @@
 (43,6) fg=Reset bg=Reset mod=DIM
 (44,6) fg=Reset bg=Reset mod=DIM
 (45,6) fg=Reset bg=Reset mod=DIM
+(46,6) fg=Reset bg=Reset mod=DIM
+(47,6) fg=Reset bg=Reset mod=DIM
 (79,6) fg=Reset bg=Reset mod=DIM
 (80,6) fg=White bg=Magenta mod=BOLD|DIM
 (81,6) fg=White bg=Magenta mod=BOLD|DIM

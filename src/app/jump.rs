@@ -344,6 +344,7 @@ pub enum JumpMode {
     Hosts,
     Tunnels,
     Containers,
+    Snippets,
     Keys,
 }
 
@@ -451,6 +452,33 @@ fn round_robin_actions_with_bias(
     let rest: Vec<JumpAction> = collected
         .into_iter()
         .filter(|a| !(biased_keys.contains(&a.key) && a.target == preferred))
+        .collect();
+    let mut out: Vec<JumpHit> = biased.into_iter().map(JumpHit::Action).collect();
+    out.extend(round_robin_actions_by_category(rest.into_iter()));
+    out
+}
+
+/// Like `round_robin_actions_with_bias` but pulls up to `bump` actions whose
+/// LABEL category matches `category` to the front. Used by the Snippets tab,
+/// whose run-actions dispatch to the host list (`target == Hosts`) yet belong to
+/// the "Snippets" category, so the target-based bias would miss them.
+fn round_robin_actions_with_category_bias(
+    actions: impl Iterator<Item = JumpAction>,
+    category: &str,
+    bump: usize,
+) -> Vec<JumpHit> {
+    let collected: Vec<JumpAction> = actions.collect();
+    let cat_of = |a: &JumpAction| a.label.split_once(':').map(|(c, _)| c.trim()).unwrap_or("");
+    let biased: Vec<JumpAction> = collected
+        .iter()
+        .filter(|a| cat_of(a) == category)
+        .take(bump)
+        .copied()
+        .collect();
+    let biased_keys: std::collections::HashSet<char> = biased.iter().map(|a| a.key).collect();
+    let rest: Vec<JumpAction> = collected
+        .into_iter()
+        .filter(|a| !(biased_keys.contains(&a.key) && cat_of(a) == category))
         .collect();
     let mut out: Vec<JumpHit> = biased.into_iter().map(JumpHit::Action).collect();
     out.extend(round_robin_actions_by_category(rest.into_iter()));
@@ -650,10 +678,22 @@ impl JumpState {
             JumpMode::Tunnels => Some(JumpActionTarget::Tunnels),
             JumpMode::Containers => Some(JumpActionTarget::Containers),
             JumpMode::Keys => Some(JumpActionTarget::Keys),
+            // Snippet run-actions dispatch to the host list (target=Hosts), so
+            // they bias by label category instead of by dispatch target.
+            JumpMode::Snippets => None,
         };
-        let actions = match preferred_target {
-            Some(t) => round_robin_actions_with_bias(filtered.into_iter(), t, EMPTY_STATE_TAB_BIAS),
-            None => round_robin_actions_by_category(filtered.into_iter()),
+        let actions = match self.mode {
+            JumpMode::Snippets => round_robin_actions_with_category_bias(
+                filtered.into_iter(),
+                "Snippets",
+                EMPTY_STATE_TAB_BIAS,
+            ),
+            _ => match preferred_target {
+                Some(t) => {
+                    round_robin_actions_with_bias(filtered.into_iter(), t, EMPTY_STATE_TAB_BIAS)
+                }
+                None => round_robin_actions_by_category(filtered.into_iter()),
+            },
         };
         actions
             .into_iter()
@@ -785,6 +825,38 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         f(&paths);
+    }
+
+    #[test]
+    fn snippets_mode_empty_state_leads_with_snippet_actions() {
+        // The Snippets tab opens jump in Snippets mode; the empty-state must
+        // bias the "Snippets:" run-actions to the front (they dispatch to the
+        // host list, so the bias is by label category, not by target).
+        let state = JumpState::for_mode(JumpMode::Snippets);
+        let hits = state.visible_hits();
+        match hits.first().expect("at least one action") {
+            JumpHit::Action(a) => assert!(
+                a.label.starts_with("Snippets:"),
+                "expected a Snippets action first, got {:?}",
+                a.label
+            ),
+            other => panic!("expected an action first, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hosts_mode_empty_state_does_not_lead_with_snippet_actions() {
+        // Control: in the default Hosts mode the round-robin leads with the
+        // highest-priority category (Hosts), not Snippets.
+        let state = JumpState::for_mode(JumpMode::Hosts);
+        let hits = state.visible_hits();
+        if let Some(JumpHit::Action(a)) = hits.first() {
+            assert!(
+                !a.label.starts_with("Snippets:"),
+                "Hosts mode should not lead with a Snippets action, got {:?}",
+                a.label
+            );
+        }
     }
 
     #[test]

@@ -91,11 +91,13 @@ I wanted one place for all of that. So I built it.
 
 ![keys](screenshots/keys.png)
 
+🪄 **Run a command across your fleet from one tab.** Save reusable snippets with parameters, pick any set of hosts and run. purple shows a command's blast radius before you fan it out and tracks every run, so you know how reliable a snippet is before you trust it. `Tab` from the Hosts page.
+
+![multi-host snippets](screenshots/snippets.png)
+
 **And more.**
 
 🚚 Visual file transfer with split-pane explorer.
-
-🪄 Multi-host command execution with snippets.
 
 🗝️ Automatic password retrieval from OS Keychain, 1Password, Bitwarden, pass, the HashiCorp Vault KV secrets engine and Proton Pass.
 

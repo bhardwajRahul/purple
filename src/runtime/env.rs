@@ -61,6 +61,11 @@ impl Paths {
         self.purple_dir().join("key_activity.json")
     }
 
+    /// `~/.purple/snippet_runs.json`.
+    pub fn snippet_runs(&self) -> PathBuf {
+        self.purple_dir().join("snippet_runs.json")
+    }
+
     /// `~/.purple/sync_history.tsv`.
     pub fn sync_history(&self) -> PathBuf {
         self.purple_dir().join("sync_history.tsv")

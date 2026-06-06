@@ -9,7 +9,9 @@ pub const HOSTNAME_WHITESPACE: &str = "Hostname can't contain whitespace.";
 pub const USER_WHITESPACE: &str = "User can't contain whitespace.";
 pub const PASSWORD_EMPTY: &str = "Password can't be empty.";
 pub const CANCELLED: &str = "Cancelled.";
-pub const DESCRIPTION_CONTROL_CHARS: &str = "Description contains control characters.";
+// Snippet description control-char rejection: defined once in the snippet module
+// and re-exported here so the CLI add path and the TUI form share one string.
+pub use super::SNIPPET_DESCRIPTION_CONTROL_CHARS as DESCRIPTION_CONTROL_CHARS;
 
 pub use super::contains_control_chars as control_chars;
 

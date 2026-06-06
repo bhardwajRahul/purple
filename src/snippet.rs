@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -25,6 +26,11 @@ pub struct SnippetStore {
     pub snippets: Vec<Snippet>,
     /// Override path for save(). None uses the default ~/.purple/snippets.
     pub path_override: Option<PathBuf>,
+    /// Default target host aliases per snippet name, persisted as the optional
+    /// `hosts=` line. Pre-selected when the run picker opens. Kept out of the
+    /// `Snippet` struct so existing call sites that build snippets stay
+    /// untouched; the association is by name.
+    pub targets: HashMap<String, Vec<String>>,
 }
 
 fn config_path(paths: Option<&crate::runtime::env::Paths>) -> Option<PathBuf> {
@@ -67,6 +73,7 @@ impl SnippetStore {
     /// Parse INI-style snippet config.
     pub fn parse(content: &str) -> Self {
         let mut snippets = Vec::new();
+        let mut targets: HashMap<String, Vec<String>> = HashMap::new();
         let mut current: Option<Snippet> = None;
 
         for line in content.lines() {
@@ -101,6 +108,16 @@ impl SnippetStore {
                     match key {
                         "command" => snippet.command = value,
                         "description" => snippet.description = value,
+                        "hosts" => {
+                            let aliases: Vec<String> = value
+                                .split(',')
+                                .map(|a| unescape_alias(a.trim()))
+                                .filter(|a| !a.is_empty())
+                                .collect();
+                            if !aliases.is_empty() {
+                                targets.insert(snippet.name.clone(), aliases);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -111,9 +128,13 @@ impl SnippetStore {
                 snippets.push(snippet);
             }
         }
+        // Drop targets for sections that did not yield a snippet (no command,
+        // or a duplicate name) so the map never holds orphans.
+        targets.retain(|name, _| snippets.iter().any(|s| &s.name == name));
         Self {
             snippets,
             path_override: None,
+            targets,
         }
     }
 
@@ -139,9 +160,33 @@ impl SnippetStore {
             if !snippet.description.is_empty() {
                 content.push_str(&format!("description={}\n", snippet.description));
             }
+            if let Some(hosts) = self.targets.get(&snippet.name) {
+                if !hosts.is_empty() {
+                    let joined = hosts
+                        .iter()
+                        .map(|a| escape_alias(a))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    content.push_str(&format!("hosts={joined}\n"));
+                }
+            }
         }
 
         fs_util::atomic_write(&path, content.as_bytes())
+    }
+
+    /// Default target host aliases saved for `name` (empty when none).
+    pub fn targets_for(&self, name: &str) -> &[String] {
+        self.targets.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Set (or clear, when empty) the default target host aliases for `name`.
+    pub fn set_targets(&mut self, name: &str, aliases: Vec<String>) {
+        if aliases.is_empty() {
+            self.targets.remove(name);
+        } else {
+            self.targets.insert(name.to_string(), aliases);
+        }
     }
 
     /// Get a snippet by name.
@@ -158,10 +203,25 @@ impl SnippetStore {
         }
     }
 
-    /// Remove a snippet by name.
+    /// Remove a snippet by name, dropping its saved targets too.
     pub fn remove(&mut self, name: &str) {
         self.snippets.retain(|s| s.name != name);
+        self.targets.remove(name);
     }
+}
+
+/// Percent-encode the comma (and the percent sign itself) in a host alias so it
+/// survives the comma-joined `hosts=` line. A host whose SSH `Host` line uses a
+/// comma (e.g. `Host web1,web2`) is a single concrete alias containing a comma;
+/// without escaping it would shred into phantom aliases on reload.
+fn escape_alias(alias: &str) -> String {
+    alias.replace('%', "%25").replace(',', "%2C")
+}
+
+/// Inverse of [`escape_alias`]. Unescape order is the reverse of escape order so
+/// a literal `%2C` in an alias round-trips intact.
+fn unescape_alias(token: &str) -> String {
+    token.replace("%2C", ",").replace("%25", "%")
 }
 
 /// Validate a snippet name: non-empty, no leading/trailing whitespace,
@@ -241,20 +301,42 @@ pub fn parse_params(command: &str) -> Vec<SnippetParam> {
     params
 }
 
+/// Count the distinct valid `{{name}}` parameters in a command without
+/// allocating the full parsed list. Equal to `parse_params(command).len()`;
+/// used by the list row, which only needs the count, on every frame.
+pub fn count_params(command: &str) -> usize {
+    let mut seen: Vec<&str> = Vec::new();
+    let bytes = command.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i + 3 < len {
+        if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
+            if let Some(end) = command[i + 2..].find("}}") {
+                let inner = &command[i + 2..i + 2 + end];
+                let name = inner.split_once(':').map_or(inner, |(n, _)| n);
+                if validate_param_name(name).is_ok() && !seen.contains(&name) && seen.len() < 20 {
+                    seen.push(name);
+                }
+                i = i + 2 + end + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    seen.len()
+}
+
 /// Validate a parameter name: non-empty, alphanumeric/underscore/hyphen only.
 /// Rejects `{`, `}`, `'`, whitespace and control chars.
 pub fn validate_param_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
-        return Err("Parameter name cannot be empty.".to_string());
+        return Err(crate::messages::SNIPPET_PARAM_NAME_EMPTY.to_string());
     }
     if !name
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        return Err(format!(
-            "Parameter name '{}' contains invalid characters.",
-            name
-        ));
+        return Err(crate::messages::snippet_param_name_invalid(name));
     }
     Ok(())
 }
@@ -278,15 +360,20 @@ pub fn substitute_params(
                 } else {
                     (inner, None)
                 };
-                let value = values
-                    .get(name)
-                    .filter(|v| !v.is_empty())
-                    .map(|v| v.as_str())
-                    .or(default)
-                    .unwrap_or("");
-                result.push_str(&shell_escape(value));
-                i = i + 2 + end + 2;
-                continue;
+                // Only a valid name is a parameter. parse_params and count_params
+                // gate the same way, so an invalid placeholder (e.g. `{{a b}}`)
+                // stays literal here instead of being silently rewritten to ''.
+                if validate_param_name(name).is_ok() {
+                    let value = values
+                        .get(name)
+                        .filter(|v| !v.is_empty())
+                        .map(|v| v.as_str())
+                        .or(default)
+                        .unwrap_or("");
+                    result.push_str(&shell_escape(value));
+                    i = i + 2 + end + 2;
+                    continue;
+                }
             }
         }
         // Properly decode UTF-8 character (not byte-level cast)
@@ -331,8 +418,23 @@ pub fn sanitize_output(input: &str) -> String {
                     }
                 }
             }
+            '\u{009b}' => {
+                // 8-bit CSI (the single-char form of ESC[): consume the
+                // parameter bytes up to the final byte 0x40-0x7E so a colour or
+                // cursor sequence does not leak its parameters into the TUI as
+                // literal text. The terminator is bounded, so this never eats
+                // arbitrary trailing output (unlike a consume-until-ST string
+                // sequence, which the other C1 codes are left to strip
+                // byte-by-byte instead).
+                while let Some(&ch) = chars.peek() {
+                    chars.next();
+                    if ('\x40'..='\x7e').contains(&ch) {
+                        break;
+                    }
+                }
+            }
             c if ('\u{0080}'..='\u{009F}').contains(&c) => {
-                // C1 control codes: skip
+                // Other C1 control codes: skip the lone byte.
             }
             c if c.is_control() && c != '\n' && c != '\t' => {
                 // Other control chars (except newline/tab): skip
@@ -378,10 +480,12 @@ pub struct ChildGuard {
 
 impl ChildGuard {
     fn new(child: std::process::Child) -> Self {
-        // i32::try_from avoids silent overflow for PIDs > i32::MAX.
-        // Fallback -1 makes killpg a harmless no-op on overflow.
+        // i32::try_from avoids silent overflow for PIDs > i32::MAX. Fallback 0
+        // is a sentinel the Drop guard treats as "no process group": it skips
+        // the group signal entirely (a negative pgid built from 0 or 1 would
+        // target our own group or PID 1/init) and falls back to child.kill().
         // In practice Linux caps PIDs well below i32::MAX.
-        let pgid = i32::try_from(child.id()).unwrap_or(-1);
+        let pgid = i32::try_from(child.id()).unwrap_or(0);
         Self {
             inner: std::sync::Mutex::new(Some(child)),
             pgid,
@@ -397,73 +501,81 @@ impl Drop for ChildGuard {
             if let Ok(Some(_)) = child.try_wait() {
                 return;
             }
-            // SAFETY: self.pgid was set by setpgid(0,0) in pre_exec and is
-            // valid for the lifetime of this SnippetChild. kill() with a
-            // negative PID sends the signal to the entire process group.
-            // ESRCH (process already exited) is the expected race; the
-            // return value is intentionally ignored.
+            // Group signal only for a valid pgid (> 1). pgid 0 is the overflow
+            // sentinel; a negative pgid built from 0 or 1 would hit our own
+            // group or PID 1 (init), so skip straight to the direct child.kill().
             #[cfg(unix)]
-            unsafe {
-                libc::kill(-self.pgid, libc::SIGTERM);
-            }
-            // Poll for up to 500ms
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-            loop {
-                if let Ok(Some(_)) = child.try_wait() {
-                    return;
+            if self.pgid > 1 {
+                // SAFETY: self.pgid was set by setpgid(0,0) in pre_exec and is
+                // valid for the lifetime of this SnippetChild. kill() with a
+                // negative PID sends the signal to the entire process group.
+                // ESRCH (process already exited) is the expected race; the
+                // return value is intentionally ignored.
+                unsafe {
+                    libc::kill(-self.pgid, libc::SIGTERM);
                 }
-                if std::time::Instant::now() >= deadline {
-                    break;
+                // Poll for up to 500ms
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+                loop {
+                    if let Ok(Some(_)) = child.try_wait() {
+                        return;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                // SAFETY: same invariants as the SIGTERM call above.
+                unsafe {
+                    libc::kill(-self.pgid, libc::SIGKILL);
+                }
             }
-            // SAFETY: same invariants as the SIGTERM call above.
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(-self.pgid, libc::SIGKILL);
-            }
-            // Fallback: direct kill in case setpgid failed in pre_exec
+            // Fallback: direct kill in case setpgid failed in pre_exec or the
+            // pgid was the overflow sentinel.
             let _ = child.kill();
             let _ = child.wait();
         }
     }
 }
 
-/// Read lines from a pipe. Stores up to `MAX_OUTPUT_LINES` but continues
-/// draining the pipe after that to prevent the child from blocking.
-fn read_pipe_capped<R: io::Read>(reader: R) -> String {
+/// Read a pipe into a String under two hard bounds: a total byte cap
+/// (`SSH_OUTPUT_MAX_BYTES`) and a line cap (`MAX_OUTPUT_LINES`). The byte cap is
+/// applied first via [`read_bounded`], which reads fixed chunks and drains the
+/// remainder to a sink once the cap is hit, so a single newline-free megastream
+/// from a hostile remote can never buffer unbounded memory. The bounded bytes
+/// are then split into at most `MAX_OUTPUT_LINES` lines.
+fn read_pipe_capped<R: io::Read>(reader: R, alias: &str, stream: &str) -> String {
     use io::BufRead;
-    let mut reader = io::BufReader::new(reader);
+    let mut br = io::BufReader::new(reader);
+    let bounded = read_bounded(&mut br, SSH_OUTPUT_MAX_BYTES, alias, stream);
+
     let mut output = String::new();
     let mut line_count = 0;
-    let mut capped = false;
+    let mut rdr = io::BufReader::new(bounded.as_slice());
     let mut buf = Vec::new();
     loop {
         buf.clear();
-        match reader.read_until(b'\n', &mut buf) {
+        match rdr.read_until(b'\n', &mut buf) {
             Ok(0) => break, // EOF
             Ok(_) => {
-                if !capped {
-                    if line_count < MAX_OUTPUT_LINES {
-                        if line_count > 0 {
-                            output.push('\n');
-                        }
-                        // Strip trailing newline (and \r for CRLF)
-                        if buf.last() == Some(&b'\n') {
-                            buf.pop();
-                            if buf.last() == Some(&b'\r') {
-                                buf.pop();
-                            }
-                        }
-                        // Lossy conversion handles non-UTF-8 output
-                        output.push_str(&String::from_utf8_lossy(&buf));
-                        line_count += 1;
-                    } else {
-                        output.push_str("\n[Output truncated at 10,000 lines]");
-                        capped = true;
+                if line_count < MAX_OUTPUT_LINES {
+                    if line_count > 0 {
+                        output.push('\n');
                     }
+                    // Strip trailing newline (and \r for CRLF)
+                    if buf.last() == Some(&b'\n') {
+                        buf.pop();
+                        if buf.last() == Some(&b'\r') {
+                            buf.pop();
+                        }
+                    }
+                    // Lossy conversion handles non-UTF-8 output
+                    output.push_str(&String::from_utf8_lossy(&buf));
+                    line_count += 1;
+                } else {
+                    output.push_str("\n[Output truncated at 10,000 lines]");
+                    break;
                 }
-                // If capped, keep reading but discard to drain the pipe
             }
             Err(_) => break,
         }
@@ -591,12 +703,14 @@ fn execute_host(
             };
 
             // Spawn reader threads
+            let alias_out = alias.to_string();
             let stdout_handle = std::thread::spawn(move || match stdout_pipe {
-                Some(pipe) => read_pipe_capped(pipe),
+                Some(pipe) => read_pipe_capped(pipe, &alias_out, "stdout"),
                 None => String::new(),
             });
+            let alias_err = alias.to_string();
             let stderr_handle = std::thread::spawn(move || match stderr_pipe {
-                Some(pipe) => read_pipe_capped(pipe),
+                Some(pipe) => read_pipe_capped(pipe, &alias_err, "stderr"),
                 None => String::new(),
             });
 
@@ -956,6 +1070,32 @@ fn read_bounded<R: std::io::Read>(
         }
     }
     out
+}
+
+/// Static, execution-free blast-radius analysis of a snippet command for the
+/// Snippets detail IMPACT card. Implemented in [`crate::snippet_impact`]
+/// (quote-aware segmenter + curated capability table); re-exported here so the
+/// `crate::snippet::analyze_command` path stays stable.
+pub use crate::snippet_impact::{Category, CommandImpact, Finding, Severity, analyze_command};
+
+/// Indices of snippets in `store` matching `query` by name, command or
+/// description (case-insensitive). A `None` or empty query returns every index
+/// in order. Shared by the host-list snippet picker and the Snippets tab.
+pub fn filtered_indices(store: &SnippetStore, query: Option<&str>) -> Vec<usize> {
+    match query {
+        None | Some("") => (0..store.snippets.len()).collect(),
+        Some(q) => store
+            .snippets
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                crate::app::contains_ci(&s.name, q)
+                    || crate::app::contains_ci(&s.command, q)
+                    || crate::app::contains_ci(&s.description, q)
+            })
+            .map(|(i, _)| i)
+            .collect(),
+    }
 }
 
 #[cfg(test)]

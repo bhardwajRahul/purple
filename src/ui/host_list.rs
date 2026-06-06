@@ -57,6 +57,24 @@ pub(super) fn build_update_label(
     }
 }
 
+/// Decorate a list-block with the update badge in the top border
+/// (right-aligned) when an update is available; a no-op otherwise. Shared by the
+/// overview tabs so the "update available" badge appears consistently on every
+/// tab, not just the ones that hand-rolled it.
+pub(super) fn with_update_badge(
+    block: ratatui::widgets::Block<'static>,
+    app: &App,
+    width: u16,
+) -> ratatui::widgets::Block<'static> {
+    match app.update.available() {
+        Some(ver) => {
+            let label = build_update_label(ver, app.update.headline(), app.update.hint(), width);
+            block.title_top(Line::from(Span::styled(label, theme::update_badge())).right_aligned())
+        }
+        None => block,
+    }
+}
+
 const HOST_MIN: usize = 12;
 /// Width of the row marker (indent + selection checkmark space).
 const MARKER_WIDTH: usize = 2;
@@ -398,6 +416,7 @@ pub(crate) fn top_bar_spans(app: &App) -> Vec<Span<'static>> {
     let host_active = app.top_page == TopPage::Hosts;
     let tunnel_active = app.top_page == TopPage::Tunnels;
     let containers_active = app.top_page == TopPage::Containers;
+    let snippets_active = app.top_page == TopPage::Snippets;
     let keys_active = app.top_page == TopPage::Keys;
 
     vec![
@@ -424,6 +443,15 @@ pub(crate) fn top_bar_spans(app: &App) -> Vec<Span<'static>> {
         Span::styled(
             "containers",
             if containers_active {
+                theme::nav_active()
+            } else {
+                theme::muted()
+            },
+        ),
+        Span::raw(TOP_BAR_GAP),
+        Span::styled(
+            "snippets",
+            if snippets_active {
                 theme::nav_active()
             } else {
                 theme::muted()

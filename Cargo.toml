@@ -1,6 +1,6 @@
 [package]
 name = "purple-ssh"
-version = "3.21.1"
+version = "3.22.0"
 edition = "2024"
 description = "Open-source terminal SSH manager that keeps ~/.ssh/config in sync with your cloud infra. Spin up a VM on AWS, GCP, Azure, Hetzner or 12 other cloud providers and it appears in your host list. Destroy it and the entry dims. Search hundreds of hosts, transfer files, manage Docker and Podman over SSH, sign Vault SSH certs. Rust TUI, MIT licensed."
 license = "MIT"

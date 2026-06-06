@@ -1,10 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  purple       hosts      tunnels      containers      keys                                       │
+│  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ 29 ──────────────────────────────────────────────────────────────────────────────────────────────╮
 │     NAME                IMAGE                                                            UPTIME  │
 │ ──────────────────╭ Add Container Host › Select (23) ────────────────────────╮────────────────── │
-│ ▌── aws-api-stagin│  type to filter hosts...                                 │─────────────────  │
+│ ▌── aws-api-stagin│ /  type to filter hosts...                               │─────────────────  │
 │   ● api           │ ─────────────────────────────────────────────────────────│               2d  │
 │   ● datadog-agent │  db-proton  db1.example.com                              │               2d  │
 │   ● nginx         │  monitoring  10.30.2.10                                  │               2d  │
@@ -650,10 +650,9 @@
 (18,6) fg=White bg=Magenta mod=BOLD|DIM
 (19,6) fg=White bg=Magenta mod=BOLD|DIM
 (20,6) fg=Reset bg=Reset mod=DIM
-(21,6) fg=Reset bg=Reset mod=DIM
-(22,6) fg=Reset bg=Reset mod=DIM
-(23,6) fg=Reset bg=Reset mod=DIM
-(24,6) fg=Reset bg=Reset mod=DIM
+(21,6) fg=White bg=Magenta mod=BOLD
+(22,6) fg=White bg=Magenta mod=BOLD
+(23,6) fg=White bg=Magenta mod=BOLD
 (25,6) fg=Reset bg=Reset mod=DIM
 (26,6) fg=Reset bg=Reset mod=DIM
 (27,6) fg=Reset bg=Reset mod=DIM
@@ -675,6 +674,8 @@
 (43,6) fg=Reset bg=Reset mod=DIM
 (44,6) fg=Reset bg=Reset mod=DIM
 (45,6) fg=Reset bg=Reset mod=DIM
+(46,6) fg=Reset bg=Reset mod=DIM
+(47,6) fg=Reset bg=Reset mod=DIM
 (79,6) fg=Reset bg=Reset mod=DIM
 (80,6) fg=White bg=Magenta mod=BOLD|DIM
 (81,6) fg=White bg=Magenta mod=BOLD|DIM

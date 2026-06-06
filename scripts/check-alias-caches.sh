@@ -47,6 +47,7 @@ app/ping.rs:status
 app/provider_state.rs:expanded_providers
 app/provider_state.rs:sync_history
 app/provider_state.rs:syncing
+app/snippet_state.rs:selected
 app/tunnel_state.rs:active
 app/tunnel_state.rs:demo_live_snapshots
 app/tunnel_state.rs:summaries_cache
@@ -68,7 +69,9 @@ app/vault.rs:sign_in_flight"
 #   alias, self-pruning:
 #     tunnel_state::active (worker drops entry when tunnel process exits).
 #   transient, scoped to one picker session, reset on screen exit:
-#     key_push_state::selected.
+#     key_push_state::selected,
+#     snippet_state::selected (SnippetHostPick: reset on picker open via
+#     reset_host_pick, cleared on Esc; never read after the run commits).
 #   non-alias keys:
 #     containers_overview::entries (x2 on InspectCache and LogsCache),
 #     containers_overview::in_flight (x2 same caches): container id.

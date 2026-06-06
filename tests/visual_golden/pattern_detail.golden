@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  purple       hosts      tunnels      containers      keys                                       │
+│  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ 32 ── ●27 ✖3 ○1 ─────────────────────────────────────────╮╭─ PATTERN MATCH ──────────────────────╮
 │     NAME                             TAGS          LAST▾ ││ pve-*                                │
@@ -164,6 +164,14 @@
 (57,1) fg=Reset bg=Reset mod=DIM
 (58,1) fg=Reset bg=Reset mod=DIM
 (59,1) fg=Reset bg=Reset mod=DIM
+(60,1) fg=Reset bg=Reset mod=DIM
+(61,1) fg=Reset bg=Reset mod=DIM
+(62,1) fg=Reset bg=Reset mod=DIM
+(63,1) fg=Reset bg=Reset mod=DIM
+(70,1) fg=Reset bg=Reset mod=DIM
+(71,1) fg=Reset bg=Reset mod=DIM
+(72,1) fg=Reset bg=Reset mod=DIM
+(73,1) fg=Reset bg=Reset mod=DIM
 (99,1) fg=Reset bg=Reset mod=DIM
 (0,2) fg=Reset bg=Reset mod=DIM
 (1,2) fg=Reset bg=Reset mod=DIM

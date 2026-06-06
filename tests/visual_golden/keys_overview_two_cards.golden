@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  purple       hosts      tunnels      containers      keys                                                                                                                                           │
+│  purple       hosts      tunnels      containers      snippets      keys                                                                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ VAULT SSH ─ 4 active ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  gateway-vpn   ssh-client-signer/sign/infra  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  7h 0m   │
@@ -270,10 +270,18 @@
 (47,1) fg=Reset bg=Reset mod=DIM
 (48,1) fg=Reset bg=Reset mod=DIM
 (49,1) fg=Reset bg=Reset mod=DIM
-(56,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
-(57,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
-(58,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
-(59,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
+(56,1) fg=Reset bg=Reset mod=DIM
+(57,1) fg=Reset bg=Reset mod=DIM
+(58,1) fg=Reset bg=Reset mod=DIM
+(59,1) fg=Reset bg=Reset mod=DIM
+(60,1) fg=Reset bg=Reset mod=DIM
+(61,1) fg=Reset bg=Reset mod=DIM
+(62,1) fg=Reset bg=Reset mod=DIM
+(63,1) fg=Reset bg=Reset mod=DIM
+(70,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
+(71,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
+(72,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
+(73,1) fg=Reset bg=Reset mod=BOLD|UNDERLINED
 (199,1) fg=Reset bg=Reset mod=DIM
 (0,2) fg=Reset bg=Reset mod=DIM
 (1,2) fg=Reset bg=Reset mod=DIM

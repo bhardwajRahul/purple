@@ -1,13 +1,13 @@
-//! Shared building blocks for the alias-and-hostname picker family
-//! (`tunnel_host_picker`, `container_host_picker`). Centralises the
-//! search-input strip, separator, row rendering, overlay geometry and
-//! selection clamping so the two pickers stay visually identical
-//! without copy-pasting the same code into both files.
+//! Shared building blocks for the host picker family (`tunnel_host_picker`,
+//! `container_host_picker`, and the `snippet_host_picker` search strip).
+//! Centralises the search-input strip, separator, row rendering, overlay
+//! geometry and selection clamping so the host pickers stay visually identical
+//! without copy-pasting the same code into each file.
 //!
-//! Pickers with a different shape (snippet, theme, tag, key_push,
-//! bulk_tag_editor) intentionally do not flow through these helpers:
-//! their row layout, footer state and overlay sizing diverge enough
-//! that a generic widget would either bloat the API or lose features.
+//! Pickers with a different shape (theme, tag, key_push, bulk_tag_editor)
+//! intentionally do not flow through these helpers: their row layout, footer
+//! state and overlay sizing diverge enough that a generic widget would either
+//! bloat the API or lose features.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -21,18 +21,28 @@ use super::theme;
 /// pickers scroll at the same rate on tall terminals.
 const MAX_VISIBLE_ROWS: u16 = 16;
 
-/// Render the "/ query █" or placeholder line at the top of a picker
-/// overlay. Matches the jump bar so users get the same affordance
-/// across pickers and the global jump command.
-pub(super) fn render_search_input(frame: &mut Frame, area: Rect, query: &str) {
+/// Render the search strip at the top of a host picker overlay: a brand-badge
+/// `/` prefix, then the query (or a muted "type to filter hosts..." placeholder
+/// when empty), with a thin cursor while editing. Shared by every host picker
+/// so the affordance is identical across tunnel, container and snippet.
+/// `show_cursor` is true while the filter input is actively being edited.
+pub(super) fn render_search_input(frame: &mut Frame, area: Rect, query: &str, show_cursor: bool) {
     let line = if query.is_empty() {
-        Line::from(Span::styled("  type to filter hosts...", theme::muted()))
-    } else {
         Line::from(vec![
-            Span::styled("  /", theme::accent_bold()),
-            Span::styled(query.to_string(), theme::brand()),
-            Span::styled("\u{2588}", theme::accent_bold()),
+            Span::styled(" / ", theme::brand_badge()),
+            Span::raw(" "),
+            Span::styled("type to filter hosts...", theme::muted()),
         ])
+    } else {
+        let mut spans = vec![
+            Span::styled(" / ", theme::brand_badge()),
+            Span::raw(" "),
+            Span::raw(query.to_string()),
+        ];
+        if show_cursor {
+            spans.push(Span::styled("_", theme::accent()));
+        }
+        Line::from(spans)
     };
     frame.render_widget(Paragraph::new(line), area);
 }

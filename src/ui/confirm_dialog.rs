@@ -237,6 +237,63 @@ pub fn render_key_push(frame: &mut Frame, app: &App, key_index: usize, aliases: 
     );
 }
 
+/// Confirm dialog before running a snippet against the chosen hosts. Lists the
+/// snippet name and the target host count, with up to 6 host aliases previewed.
+pub fn render_run_snippet(frame: &mut Frame, app: &App, aliases: &[String]) {
+    let snippet_name = app
+        .snippets
+        .flow_snippet()
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| crate::messages::SNIPPET_FALLBACK_NAME.to_string());
+    let count = aliases.len();
+
+    let max_shown = 6;
+    let mut host_lines: Vec<Line<'static>> = aliases
+        .iter()
+        .take(max_shown)
+        .map(|a| {
+            let truncated = super::truncate(a, 46);
+            Line::from(Span::styled(format!("  {}", truncated), theme::muted()))
+        })
+        .collect();
+    if count > max_shown {
+        let remaining = count - max_shown;
+        host_lines.push(Line::from(Span::styled(
+            format!(
+                "  +{} more host{}",
+                remaining,
+                if remaining == 1 { "" } else { "s" }
+            ),
+            theme::muted(),
+        )));
+    }
+
+    let mut content: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            format!(
+                "  {}",
+                crate::messages::confirm_run_snippet_body(&snippet_name, count)
+            ),
+            theme::bold(),
+        )),
+        Line::from(""),
+    ];
+    content.extend(host_lines);
+
+    let footer_spans = design::confirm_footer_destructive("run", "keep")
+        .to_line()
+        .spans;
+    design::render_confirm_popup(
+        frame,
+        56,
+        design::PopupKind::Neutral,
+        "Run Snippet",
+        content,
+        footer_spans,
+        app,
+    );
+}
+
 pub fn render_confirm_vault_sign(frame: &mut Frame, app: &App, signable: &[String]) {
     let count = signable.len();
     let preview_limit = 5;

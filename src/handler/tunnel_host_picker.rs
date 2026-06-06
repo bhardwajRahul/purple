@@ -1,9 +1,10 @@
 //! Host picker reached from the Tunnels overview when adding a new tunnel.
 //!
 //! Lists all editable hosts (hosts that live in the user's own SSH config,
-//! not in an included file). Always-on filter input — every printable
-//! keystroke appends to the query and the candidate set shrinks live, using
-//! the same case-insensitive substring match the jump uses.
+//! not in an included file). Always-on filter input: every printable keystroke
+//! appends to the query and the candidate set shrinks live, using the shared
+//! fuzzy host ranking (`fuzzy::rank_host_indices`) so type-to-filter behaves
+//! identically across the tunnel, container and snippet host pickers.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -25,29 +26,29 @@ pub(crate) fn editable_aliases(app: &App) -> Vec<String> {
 }
 
 /// Hosts that match the live query, paired with the matching hostname for
-/// display. When the query is empty every editable host is returned.
+/// display, best match first. When the query is empty every editable host is
+/// returned in config order.
 ///
-/// Match rule mirrors `JumpState::filtered_commands`:
-/// case-insensitive substring search. Same predictable semantics across
-/// every "type to filter" overlay in the app.
+/// Match rule is the shared fuzzy host ranking (`fuzzy::rank_host_indices`),
+/// the same type-to-filter behaviour as the container and snippet host pickers.
 pub(crate) fn filtered_hosts(app: &App) -> Vec<(String, String)> {
     filter_hosts(app.ui.tunnel_host_picker_query(), &app.hosts_state)
 }
 
 /// Shared filter used by both the public `filtered_hosts(&App)` (render side)
-/// and the picker slice. Single source of truth for the editable-host match.
+/// and the picker slice. Single source of truth for the editable-host match:
+/// the editable hosts, fuzzy-ranked against the query.
 fn filter_hosts(query: &str, hosts: &HostState) -> Vec<(String, String)> {
-    let query = query.to_lowercase();
-    hosts
+    let candidates: Vec<usize> = hosts
         .list()
         .iter()
-        .filter(|h| h.source_file.is_none())
-        .filter(|h| {
-            if query.is_empty() {
-                return true;
-            }
-            h.alias.to_lowercase().contains(&query) || h.hostname.to_lowercase().contains(&query)
-        })
+        .enumerate()
+        .filter(|(_, h)| h.source_file.is_none())
+        .map(|(i, _)| i)
+        .collect();
+    crate::fuzzy::rank_host_indices(hosts.list(), &candidates, query)
+        .into_iter()
+        .filter_map(|i| hosts.list().get(i))
         .map(|h| (h.alias.clone(), h.hostname.clone()))
         .collect()
 }

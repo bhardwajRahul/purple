@@ -459,6 +459,16 @@ impl App {
         }
     }
 
+    /// Group EVERY host by the current `GroupBy`, ignoring the active search
+    /// and group filters. For host-target pickers (e.g. running a snippet on a
+    /// group) that must show every host, grouped exactly the way the host list
+    /// is. Reuses the same `group_indices` dispatch as the list, so grouping
+    /// stays in one place. Hosts keep config order within each group.
+    pub(crate) fn grouped_all_hosts(&self) -> Vec<HostListItem> {
+        let all: Vec<usize> = (0..self.hosts_state.list.len()).collect();
+        self.group_indices(&all)
+    }
+
     /// Partition sorted indices by provider, inserting group headers.
     /// Hosts without provider appear first (no header), then named provider
     /// groups (in first-appearance order) with headers.

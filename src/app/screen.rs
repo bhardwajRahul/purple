@@ -12,29 +12,32 @@ pub enum TopPage {
     Hosts,
     Tunnels,
     Containers,
+    Snippets,
     Keys,
 }
 
 impl TopPage {
     /// Cycle to the next page
-    /// (Hosts -> Tunnels -> Containers -> Keys -> Hosts).
+    /// (Hosts -> Tunnels -> Containers -> Snippets -> Keys -> Hosts).
     pub fn next(self) -> Self {
         match self {
             TopPage::Hosts => TopPage::Tunnels,
             TopPage::Tunnels => TopPage::Containers,
-            TopPage::Containers => TopPage::Keys,
+            TopPage::Containers => TopPage::Snippets,
+            TopPage::Snippets => TopPage::Keys,
             TopPage::Keys => TopPage::Hosts,
         }
     }
 
     /// Cycle to the previous page
-    /// (Hosts -> Keys -> Containers -> Tunnels -> Hosts).
+    /// (Hosts -> Keys -> Snippets -> Containers -> Tunnels -> Hosts).
     pub fn prev(self) -> Self {
         match self {
             TopPage::Hosts => TopPage::Keys,
             TopPage::Tunnels => TopPage::Hosts,
             TopPage::Containers => TopPage::Tunnels,
-            TopPage::Keys => TopPage::Containers,
+            TopPage::Snippets => TopPage::Containers,
+            TopPage::Keys => TopPage::Snippets,
         }
     }
 }
@@ -208,6 +211,15 @@ pub enum Screen {
     /// snippet. The `Snippet` lives on `snippets.param_snippet` and
     /// the target aliases on `snippets.flow_targets`.
     SnippetParamForm,
+    /// Multi-host picker for running a snippet from the Snippets tab. The
+    /// chosen snippet lives on `snippets.flow_snippet`; the picker selection
+    /// on `snippets.host_pick().selected`. Data-less variant.
+    SnippetHostPicker,
+    /// Confirm dialog shown after the snippet host picker commits. Lists the
+    /// snippet name and target host count. On y the run proceeds via
+    /// `run_or_prompt_params`; on n/Esc returns to the picker with the
+    /// selection intact. Data-less.
+    ConfirmRunSnippet,
     ConfirmHostKeyReset {
         alias: String,
         hostname: String,
@@ -328,6 +340,8 @@ impl Screen {
             Screen::SnippetForm => "SnippetForm",
             Screen::SnippetOutput => "SnippetOutput",
             Screen::SnippetParamForm => "SnippetParamForm",
+            Screen::SnippetHostPicker => "SnippetHostPicker",
+            Screen::ConfirmRunSnippet => "ConfirmRunSnippet",
             Screen::ConfirmHostKeyReset { .. } => "ConfirmHostKeyReset",
             Screen::FileBrowser { .. } => "FileBrowser",
             Screen::Containers { .. } => "Containers",
@@ -346,5 +360,27 @@ impl Screen {
             Screen::BulkTagEditor => "BulkTagEditor",
             Screen::WhatsNew(_) => "WhatsNew",
         }
+    }
+}
+
+#[cfg(test)]
+mod top_page_tests {
+    use super::TopPage;
+
+    #[test]
+    fn cycle_includes_snippets_between_containers_and_keys() {
+        assert_eq!(TopPage::Containers.next(), TopPage::Snippets);
+        assert_eq!(TopPage::Snippets.next(), TopPage::Keys);
+        assert_eq!(TopPage::Keys.prev(), TopPage::Snippets);
+        assert_eq!(TopPage::Snippets.prev(), TopPage::Containers);
+    }
+
+    #[test]
+    fn full_forward_cycle_wraps() {
+        let mut p = TopPage::Hosts;
+        for _ in 0..5 {
+            p = p.next();
+        }
+        assert_eq!(p, TopPage::Hosts);
     }
 }

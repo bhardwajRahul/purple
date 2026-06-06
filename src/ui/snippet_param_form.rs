@@ -36,7 +36,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Clamp total_height to available terminal space
     let clamped_height = total_height.min(area.height.saturating_sub(2));
-    let form_area = design::overlay_area(frame, 60, 80, clamped_height);
+    let form_area =
+        design::overlay_area(frame, design::OVERLAY_W, design::OVERLAY_H, clamped_height);
     frame.render_widget(Clear, form_area);
 
     let block_height = block_height.min(form_area.height.saturating_sub(1));
