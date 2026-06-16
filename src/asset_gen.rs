@@ -250,10 +250,11 @@ pub fn generate(out_dir: &Path, font_dir: Option<&Path>) -> io::Result<Vec<PathB
         }
 
         // Berkeley Mono is the brand face; JetBrains Mono (embedded) fills the
-        // glyphs Berkeley lacks (rounded borders, status icons, braille) the
-        // way a terminal's font fallback would. The rasterizer resolves
-        // Berkeley from the render environment. Full screens render as a
-        // rounded padded panel; zoom crops stay flush cutouts.
+        // symbol glyphs Berkeley lacks (✓ ⚠ ▲ ▸ ▾) the way a terminal's font
+        // fallback would. Box-drawing, blocks, braille and status icons render
+        // as crisp SVG shapes (see ui::svg_export), so they need no font. The
+        // rasterizer resolves Berkeley from the render environment. Full screens
+        // render as a rounded padded panel; zoom crops stay flush cutouts.
         let rounded = scene.crop.is_none();
         let opts = SvgOpts {
             font_family: "'Berkeley Mono','JetBrains Mono',monospace".to_string(),

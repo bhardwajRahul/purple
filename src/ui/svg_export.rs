@@ -369,8 +369,8 @@ fn emit_cells(
                 vlines.push((x, y, fg, dim));
                 continue;
             }
-            // Box-drawing and block glyphs render as crisp SVG shapes so they
-            // tile seamlessly. Font glyphs leave gaps at non-unit line heights.
+            // Box-drawing, block, braille and status glyphs render as crisp SVG
+            // shapes (see glyph_shape) so they tile seamlessly and need no font.
             if let Some(shape) = glyph_shape(
                 sym,
                 f64::from(u32::from(x) * opts.cell_w),
@@ -523,11 +523,13 @@ fn coord(v: f64) -> String {
     }
 }
 
-/// Render the box-drawing and block-element glyphs purple uses as crisp SVG
-/// shapes (rects and stroked arcs) so they tile seamlessly across cells. Font
-/// glyphs leave gaps when the row pitch differs from the glyph's line box.
-/// Returns `None` for glyphs that should render as `<text>` (letters, digits,
-/// status icons, arrows, braille).
+/// Render the box-drawing, block, braille and status glyphs purple uses as
+/// crisp SVG shapes (rects, circles and stroked paths) so they tile seamlessly
+/// and never depend on a fallback font. Font glyphs leave gaps at non-unit line
+/// heights, and a fallback face for braille / status symbols advances wider than
+/// the grid and bleeds into the next column. Returns `None` for glyphs that
+/// render as `<text>` (letters, digits and the symbol glyphs the embedded font
+/// covers, e.g. ✓ ⚠ ▲ ▸ ▾).
 fn glyph_shape(
     sym: &str,
     x0: f64,
@@ -555,6 +557,25 @@ fn glyph_shape(
     let stroke = |d: String| {
         format!(
             "<path d=\"{d}\" fill=\"none\" stroke=\"{fill}\" stroke-width=\"{}\"{sop}/>",
+            coord(t),
+        )
+    };
+    // Status-dot radius, shared by the circle family so every dot matches.
+    let dot_r = (cw * 0.34).min(ch / 2.0);
+    let disc = |rr: f64| {
+        format!(
+            "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{fill}\"{fop}/>",
+            coord(cx),
+            coord(cy),
+            coord(rr),
+        )
+    };
+    let ring = |rr: f64| {
+        format!(
+            "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"none\" stroke=\"{fill}\" stroke-width=\"{}\"{sop}/>",
+            coord(cx),
+            coord(cy),
+            coord(rr),
             coord(t),
         )
     };
@@ -633,6 +654,97 @@ fn glyph_shape(
         '\u{2589}'..='\u{258F}' => {
             let w = cw * f64::from(0x2590 - cp as u32) / 8.0;
             Some(rect(x0, y0, w, ch))
+        }
+        // Braille patterns (sparklines, trend charts, spinners): a 2x4 dot
+        // grid. Drawn as crisp in-cell dots, never font glyphs. rsvg renders
+        // a fallback braille face wider than the grid advance and ignores
+        // textLength, so on the text path the dots bleed into the next column.
+        '\u{2800}'..='\u{28FF}' => {
+            let bits = cp as u32 - 0x2800;
+            let (sub_w, sub_h) = (cw / 2.0, ch / 4.0);
+            let (dot_w, dot_h) = (sub_w * 0.6, sub_h * 0.6);
+            let (gx, gy) = ((sub_w - dot_w) / 2.0, (sub_h - dot_h) / 2.0);
+            // Bit layout per column, top row to bottom row.
+            const COL_BITS: [[u32; 4]; 2] = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
+            let mut dots = String::new();
+            for (col, col_bits) in COL_BITS.iter().enumerate() {
+                for (row, bit) in col_bits.iter().enumerate() {
+                    if bits & bit != 0 {
+                        dots.push_str(&rect(
+                            x0 + col as f64 * sub_w + gx,
+                            y0 + row as f64 * sub_h + gy,
+                            dot_w,
+                            dot_h,
+                        ));
+                    }
+                }
+            }
+            Some(dots)
+        }
+        // Heavy multiplication X (ICON_ERROR): two diagonal strokes. Neither
+        // brand face ships this glyph, so draw it instead of leaking to a
+        // system fallback font in the rasterised imagery.
+        '\u{2716}' => {
+            let s = cw.min(ch) * 0.72;
+            let (xl, xr) = (cx - s / 2.0, cx + s / 2.0);
+            let (yt, yb) = (cy - s / 2.0, cy + s / 2.0);
+            Some(format!(
+                "<path d=\"M {},{} L {},{} M {},{} L {},{}\" fill=\"none\" stroke=\"{fill}\" stroke-width=\"{}\" stroke-linecap=\"round\"{sop}/>",
+                coord(xl),
+                coord(yt),
+                coord(xr),
+                coord(yb),
+                coord(xr),
+                coord(yt),
+                coord(xl),
+                coord(yb),
+                coord(t * 1.5),
+            ))
+        }
+        // Left-right arrows (tunnel indicator U+21C4): top line points right,
+        // bottom line points left. Also absent from both brand faces.
+        '\u{21C4}' => {
+            let xl = coord(x0 + cw * 0.12);
+            let xr = coord(x0 + cw * 0.88);
+            let yt = coord(cy - ch * 0.10);
+            let yb = coord(cy + ch * 0.10);
+            let head_r = coord(x0 + cw * 0.88 - cw * 0.24);
+            let head_l = coord(x0 + cw * 0.12 + cw * 0.24);
+            let yt_up = coord(cy - ch * 0.10 - ch * 0.06);
+            let yt_dn = coord(cy - ch * 0.10 + ch * 0.06);
+            let yb_up = coord(cy + ch * 0.10 - ch * 0.06);
+            let yb_dn = coord(cy + ch * 0.10 + ch * 0.06);
+            let sw = coord(t);
+            Some(format!(
+                "<path d=\"M {xl},{yt} H {xr} M {head_r},{yt_up} L {xr},{yt} L {head_r},{yt_dn} M {xr},{yb} H {xl} M {head_l},{yb_up} L {xl},{yb} L {head_l},{yb_dn}\" fill=\"none\" stroke=\"{fill}\" stroke-width=\"{sw}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"{sop}/>",
+            ))
+        }
+        // Status circles: crisp shapes so every status dot renders identically
+        // and never depends on a fallback face. ● filled, ○ outline, ◉ ring +
+        // centre (target/fisheye), ◐ outline + filled left half (paused).
+        '\u{25CF}' => Some(disc(dot_r)),
+        '\u{25CB}' => Some(ring(dot_r)),
+        '\u{25C9}' => Some(format!("{}{}", ring(dot_r), disc(dot_r * 0.42))),
+        '\u{25D0}' => {
+            let half = format!(
+                "<path d=\"M {cxc},{top} A {rr},{rr} 0 0 0 {cxc},{bot} Z\" fill=\"{fill}\"{fop}/>",
+                cxc = coord(cx),
+                top = coord(cy - dot_r),
+                bot = coord(cy + dot_r),
+                rr = coord(dot_r),
+            );
+            Some(format!("{}{}", ring(dot_r), half))
+        }
+        // Open box (toggle / space-key hint): a squared U on the baseline.
+        '\u{2423}' => {
+            let l = coord(x0 + cw * 0.18);
+            let r2 = coord(x0 + cw * 0.82);
+            let top = coord(cy - ch * 0.10);
+            let bot = coord(cy + ch * 0.16);
+            let sw = coord(t);
+            Some(format!(
+                "<path d=\"M {l},{top} V {bot} H {r2} V {top}\" fill=\"none\" stroke=\"{fill}\" stroke-width=\"{sw}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"{sop}/>",
+            ))
         }
         _ => None,
     }
@@ -936,11 +1048,11 @@ mod tests {
     }
 
     #[test]
-    fn status_glyph_stays_text() {
-        let svg = glyph_svg(crate::ui::design::ICON_ONLINE); // ● has no shape, renders as text
+    fn symbol_without_a_shape_stays_text() {
+        let svg = glyph_svg(crate::ui::design::ICON_WARNING); // ⚠ has no shape, renders as text
         assert!(
-            svg.contains(">\u{25CF}</text>"),
-            "dot renders as text: {svg}"
+            svg.contains(">\u{26A0}</text>"),
+            "warning sign renders as text: {svg}"
         );
     }
 
@@ -957,6 +1069,125 @@ mod tests {
             svg.matches("fill=\"#00f0ff\"").count() >= 2,
             "two stroke rects for the up and right arms: {svg}"
         );
+    }
+
+    #[test]
+    fn braille_renders_as_in_cell_dots_not_text() {
+        let svg = glyph_svg("\u{28FF}"); // ⣿ all eight dots raised
+        assert_eq!(
+            svg.matches("<text").count(),
+            0,
+            "braille renders as dot shapes, not a fallback-font glyph: {svg}"
+        );
+        assert_eq!(
+            svg.matches("fill=\"#00f0ff\"").count(),
+            8,
+            "eight dots for the full braille cell: {svg}"
+        );
+    }
+
+    #[test]
+    fn braille_top_left_dot_sits_in_the_top_left_sub_cell() {
+        let svg = glyph_svg("\u{2801}"); // ⠁ dot 1 only
+        // sub-cell 5x5, dot 0.6 of it (3x3) centred -> offset 1,1.
+        assert!(
+            svg.contains("<rect x=\"1\" y=\"1\" width=\"3\" height=\"3\" fill=\"#00f0ff\"/>"),
+            "single top-left dot: {svg}"
+        );
+        assert_eq!(
+            svg.matches("fill=\"#00f0ff\"").count(),
+            1,
+            "exactly one dot: {svg}"
+        );
+    }
+
+    #[test]
+    fn braille_bottom_right_dot_stays_within_the_cell() {
+        let svg = glyph_svg("\u{2880}"); // dot 8 (bit 0x80) -> bottom-right sub-cell
+        // x+w = 6+3 = 9 <= cell_w(10), y+h = 16+3 = 19 <= cell_h(20): no bleed.
+        assert!(
+            svg.contains("<rect x=\"6\" y=\"16\" width=\"3\" height=\"3\" fill=\"#00f0ff\"/>"),
+            "bottom-right dot stays inside the cell bounds: {svg}"
+        );
+    }
+
+    #[test]
+    fn error_x_renders_as_strokes_not_text() {
+        let svg = glyph_svg(crate::ui::design::ICON_ERROR); // ✖, absent from both brand faces
+        assert_eq!(
+            svg.matches("<text").count(),
+            0,
+            "error X renders as shapes, not a system-fallback glyph: {svg}"
+        );
+        assert!(svg.contains("<path d=\"M "), "two diagonal strokes: {svg}");
+        assert!(svg.contains("stroke=\"#00f0ff\""), "stroked in fg: {svg}");
+    }
+
+    #[test]
+    fn tunnel_arrows_render_as_strokes_not_text() {
+        let svg = glyph_svg("\u{21C4}"); // ⇄ tunnel indicator, absent from both brand faces
+        assert_eq!(
+            svg.matches("<text").count(),
+            0,
+            "tunnel arrows render as shapes, not a system-fallback glyph: {svg}"
+        );
+        assert!(svg.contains("<path d=\"M "), "arrow path present: {svg}");
+        assert!(svg.contains("stroke=\"#00f0ff\""), "stroked in fg: {svg}");
+    }
+
+    #[test]
+    fn status_circles_render_as_shapes_not_text() {
+        use crate::ui::design::{ICON_ONLINE, ICON_PAUSED, ICON_STOPPED, ICON_TARGET};
+        for g in [ICON_ONLINE, ICON_STOPPED, ICON_TARGET, ICON_PAUSED] {
+            let svg = glyph_svg(g);
+            assert_eq!(
+                svg.matches("<text").count(),
+                0,
+                "status circle {g} renders as shapes, not a fallback glyph: {svg}"
+            );
+            assert!(
+                svg.contains("<circle"),
+                "status circle {g} has a circle: {svg}"
+            );
+        }
+    }
+
+    #[test]
+    fn online_dot_is_one_filled_circle() {
+        let svg = glyph_svg(crate::ui::design::ICON_ONLINE); // ● dot_r = cell_w(10)*0.34 = 3.4
+        assert!(
+            svg.contains("<circle cx=\"5\" cy=\"10\" r=\"3.4\" fill=\"#00f0ff\"/>"),
+            "centred filled dot: {svg}"
+        );
+        assert_eq!(
+            svg.matches("<circle").count(),
+            1,
+            "exactly one circle: {svg}"
+        );
+    }
+
+    #[test]
+    fn stopped_dot_is_an_outline_circle() {
+        let svg = glyph_svg(crate::ui::design::ICON_STOPPED); // ○
+        assert!(svg.contains("fill=\"none\""), "outline only: {svg}");
+        assert!(svg.contains("stroke=\"#00f0ff\""), "stroked in fg: {svg}");
+    }
+
+    #[test]
+    fn paused_dot_fills_its_left_half() {
+        let svg = glyph_svg(crate::ui::design::ICON_PAUSED); // ◐ outline ring + left semicircle
+        assert!(svg.contains("<circle"), "outline ring present: {svg}");
+        assert!(
+            svg.contains("A 3.4,3.4 0 0 0"),
+            "left-half arc (sweep flag 0): {svg}"
+        );
+    }
+
+    #[test]
+    fn space_hint_renders_as_a_squared_u_not_text() {
+        let svg = glyph_svg(crate::ui::design::TOGGLE_HINT); // ␣ open box
+        assert_eq!(svg.matches("<text").count(), 0, "no fallback glyph: {svg}");
+        assert!(svg.contains("<path d=\"M "), "squared-U path: {svg}");
     }
 
     #[test]
