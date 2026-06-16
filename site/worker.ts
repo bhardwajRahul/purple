@@ -24,6 +24,19 @@ BunnySDK.net.http.serve(async (request: Request): Promise<Response> => {
       },
     });
   }
+  // Real robots.txt so AI crawlers and search bots get a parseable allow
+  // policy (not the HTML page) and can discover llms.txt.
+  if (url.pathname === "/robots.txt") {
+    return new Response(
+      "User-agent: *\nAllow: /\n\n# AI/LLM overview: https://getpurple.sh/llms.txt\n",
+      {
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "public, max-age=3600",
+        },
+      },
+    );
+  }
 
   const ua = (request.headers.get("user-agent") || "").toLowerCase();
   const isCli =

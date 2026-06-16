@@ -1,8 +1,8 @@
 # purple
 
-purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. Search, connect to and manage hundreds of SSH hosts from a single TUI. Transfer files, run commands and push SSH keys across your fleet. MIT licensed.
-
 > Keeps ~/.ssh/config in sync with your cloud infra. Spin up a VM on AWS, GCP, Azure, Hetzner or 12 other cloud providers and it appears in your host list. Destroy it and the entry dims. Visual file transfer, password management, command snippets and MCP server for AI agents. Edits ~/.ssh/config with round-trip fidelity. Single binary, MIT licensed.
+
+purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. Search, connect to and manage hundreds of SSH hosts from a single TUI. Transfer files, run commands and push SSH keys across your fleet. MIT licensed.
 
 ## TL;DR
 
@@ -358,7 +358,7 @@ Consecutive blank lines are collapsed to one. Hosts from Include files are displ
 - Language: Rust
 - Platforms: macOS and Linux
 - Binary name: purple (crate name: purple-ssh)
-- Tests: 6500+ (unit + integration + property-based + mockito HTTP)
+- Tests: 7300+ (unit + integration + property-based + mockito HTTP)
 - No async runtime. Single binary, no daemon
 - Atomic writes via temp file + chmod 600 + rename
 - Uses system ssh binary with -F <config_path>
@@ -500,7 +500,7 @@ A: Press m in the host list to open the theme picker with live preview. 11 built
 
 - Current version: __VERSION__ (__DATE_HUMAN__)
 - Release cadence: approximately bi-weekly
-- Test suite: 8100+ tests (unit, integration, property-based, HTTP mocking and OpenSSH ground-truth cross-validation)
+- Test suite: 7300+ tests (unit, integration, property-based, HTTP mocking and OpenSSH ground-truth cross-validation)
 - CI: fmt, clippy, build, test on macOS and Linux, cargo-deny, MSRV 1.86 check, rustdoc warnings, site sync, TUI smoke test, design system, message centralization, keybinding invariants and visual regression
 - Dependencies actively maintained
 
