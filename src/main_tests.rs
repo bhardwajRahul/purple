@@ -1031,6 +1031,13 @@ fn import_all_duplicates_sets_status() {
 
 #[test]
 fn import_write_failure_rolls_back_config() {
+    // SshConfigFile::write no-ops under the global demo flag (returns Ok), which
+    // would defeat the forced-failure assertion below. Serialise against
+    // demo-enabling tests (asset generation, visual suite) and pin demo off.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    crate::demo_flag::disable();
     // Create a config pointing to a read-only path so write() fails
     let dir = std::env::temp_dir().join(format!(
         "purple_test_import_writefail_{:?}",
@@ -1281,6 +1288,38 @@ fn test_format_sync_diff_no_changes() {
 #[test]
 fn test_format_sync_diff_only_added() {
     assert_eq!(format_sync_diff(5, 0, 0), " (+5)");
+}
+
+// The release imagery pipeline drives gen-assets; --hero-out is optional and
+// off by default so plain runs only write the static scene SVGs.
+#[test]
+fn cli_gen_assets_hero_out_parsing() {
+    use clap::Parser;
+    let cli = Cli::try_parse_from(["purple", "gen-assets", "/tmp/svgs"]).unwrap();
+    match cli.command {
+        Some(Commands::GenAssets {
+            out_dir, hero_out, ..
+        }) => {
+            assert_eq!(out_dir, "/tmp/svgs");
+            assert!(hero_out.is_none(), "hero is opt-in");
+        }
+        _ => panic!("expected GenAssets"),
+    }
+
+    let cli = Cli::try_parse_from([
+        "purple",
+        "gen-assets",
+        "/tmp/svgs",
+        "--hero-out",
+        "assets/hero.svg",
+    ])
+    .unwrap();
+    match cli.command {
+        Some(Commands::GenAssets { hero_out, .. }) => {
+            assert_eq!(hero_out.as_deref(), Some("assets/hero.svg"));
+        }
+        _ => panic!("expected GenAssets"),
+    }
 }
 
 // CLI refactor regression: `purple vault-sign` was renamed to a nested

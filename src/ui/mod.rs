@@ -27,6 +27,7 @@ mod snippet_output;
 mod snippet_param_form;
 mod snippet_picker;
 mod snippets_overview;
+pub mod svg_export;
 mod tag_picker;
 pub mod theme;
 mod theme_picker;

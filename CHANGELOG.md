@@ -1,3 +1,8 @@
+## 3.22.1 - 2026-06-16
+
+- change: Calmer detail panels that read at a glance.
+- change: Section headers in the host, container, key and snippet detail panels now sit quietly in the card frame instead of competing with the values, so the details you came for stand out.
+
 ## 3.22.0 - 2026-06-06
 
 - feat: Snippets get a tab to run, vet and track on hosts.

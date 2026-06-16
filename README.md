@@ -1,20 +1,25 @@
-<img src="site/purple-logo.svg" alt="purple" width="213" height="48">
+<p align="center">
+  <img src="site/purple-logo.svg" alt="purple" width="213" height="48">
+</p>
 
-**An open-source terminal SSH manager for macOS and Linux that keeps `~/.ssh/config` in sync with your cloud infra.** 
+<p align="center"><b>Your ssh config, synced with your cloud.</b></p>
 
-Spin up a VM on AWS, GCP, Azure, Hetzner, Proxmox or 11 other cloud providers and it shows up in your host list. Destroy it and the entry dims. No more hand-editing `~/.ssh/config` after every Terraform run, no more grepping cloud consoles for the right IP.
+<p align="center">
+  <a href="https://crates.io/crates/purple-ssh"><img src="https://img.shields.io/crates/v/purple-ssh?color=b44aff&labelColor=0a0a14" alt="crates.io"></a>
+  <a href="https://crates.io/crates/purple-ssh"><img src="https://img.shields.io/crates/d/purple-ssh?color=b44aff&labelColor=0a0a14" alt="downloads"></a>
+  <a href="https://github.com/erickochen/purple/stargazers"><img src="https://img.shields.io/github/stars/erickochen/purple?color=b44aff&labelColor=0a0a14" alt="stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-b44aff?labelColor=0a0a14" alt="mit"></a>
+  <a href="https://ratatui.rs/"><img src="https://img.shields.io/badge/built_with-ratatui-b44aff?labelColor=0a0a14&logo=ratatui&logoColor=fff" alt="built with ratatui"></a>
+  <a href="https://getpurple.sh"><img src="https://img.shields.io/badge/website-getpurple.sh-00f0ff?labelColor=0a0a14" alt="Website"></a>
+</p>
 
-A fast Rust TUI with fuzzy search across hundreds of hosts, file transfer, Docker and Podman over SSH, multi-host SSH key push, short-lived HashiCorp Vault SSH certificates and an MCP server for AI agents.
+**purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps `~/.ssh/config` in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide.**
 
-Keyboard-driven. Single binary. MIT licensed.
+Spin up a VM on AWS, GCP, Azure, Hetzner, Proxmox or 11 other cloud providers and it's in your host list before the console catches up. Kill one and purple marks it stale, so your list never lies. No more hand-editing `~/.ssh/config` after every Terraform run, no more digging through cloud consoles for the right IP.
 
-[![crates.io](https://img.shields.io/crates/v/purple-ssh?color=b44aff&labelColor=0a0a14)](https://crates.io/crates/purple-ssh)
-[![downloads](https://img.shields.io/crates/d/purple-ssh?color=b44aff&labelColor=0a0a14)](https://crates.io/crates/purple-ssh)
-[![mit](https://img.shields.io/badge/license-mit-b44aff?labelColor=0a0a14)](LICENSE)
-[![built with ratatui](https://img.shields.io/badge/built_with-ratatui-b44aff?labelColor=0a0a14&logo=ratatui&logoColor=fff)](https://ratatui.rs/)
-[![Website](https://img.shields.io/badge/website-getpurple.sh-00f0ff?labelColor=0a0a14)](https://getpurple.sh)
+Everything else you do over SSH lives in the same terminal: fuzzy search across hundreds of hosts, visual file transfer, multi-host SSH key push, short-lived HashiCorp Vault SSH certificates and an MCP server for AI agents. Keyboard-driven. Single binary. MIT licensed.
 
-![purple terminal SSH client demo](demo.gif)
+![purple terminal SSH client demo: searching hosts, monitoring live tunnels, managing containers, running snippets and inspecting keys](demo.gif)
 
 ## Install
 
@@ -50,6 +55,14 @@ Claude Desktop users can install the [.mcpb bundle](https://github.com/erickoche
 
 Run `purple`. Press `?` on any screen for help. That's it.
 
+## Contents
+
+- [Why I built this](#why-i-built-this)
+- [What you get](#what-you-get)
+- [How purple compares](#how-purple-compares)
+- [How it works](#how-it-works)
+- [Links](#links)
+
 ## Why I built this
 
 My SSH config was fine. Proper aliases, ProxyJump chains, organized by provider. Not the problem.
@@ -60,84 +73,87 @@ I wanted one place for all of that. So I built it.
 
 ## What you get
 
-<img src="screenshots/detail.png" width="70%" align="left" alt="detail panel">
+### Your ssh config tracks your infra
 
-🔍 **Everything at a glance.** Connection info, jump route, activity sparkline, tags, tunnels, snippets, containers and server metadata. Health dots show which hosts are up. Group by provider, tag or flat.
+Drop in one API token per provider. New machines land in `~/.ssh/config` the moment they boot, IPs follow instances as they move and decommissioned hosts grey out instead of lingering. 16 providers including AWS, GCP, Azure, Hetzner, DigitalOcean and Proxmox, multiple accounts each. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
 
-<br clear="both">
-<br>
+![purple cloud provider list close-up: per-provider sync status with host counts and stale markers](assets/png/zoom-providers.png)
 
-🔎 **Jump to anything with one keystroke.** Press `:` for a universal fuzzy bar across hosts, tunnels, containers, snippets and actions. Searches the SSH `User`, `ProxyJump` and Vault SSH role too, so typing your username finds every server you log in as. Field prefixes (`user:`, `proxy:`, `vault:`, `tag:`) scope to a single directive. Like Linear's `Cmd+K`, but in your terminal.
+One panel answers the questions you actually have. Is it up. How do I reach it. When was I last on it. What runs there. Connection info, jump route, a year of SSH activity, tags, tunnels and containers per host, with live health dots.
 
-![jump bar](screenshots/jump.png)
+![purple host list with the detail panel: connection info, jump route, activity sparkline, tags, tunnels and containers](assets/png/hosts.png)
 
-⚡ **Instant fuzzy search.** Names, IPs, tags, users. Frecency sorting puts your most-used hosts on top. Works the same with 5 hosts or 500. Scoped search within groups.
+### Jump to anything with one keystroke
 
-![fuzzy search](screenshots/search.png)
+Press `:` and type four letters. Any host, tunnel, container, snippet or action, ranked by how often you use it. It searches the SSH `User`, `ProxyJump` and Vault SSH role too, so typing your username finds every server you log in as. Field prefixes (`user:`, `proxy:`, `vault:`, `tag:`) cut straight to one directive. Like Linear's `Cmd+K`, but in your terminal.
 
-☁️ **Your ssh config tracks your infra.** Drop in one API token per provider. New VMs land in `~/.ssh/config` the moment they boot. IPs stay current as instances move. Decommissioned hosts dim so you can purge them on your terms. 16 providers including AWS, GCP, Azure, Hetzner, DigitalOcean and Proxmox. Run multiple accounts per provider side by side. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
+![purple Jump bar close-up: universal fuzzy search across hosts, tunnels, containers, snippets and actions](assets/png/zoom-jump.png)
 
-![cloud providers](screenshots/providers.png)
+### Manage Docker and Podman on every server, over SSH
 
-🐳 **Manage every container in your fleet from one tab.** Every Docker and Podman container grouped per host. Shell in, stream logs, restart, stop, exec or kick a whole compose stack member by member. No remote agent, no extra ports. Just SSH.
+Your whole fleet's containers in one list, grouped per host. Shell in, stream logs, restart, stop, exec or kick a whole compose stack member by member. No agent on the remote, no web UI, no extra ports. Just SSH.
 
-![containers](screenshots/containers.png)
+![purple Containers tab close-up: containers across multiple hosts grouped per host with state and uptime](assets/png/zoom-container-fleet.png)
 
-🚇 **Live tunnel monitoring.** Every SSH forward with throughput, channels, clients and uptime. Local, Remote and Dynamic SOCKS. The detail panel reveals which app owns each open channel, in real time.
+### Monitor SSH tunnels in real time
 
-![live tunnels](screenshots/tunnels.png)
+Forwards run blind. purple doesn't: every Local, Remote and Dynamic SOCKS forward with live throughput, channel activity and uptime, down to the exact app behind each connection.
 
-🗝️ **Push any SSH key to your fleet from one tab.** Dedicated Keys page with strength score, randomart fingerprint and a per-key activity sparkline. Press `p` to push the highlighted key to multiple hosts at once. Vault-managed hosts skip automatically so cert-managed hosts stay cert-managed. `Tab` from the Hosts page.
+![purple tunnel detail close-up: per-client process roster with live throughput sparklines and a channel swimlane](assets/png/zoom-tunnel-live.png)
 
-![keys](screenshots/keys.png)
+### Run one command across your fleet
 
-🪄 **Run a command across your fleet from one tab.** Save reusable snippets with parameters, pick any set of hosts and run. purple shows a command's blast radius before you fan it out and tracks every run, so you know how reliable a snippet is before you trust it. `Tab` from the Hosts page.
+Save a command once, run it on any set of hosts. purple shows the blast radius before you fan out and keeps the track record per snippet. "28 of 29 host runs ok" is a number you want to see before production.
 
-![multi-host snippets](screenshots/snippets.png)
+![purple snippet detail close-up: command with parameters, a blast-radius impact card and a host-run track record](assets/png/zoom-snippet-impact.png)
 
-**And more.**
+### Push any SSH key to your fleet, no ssh-copy-id loop
 
-🚚 Visual file transfer with split-pane explorer.
+Every key in `~/.ssh`, scored and fingerprinted, with the hosts it unlocks and the last time it was used. Push one to your whole fleet with `p`. Vault-managed hosts skip automatically, so cert-managed stays cert-managed.
 
-🗝️ Automatic password retrieval from OS Keychain, 1Password, Bitwarden, pass, the HashiCorp Vault KV secrets engine and Proton Pass.
+![purple key detail close-up: randomart fingerprint, strength score, agent status and per-key activity](assets/png/zoom-key-randomart.png)
 
-🎫 Short-lived SSH certificates signed via the HashiCorp Vault SSH secrets engine.
+Short-lived certificates from the HashiCorp Vault SSH secrets engine get a TTL strip of their own, so an expiring cert never surprises you.
 
-🤖 MCP server for AI agents like Claude Code and Cursor.
+![purple Vault SSH close-up: signed certificates with remaining TTL bars per host](assets/png/zoom-vault-ttl.png)
+
+### And more
+
+- Visual file transfer with a split-pane local and remote explorer.
+- Automatic password retrieval from OS Keychain, 1Password, Bitwarden, pass, the HashiCorp Vault KV secrets engine and Proton Pass.
+- Short-lived SSH certificates signed via the HashiCorp Vault SSH secrets engine.
+- MCP server for AI agents like Claude Code and Cursor, with a read-only mode and a JSON Lines audit log.
 
 See the [wiki](https://github.com/erickochen/purple/wiki) for details.
 
+## How purple compares
+
+| | purple | Termius | sshs | Lazydocker |
+|---|---|---|---|---|
+| Open source | Yes (MIT) | No | Yes | Yes |
+| Language | Rust | Electron | Rust | Go |
+| Multi-cloud SSH sync | 16 providers | Limited | No | No |
+| Containers over SSH | Docker and Podman, fleet-wide | No | No | Local host only |
+| Live tunnel monitoring | Yes | No | No | No |
+| MCP server for AI agents | Yes | No | No | No |
+| Account required | No | Yes | No | No |
+| Price | Free | Freemium | Free | Free |
+
+purple keeps your SSH config local and editable: it edits `~/.ssh/config` in place with round-trip fidelity. Use Lazydocker for single-host local Docker, purple for fleet-wide remote management.
+
 ## How it works
 
-purple reads `~/.ssh/config` directly. No database, no daemon, no account. Comments, indentation, include files, unknown directives. All preserved.
+purple reads `~/.ssh/config` directly. No database, no daemon, no account. Comments, indentation, include files, unknown directives: all preserved through every edit, so the config you wrote stays the config you have.
 
 Written in Rust. Single binary. 7300+ tests. MIT license.
 
 ## Links
 
-📖 [Wiki](https://github.com/erickochen/purple/wiki) · ☁️ [Cloud Providers](https://github.com/erickochen/purple/wiki/Cloud-Providers) · 🤖 [MCP Server](https://github.com/erickochen/purple/wiki/MCP-Server) · ❓ [FAQ](https://github.com/erickochen/purple/wiki/FAQ) · 🩺 [Troubleshooting](https://github.com/erickochen/purple/wiki/Troubleshooting) · 🔒 [Security](SECURITY.md) · 🧠 [llms.txt](https://getpurple.sh/llms.txt)
+[Wiki](https://github.com/erickochen/purple/wiki) · [Cloud Providers](https://github.com/erickochen/purple/wiki/Cloud-Providers) · [MCP Server](https://github.com/erickochen/purple/wiki/MCP-Server) · [FAQ](https://github.com/erickochen/purple/wiki/FAQ) · [Troubleshooting](https://github.com/erickochen/purple/wiki/Troubleshooting) · [Security](SECURITY.md) · [llms.txt](https://getpurple.sh/llms.txt)
 
 ## Credits
 
-Screenshots and demo videos are captured in [Ghostty](https://ghostty.org) with [Berkeley Mono™](https://usgraphics.com/products/berkeley-mono) by U.S. Graphics Company.
-
-<details>
-<summary>Ghostty config</summary>
-
-```
-theme = Dracula
-
-font-family = Berkeley Mono
-font-size = 15
-font-feature = +ss01
-font-feature = +ss05
-font-feature = +calt
-
-window-colorspace = display-p3
-window-padding-x = 6
-window-padding-y = 6,6
-```
-</details>
+Screenshots and the demo are generated from the live TUI in [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by [U.S. Graphics Company](https://usgraphics.com/), recorded with [VHS](https://github.com/charmbracelet/vhs). They regenerate on release, so what you see here always matches the current build.
 
 ## Feedback
 

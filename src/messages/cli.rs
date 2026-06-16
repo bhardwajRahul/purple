@@ -17,6 +17,19 @@ pub use super::contains_control_chars as control_chars;
 
 pub use super::welcome_aboard as welcome;
 
+// ── Asset generation (internal) ─────────────────────────────────
+
+/// Confirmation printed after `purple gen-assets` writes the SVG set.
+pub fn gen_assets_done(count: usize, dir: &str) -> String {
+    format!("Wrote {count} SVG asset(s) to {dir}.")
+}
+
+/// Confirmation printed after `purple gen-assets --hero-out` writes the
+/// animated hero SVG.
+pub fn gen_assets_hero_done(path: &str) -> String {
+    format!("Wrote animated hero SVG to {path}.")
+}
+
 // ── Import ──────────────────────────────────────────────────────
 
 pub const IMPORT_NO_FILE: &str =

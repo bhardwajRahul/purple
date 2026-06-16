@@ -922,6 +922,20 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
+/// Pin `format_relative_time` to its real-time branch. The function reads the
+/// process-global demo flag: in demo mode it uses a frozen reference clock, so
+/// a concurrent demo-mode test (visual suite, asset generation) flipping the
+/// flag mid-assertion would skew a boundary value by a few seconds. Serialize
+/// against those suites via `GLOBAL_TEST_LOCK` and disable demo so the function
+/// uses live time, matching this module's `now_secs()`.
+fn realtime_guard() -> std::sync::MutexGuard<'static, ()> {
+    let g = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    crate::demo_flag::disable();
+    g
+}
+
 #[test]
 fn relative_just_now() {
     assert_eq!(format_relative_time(now_secs()), "just now");
@@ -931,6 +945,7 @@ fn relative_just_now() {
 
 #[test]
 fn relative_minutes() {
+    let _g = realtime_guard();
     assert_eq!(format_relative_time(now_secs() - 60), "1m ago");
     assert_eq!(format_relative_time(now_secs() - 300), "5m ago");
     assert_eq!(format_relative_time(now_secs() - 3599), "59m ago");
@@ -938,12 +953,14 @@ fn relative_minutes() {
 
 #[test]
 fn relative_hours() {
+    let _g = realtime_guard();
     assert_eq!(format_relative_time(now_secs() - 3600), "1h ago");
     assert_eq!(format_relative_time(now_secs() - 7200), "2h ago");
 }
 
 #[test]
 fn relative_days() {
+    let _g = realtime_guard();
     assert_eq!(format_relative_time(now_secs() - 86400), "1d ago");
     assert_eq!(format_relative_time(now_secs() - 7 * 86400), "7d ago");
 }
@@ -1351,18 +1368,21 @@ fn truncate_multibyte_utf8() {
 
 #[test]
 fn format_relative_time_boundary_60s() {
+    let _g = realtime_guard();
     let ts = now_secs() - 60;
     assert_eq!(format_relative_time(ts), "1m ago");
 }
 
 #[test]
 fn format_relative_time_boundary_3600s() {
+    let _g = realtime_guard();
     let ts = now_secs() - 3600;
     assert_eq!(format_relative_time(ts), "1h ago");
 }
 
 #[test]
 fn format_relative_time_boundary_86400s() {
+    let _g = realtime_guard();
     let ts = now_secs() - 86400;
     assert_eq!(format_relative_time(ts), "1d ago");
 }

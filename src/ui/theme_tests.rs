@@ -618,6 +618,42 @@ fn tunnel_active_and_tag_user_match_accent() {
 }
 
 #[test]
+fn section_card_title_takes_the_border_tone_with_bold() {
+    let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _lock = TEST_MUTEX.lock().unwrap();
+    init_with_mode(2);
+    set_theme(ThemeDef::purple());
+    let title = section_card_title();
+    let frame = border();
+    assert_eq!(title.fg, frame.fg, "title color matches the card frame");
+    assert_eq!(
+        title.add_modifier.contains(Modifier::DIM),
+        frame.add_modifier.contains(Modifier::DIM),
+        "title carries the frame's dim tone"
+    );
+    assert!(
+        title.add_modifier.contains(Modifier::BOLD),
+        "title stays bold for scannability"
+    );
+    COLOR_MODE.store(1, Ordering::Release);
+}
+
+#[test]
+fn set_color_mode_overrides_the_global_color_mode() {
+    let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _lock = TEST_MUTEX.lock().unwrap();
+    set_color_mode(2);
+    assert_eq!(color_mode(), 2, "truecolor forced regardless of terminal");
+    set_color_mode(0);
+    assert_eq!(color_mode(), 0, "no-color forced");
+    COLOR_MODE.store(1, Ordering::Release);
+}
+
+#[test]
 fn healthy_matches_online_dot() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()

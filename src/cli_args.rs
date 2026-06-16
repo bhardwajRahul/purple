@@ -166,6 +166,24 @@ pub enum Commands {
         #[arg(long)]
         since: Option<String>,
     },
+    /// Render marketing SVG screenshots from the demo TUI. Internal: drives the
+    /// release imagery pipeline so README and landing-page assets never go stale.
+    #[command(hide = true)]
+    GenAssets {
+        /// Output directory for the generated SVGs
+        #[arg(default_value = "assets/svg")]
+        out_dir: String,
+
+        /// Directory holding ui-mono-regular.woff2 and ui-mono-bold.woff2 to
+        /// embed. Pass an empty value to render with the system monospace.
+        #[arg(long, default_value = "assets/fonts")]
+        font_dir: String,
+
+        /// Also write the looping animated hero SVG (all five tabs with
+        /// detail panels, search typing itself) to this path.
+        #[arg(long)]
+        hero_out: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

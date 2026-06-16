@@ -59,6 +59,28 @@ pub fn run(cli: Cli, env: std::sync::Arc<crate::runtime::env::Env>) -> Result<()
         return run_tui(app);
     }
 
+    // Asset generation (internal, used by the release imagery pipeline). Uses
+    // demo data, so no SSH config is needed.
+    if let Some(Commands::GenAssets {
+        out_dir,
+        font_dir,
+        hero_out,
+    }) = &cli.command
+    {
+        let font = if font_dir.is_empty() {
+            None
+        } else {
+            Some(Path::new(font_dir))
+        };
+        let written = crate::asset_gen::generate(Path::new(out_dir), font)?;
+        println!("{}", messages::cli::gen_assets_done(written.len(), out_dir));
+        if let Some(hero) = hero_out {
+            crate::asset_gen::generate_hero(Path::new(hero), font)?;
+            println!("{}", messages::cli::gen_assets_hero_done(hero));
+        }
+        return Ok(());
+    }
+
     // Provider and Update subcommands don't need SSH config
     if let Some(Commands::Provider { command }) = cli.command {
         return cli::handle_provider_command(&env, command);
@@ -155,7 +177,8 @@ pub fn run(cli: Cli, env: std::sync::Arc<crate::runtime::env::Env>) -> Result<()
         | Some(Commands::Mcp { .. })
         | Some(Commands::Theme { .. })
         | Some(Commands::Logs { .. })
-        | Some(Commands::WhatsNew { .. }) => unreachable!(),
+        | Some(Commands::WhatsNew { .. })
+        | Some(Commands::GenAssets { .. }) => unreachable!(),
         None => {}
     }
 
@@ -443,5 +466,50 @@ mod tests {
         // Empty value counts as unset.
         let empty_https = two.with_var("HTTPS_PROXY", "");
         assert_eq!(collect_proxy_env(&empty_https), "NO_PROXY");
+    }
+
+    // The release imagery pipeline drives `purple gen-assets`. Exercise the
+    // dispatch arm itself: empty --font-dir maps to None and --hero-out drives
+    // the optional animated-hero branch (clap parsing is covered separately).
+    #[test]
+    fn gen_assets_dispatch_writes_scenes_and_hero() {
+        use clap::Parser;
+
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out_dir = tmp.path().join("svg");
+        let hero = tmp.path().join("hero.svg");
+        let cli = Cli::try_parse_from([
+            "purple",
+            "gen-assets",
+            out_dir.to_str().expect("utf8"),
+            "--font-dir",
+            "",
+            "--hero-out",
+            hero.to_str().expect("utf8"),
+        ])
+        .expect("parse gen-assets");
+        let env = std::sync::Arc::new(crate::runtime::env::Env::for_test(tmp.path()));
+
+        run(cli, env).expect("gen-assets dispatch");
+
+        let svgs: Vec<_> = std::fs::read_dir(&out_dir)
+            .expect("read svg dir")
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|x| x == "svg"))
+            .collect();
+        assert!(!svgs.is_empty(), "scene SVGs written");
+        assert!(hero.exists(), "--hero-out wrote the animated hero");
+        // Empty --font-dir maps to None, so no @font-face is embedded.
+        let body = std::fs::read_to_string(svgs[0].path()).expect("read scene svg");
+        assert!(
+            !body.contains("@font-face"),
+            "empty font-dir embeds no font: {}",
+            svgs[0].path().display()
+        );
+
+        crate::demo_flag::disable();
     }
 }

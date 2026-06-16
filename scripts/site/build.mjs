@@ -9,7 +9,7 @@
 // constants). The committed worker.ts is never deployed; worker.generated.ts
 // is. Run from CI (site.yml) before the Bunny deploy, or locally to preview.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,8 +36,23 @@ const humanDate = now.toLocaleString("en-US", {
     timeZone: "UTC",
 });
 
+// The hero animation is a committed artifact generated from the live TUI
+// (`purple gen-assets --hero-out assets/hero.svg`). Inlining it means no
+// extra request and the SVG text renders in the page's own webfonts.
+const heroPath = join(repoRoot, "assets", "hero.svg");
+if (!existsSync(heroPath)) {
+    throw new Error(
+        `assets/hero.svg is missing. Regenerate it with: purple gen-assets --hero-out assets/hero.svg (looked in ${heroPath})`,
+    );
+}
+const heroSvg = readFileSync(heroPath, "utf8").trim();
+if (!heroSvg.startsWith("<svg") || !heroSvg.endsWith("</svg>")) {
+    throw new Error("assets/hero.svg is not a complete SVG document");
+}
+
 function inject(text) {
     return text
+        .replaceAll("__HERO_SVG__", heroSvg)
         .replaceAll("__VERSION__", version)
         .replaceAll("__DATE_HUMAN__", humanDate)
         .replaceAll("__DATE__", isoDate);
@@ -79,7 +94,7 @@ for (const { constant, file } of sources) {
 
 // Safety net: fail loudly rather than deploy a broken site if a placeholder
 // survived (source typo) or a document came back empty (missing source file).
-for (const placeholder of ["__VERSION__", "__DATE__", "__DATE_HUMAN__"]) {
+for (const placeholder of ["__VERSION__", "__DATE__", "__DATE_HUMAN__", "__HERO_SVG__"]) {
     if (worker.includes(placeholder)) {
         throw new Error(`unresolved placeholder ${placeholder} in generated worker`);
     }

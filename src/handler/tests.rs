@@ -1632,6 +1632,13 @@ fn test_password_picker_select_proton_pass() {
 
 #[test]
 fn test_host_form_proton_askpass_writes_comment() {
+    // SshConfigFile::write no-ops under the global demo flag; serialise against
+    // demo-enabling tests (asset generation, visual suite) and pin demo off so
+    // the on-disk read below observes the written file.
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    crate::demo_flag::disable();
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("test_config");
     std::fs::write(&config_path, "Host srv\n    HostName srv.example.com\n").unwrap();

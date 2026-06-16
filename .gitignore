@@ -17,6 +17,10 @@
 .Trashes
 Icon?
 
+# Intermediate SVGs from `purple gen-assets`; the shipped screenshots are the
+# rasterized PNGs in assets/png/ (see scripts/render-assets.sh).
+assets/svg/
+
 # Demo
 demo-record.py
 demo-screenshots.py
@@ -51,6 +55,7 @@ tests/visual_golden/*.actual
 CLAUDE.md
 .claude/
 docs/
+.superpowers/
 
 # Nix
 result

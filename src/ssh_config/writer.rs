@@ -474,8 +474,21 @@ Host myserver
         assert_eq!(out, input, "must not insert a blank before the first block");
     }
 
+    /// Serialize against demo-flag mutators (asset generation, the visual
+    /// suite) and pin demo off. `SshConfigFile::write` no-ops in demo mode, so
+    /// a parallel demo-mode test flipping the global flag would make these
+    /// on-disk reads observe a file that was never written.
+    fn ondisk_guard() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::demo_flag::disable();
+        g
+    }
+
     #[test]
     fn write_normalization_is_idempotent() {
+        let _g = ondisk_guard();
         // Writing a healed config and re-parsing it must produce the same bytes
         // on a second write. Mirrors the fuzz round-trip/idempotency invariant
         // for the glued-hosts mutation class.
@@ -517,6 +530,7 @@ Host myserver
 
     #[test]
     fn write_normalizes_glued_hosts_on_disk_serialize_stays_pure() {
+        let _g = ondisk_guard();
         // serialize() must stay byte-for-byte round-trip faithful (glued stays
         // glued), but the persisted file gets a blank line between the blocks.
         let glued = "Host a\n  HostName 1.1.1.1\nHost b\n  HostName 2.2.2.2\n";
@@ -543,6 +557,7 @@ Host myserver
 
     #[test]
     fn write_normalizes_glued_hosts_preserves_crlf() {
+        let _g = ondisk_guard();
         let glued = "Host a\r\n  HostName 1.1.1.1\r\nHost b\r\n  HostName 2.2.2.2\r\n";
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config");

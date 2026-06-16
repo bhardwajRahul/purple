@@ -10,6 +10,7 @@ pub mod animation;
 pub mod app;
 pub mod askpass;
 pub(crate) mod askpass_env;
+pub mod asset_gen;
 pub mod changelog;
 pub mod cli;
 pub mod cli_args;

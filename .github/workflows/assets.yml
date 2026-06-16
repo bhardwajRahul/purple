@@ -1,0 +1,88 @@
+name: Regenerate marketing assets
+
+# Keeps README and landing-page imagery in lockstep with the binary.
+#
+# Screenshots: `purple gen-assets` renders each screen to an intermediate SVG
+# (box-drawing and blocks as shapes, text as Berkeley Mono with JetBrains Mono
+# as the fallback for the glyphs Berkeley lacks); rsvg-convert rasterizes each
+# to a 2x PNG via fontconfig fallback. The shipped PNGs are pixels, so no font
+# is committed. The animated demo is recorded with VHS in the same fonts.
+#
+# Berkeley Mono is fetched at build time from Bunny (woff2 not committed, per
+# the foundry's webfont license) and decompressed to TTF for fontconfig.
+#
+# Regenerates whenever the UI, demo data, exporter, tapes or this workflow
+# change on master, then commits the refreshed PNGs and demo. The commit only
+# touches assets/png and demo.*, none of which are trigger paths, so it never
+# loops.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "src/ui/**"
+      - "src/demo.rs"
+      - "src/asset_gen.rs"
+      - "scripts/render-assets.sh"
+      - "assets/tapes/**"
+      - "assets/fonts/**"
+      - ".github/workflows/assets.yml"
+
+permissions:
+  contents: write
+
+env:
+  BERKELEY_BASE: https://getpurple-assets.b-cdn.net/fonts
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev librsvg2-bin pngquant woff2 gifsicle
+
+      - name: Install fonts (JetBrains Mono fallback + Berkeley Mono from Bunny)
+        run: |
+          set -euo pipefail
+          FONTS="$HOME/.local/share/fonts"
+          mkdir -p "$FONTS"
+          # JetBrains Mono: fallback for the glyphs Berkeley lacks (status icons, braille).
+          curl -fsSL -o /tmp/jbm.zip \
+            https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
+          unzip -o -q /tmp/jbm.zip -d /tmp/jbm
+          cp /tmp/jbm/fonts/ttf/*.ttf "$FONTS/"
+          # Berkeley Mono: fetch the licensed webfont and decompress to TTF for fontconfig.
+          for w in Regular SemiBold Bold; do
+            curl -fsSL -o "/tmp/BerkeleyMono-$w.woff2" "$BERKELEY_BASE/BerkeleyMono-$w.woff2"
+            woff2_decompress "/tmp/BerkeleyMono-$w.woff2"
+            cp "/tmp/BerkeleyMono-$w.ttf" "$FONTS/"
+          done
+          fc-cache -f
+          fc-list | grep -i berkeley || (echo "::error::Berkeley Mono not registered with fontconfig" && exit 1)
+
+      - name: Build purple
+        run: cargo build --release --locked
+
+      - name: Render screenshots (PNG)
+        run: bash scripts/render-assets.sh
+
+      - name: Record the animated demo
+        uses: charmbracelet/vhs-action@v2
+        with:
+          path: assets/tapes/demo.tape
+
+      - name: Optimize the GIF
+        run: gifsicle -O3 -o demo.gif demo.gif
+
+      - name: Commit refreshed assets
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: regenerate marketing assets from the live TUI"
+          file_pattern: "assets/png/*.png assets/hero.svg demo.gif demo.webm"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"

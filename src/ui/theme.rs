@@ -1474,9 +1474,16 @@ pub fn init(env: &crate::runtime::env::Env) {
     }
 }
 
+/// Force a specific color mode (0 = NO_COLOR, 1 = ANSI 16, 2 = truecolor).
+/// Used by asset generation (`gen-assets`) to render the brand truecolor
+/// palette regardless of the host terminal's reported capabilities.
+pub(crate) fn set_color_mode(mode: u8) {
+    COLOR_MODE.store(mode, Ordering::Release);
+}
+
 #[cfg(test)]
 pub(crate) fn init_with_mode(m: u8) {
-    COLOR_MODE.store(m, Ordering::Release);
+    set_color_mode(m);
     let _ = THEME.get_or_init(|| RwLock::new(ThemeDef::purple()));
 }
 
@@ -1637,6 +1644,15 @@ pub fn muted() -> Style {
 /// Section headers (help overlay, host detail).
 pub fn section_header() -> Style {
     active_theme().fg_bold.to_style(mode())
+}
+
+/// Section card titles (`╭─ TITLE ─╮`). Border tone plus BOLD so the title
+/// reads as part of the card frame instead of competing with the content.
+pub fn section_card_title() -> Style {
+    active_theme()
+        .border
+        .to_style(mode())
+        .add_modifier(Modifier::BOLD)
 }
 
 /// Error message. Red when color is available.

@@ -1294,7 +1294,7 @@ pub fn section_open(lines: &mut Vec<Line<'static>>, title: &str, width: usize) {
     let fill = width.saturating_sub(prefix_width).saturating_sub(1);
     lines.push(Line::from(vec![
         Span::styled(border_prefix, theme::border()),
-        Span::styled(title.to_string(), theme::bold()),
+        Span::styled(title.to_string(), theme::section_card_title()),
         Span::styled(title_suffix, theme::border()),
         Span::styled(BOX_H.repeat(fill), theme::border()),
         Span::styled(BOX_TR, theme::border()),
@@ -1315,13 +1315,14 @@ pub fn section_open_with_status(
     let border_prefix = format!("{}{} ", BOX_TL, BOX_H); // "╭─ "
     let title_suffix = " ";
     let status_w: usize = status.iter().map(|s| s.content.width()).sum();
+    let title_style = theme::section_card_title();
     // ╭─ TITLE <fill> STATUS ─╮ : prefix + title + " " + fill + " " + status
     // + " " + ─ + ╮. The fixed pieces beyond title and status total 8 columns.
     let reserved = border_prefix.width() + title.width() + title_suffix.width() + status_w + 3;
     let fill = width.saturating_sub(reserved).saturating_sub(1);
     let mut spans = vec![
         Span::styled(border_prefix, theme::border()),
-        Span::styled(title.to_string(), theme::bold()),
+        Span::styled(title.to_string(), title_style),
         Span::styled(title_suffix, theme::border()),
         Span::styled(BOX_H.repeat(fill), theme::border()),
         Span::styled(" ", theme::border()),
