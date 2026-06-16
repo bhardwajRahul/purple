@@ -73,10 +73,19 @@ jobs:
       - name: Render screenshots (PNG)
         run: bash scripts/render-assets.sh
 
+      # The vhs-action downloads its own ffmpeg, which fails on the runner and
+      # ignores the system ffmpeg. Install VHS and ttyd from the charm apt repo
+      # and run vhs directly against the system ffmpeg (deps step) and the
+      # runner's preinstalled chromium.
+      - name: Install VHS and ttyd
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update && sudo apt-get install -y vhs ttyd
+
       - name: Record the animated demo
-        uses: charmbracelet/vhs-action@v2
-        with:
-          path: assets/tapes/demo.tape
+        run: vhs assets/tapes/demo.tape
 
       - name: Optimize the GIF
         run: gifsicle -O3 -o demo.gif demo.gif
