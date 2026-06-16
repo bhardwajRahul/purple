@@ -107,6 +107,38 @@ step "cargo test --lib visual_regression"
 cargo test --lib visual_regression
 pass
 
+# Asset pipeline: render to a temp dir and validate, so a break in gen-assets,
+# rsvg rasterization, the hero SVG or the demo tape is caught before push (the
+# assets.yml workflow runs the same render path). Runs automatically when its
+# tooling is present (rsvg-convert + vhs + Berkeley Mono in fontconfig); prints
+# a notice otherwise so the default run stays portable. Reuses the debug binary.
+# Count berkeley faces without a `| grep -q` pipe: grep -q exits on first match
+# and SIGPIPEs fc-list, which under `set -o pipefail` would make the condition
+# false and skip this gate silently. Read to EOF (grep -ci) and test the count.
+have_berkeley="$(fc-list 2>/dev/null | grep -ci berkeley || true)"
+if command -v rsvg-convert >/dev/null 2>&1 && command -v vhs >/dev/null 2>&1 \
+    && [[ "${have_berkeley:-0}" -gt 0 ]]; then
+    step "asset pipeline (render + validate; matches assets.yml)"
+    asset_tmp="$(mktemp -d)"
+    PURPLE_BIN="$(pwd)/target/debug/purple" PNG_DIR="$asset_tmp/png" HERO_OUT="$asset_tmp/hero.svg" \
+        ./scripts/render-assets.sh >/dev/null
+    [[ "$(head -c 64 "$asset_tmp/hero.svg")" == *"<svg"* ]] && grep -q '</svg>' "$asset_tmp/hero.svg" \
+        || { echo -e "${RED}    hero.svg is not a complete SVG${RESET}"; exit 1; }
+    png_count=0
+    for p in "$asset_tmp"/png/*.png; do
+        { [[ -s "$p" ]] && [[ "$(file "$p")" == *"PNG image data"* ]]; } \
+            || { echo -e "${RED}    invalid PNG: $p${RESET}"; exit 1; }
+        png_count=$((png_count + 1))
+    done
+    [[ "$png_count" -ge 1 ]] || { echo -e "${RED}    no PNGs rendered${RESET}"; exit 1; }
+    vhs validate assets/tapes/demo.tape
+    rm -rf "$asset_tmp"
+    echo "    rendered + validated $png_count PNGs, hero.svg and the demo tape"
+    pass
+else
+    echo -e "${RED}    NOTE: asset pipeline gate skipped (needs rsvg-convert + vhs + Berkeley Mono on PATH)${RESET}"
+fi
+
 if [[ "$WITH_DOCKER" == "true" ]]; then
     if ! docker info >/dev/null 2>&1; then
         echo -e "${RED}Docker daemon not running. Skip --with-docker or start Docker.${RESET}"

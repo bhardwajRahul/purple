@@ -43,8 +43,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # ffmpeg is pre-installed so VHS finds it on PATH and skips its own
+      # (flaky) ffmpeg download in the demo-recording step.
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev librsvg2-bin pngquant woff2 gifsicle
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev librsvg2-bin pngquant woff2 gifsicle ffmpeg
 
       - name: Install fonts (JetBrains Mono fallback + Berkeley Mono from Bunny)
         run: |

@@ -14,7 +14,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PURPLE_BIN="${PURPLE_BIN:-$ROOT/target/release/purple}"
 FONT_DIR="$ROOT/assets/fonts"
-PNG_DIR="$ROOT/assets/png"
+PNG_DIR="${PNG_DIR:-$ROOT/assets/png}"
+HERO_OUT="${HERO_OUT:-$ROOT/assets/hero.svg}"
 SCALE="${SCALE:-2}"
 
 if [[ ! -x "$PURPLE_BIN" ]]; then
@@ -31,7 +32,7 @@ trap 'rm -rf "$SVG_DIR"' EXIT
 
 # hero.svg is a committed artifact: the landing-page build inlines it via the
 # __HERO_SVG__ placeholder, so it ships as a vector and never rasterizes here.
-"$PURPLE_BIN" gen-assets "$SVG_DIR" --font-dir "$FONT_DIR" --hero-out "$ROOT/assets/hero.svg"
+"$PURPLE_BIN" gen-assets "$SVG_DIR" --font-dir "$FONT_DIR" --hero-out "$HERO_OUT"
 
 mkdir -p "$PNG_DIR"
 for svg in "$SVG_DIR"/*.svg; do
