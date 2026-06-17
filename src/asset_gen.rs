@@ -304,12 +304,17 @@ fn hero_frames() -> io::Result<Vec<AnimFrame>> {
         dur_ms: 1600,
         keyframe: true,
     });
+    // Each typing step is a full keyframe, not a delta. Deltas overlay on the
+    // base frame and erase filtered-out rows with background-fill rects; at the
+    // hero's display scale those abutting rects leave faint anti-alias seams
+    // that read as an empty cell grid. Self-contained frames carry no erase
+    // rects, so the area below the results stays clean.
     for (query, dur_ms) in [("p", 200), ("pr", 200), ("pro", 200), ("prod", 2600)] {
         app.start_search_with(query);
         frames.push(AnimFrame {
             buf: hero_buffer(&mut app)?,
             dur_ms,
-            keyframe: false,
+            keyframe: true,
         });
     }
 
@@ -425,21 +430,21 @@ mod tests {
         assert!(body.contains("pf-fb"), "static fallback scene marked");
         assert!(body.contains("Berkeley Mono"), "primary face");
         assert!(body.contains("@font-face"), "embedded fallback font");
-        // Five tabs: hosts (with four typing deltas) + tunnels + containers
-        // + snippets + keys = 9 frame groups.
+        // Five tabs: hosts (with four search keyframes typing the query) +
+        // tunnels + containers + snippets + keys = 9 frame groups.
         assert_eq!(
             body.matches("<g class=\"pf pf").count(),
             9,
             "expected 9 frame groups"
         );
-        // The typing scene reaches search mode; the query itself accumulates
-        // across delta frames (one new character per frame), so assert the
-        // search UI plus the per-keystroke deltas rather than one literal run.
+        // The typing scene reaches search mode. Each frame is a full keyframe
+        // rendering the query typed so far, so assert the search UI plus the
+        // accumulating query runs (one per keyframe).
         assert!(body.contains(">search:</text>"), "search UI appears");
-        for ch in ["p", "r", "o", "d"] {
+        for query in ["p", "pr", "pro", "prod"] {
             assert!(
-                body.contains(&format!(">{ch}</text>")),
-                "keystroke '{ch}' lands in a delta frame"
+                body.contains(&format!(">{query}</text>")),
+                "query '{query}' renders in a search keyframe"
             );
         }
 
@@ -449,6 +454,23 @@ mod tests {
         let body2 = fs::read_to_string(&out2).expect("read second hero svg");
         assert_eq!(body, body2, "hero generation is deterministic");
 
+        crate::demo_flag::disable();
+    }
+
+    #[test]
+    fn hero_frames_are_all_keyframes() {
+        // Every hero frame is self-contained. A delta frame overlays the base
+        // and hides filtered-out rows with background-fill rects; at the hero's
+        // display scale those abutting rects leave faint anti-alias seams that
+        // read as an empty cell grid. Keyframes carry no erase rects.
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let frames = hero_frames().expect("hero_frames");
+        assert!(
+            frames.iter().all(|f| f.keyframe),
+            "all hero frames must be keyframes so no delta erase rects are emitted"
+        );
         crate::demo_flag::disable();
     }
 
