@@ -1875,6 +1875,547 @@ fn test_sync_empty_user_not_set() {
 }
 
 // =========================================================================
+// provider user/key propagation to existing hosts (re-sync after the
+// provider config's user or key changed)
+// =========================================================================
+
+/// Helper: run one sync of a single remote host and return the resulting config.
+fn sync_one(section: &ProviderSection) -> SshConfigFile {
+    let mut config = empty_config();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        section,
+        false,
+        false,
+        false,
+    );
+    config
+}
+
+#[test]
+fn test_sync_propagates_changed_user_to_existing_host() {
+    // First sync creates the host with the provider user.
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let mut config = sync_one(&section);
+    assert_eq!(config.host_entries()[0].user, "root");
+
+    // Provider user changes; re-sync the same host.
+    section.user = "admin".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].user,
+        "admin",
+        "changed provider user must propagate to the already-synced host"
+    );
+    assert_eq!(result.updated, 1);
+}
+
+#[test]
+fn test_sync_preserves_manual_user_override() {
+    // First sync creates the host with the provider user and its marker.
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let mut config = sync_one(&section);
+
+    // User manually overrides the host's User directive (as the TUI edit does).
+    let mut edited = config.host_entries()[0].clone();
+    edited.user = "deploy".to_string();
+    config.update_host("do-web", &edited);
+    assert_eq!(config.host_entries()[0].user, "deploy");
+
+    // Provider user changes; re-sync must NOT clobber the manual override.
+    section.user = "admin".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].user,
+        "deploy",
+        "a manual per-host User override must survive a provider user change"
+    );
+}
+
+#[test]
+fn test_sync_adopts_provider_user_for_legacy_host_without_marker() {
+    // Legacy host: synced before the provider_user marker existed. It carries
+    // the old provider user (root) and NO # purple:provider_user comment.
+    let config_str = "\
+Host do-web
+  HostName 1.2.3.4
+  User root
+  # purple:provider digitalocean:1
+
+";
+    let mut config = SshConfigFile {
+        elements: SshConfigFile::parse_content(config_str),
+        path: test_config_path(),
+        crlf: false,
+        bom: false,
+    };
+    let mut section = make_section();
+    section.user = "admin".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].user,
+        "admin",
+        "a legacy provider host without a marker adopts the current provider user on sync"
+    );
+}
+
+#[test]
+fn test_sync_empty_provider_user_does_not_touch_existing_host() {
+    // Host synced with a concrete user.
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let mut config = sync_one(&section);
+
+    // Provider user cleared to empty: must NOT strip the existing User directive.
+    section.user = String::new();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].user,
+        "root",
+        "clearing the provider user must not remove an existing host's User directive"
+    );
+}
+
+#[test]
+fn test_sync_propagates_changed_identity_file_to_existing_host() {
+    let mut section = make_section();
+    section.identity_file = "~/.ssh/old_key".to_string();
+    let mut config = sync_one(&section);
+    assert_eq!(config.host_entries()[0].identity_file, "~/.ssh/old_key");
+
+    section.identity_file = "~/.ssh/new_key".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].identity_file,
+        "~/.ssh/new_key",
+        "changed provider key must propagate to the already-synced host"
+    );
+}
+
+#[test]
+fn test_sync_preserves_manual_identity_file_override() {
+    let mut section = make_section();
+    section.identity_file = "~/.ssh/old_key".to_string();
+    let mut config = sync_one(&section);
+
+    let mut edited = config.host_entries()[0].clone();
+    edited.identity_file = "~/.ssh/custom".to_string();
+    config.update_host("do-web", &edited);
+    assert_eq!(config.host_entries()[0].identity_file, "~/.ssh/custom");
+
+    section.identity_file = "~/.ssh/new_key".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].identity_file,
+        "~/.ssh/custom",
+        "a manual per-host IdentityFile override must survive a provider key change"
+    );
+}
+
+#[test]
+fn test_sync_marker_written_so_second_change_still_propagates() {
+    // Regression guard: after propagating once, the marker must equal the new
+    // provider user so a subsequent change also propagates (no stuck marker).
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let mut config = sync_one(&section);
+
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    section.user = "admin".to_string();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(config.host_entries()[0].user, "admin");
+
+    section.user = "cloud".to_string();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(
+        config.host_entries()[0].user,
+        "cloud",
+        "a second provider user change must also propagate"
+    );
+}
+
+/// Legacy host whose value already matches the provider config. The first
+/// sync must establish the tracking marker so a LATER manual override is
+/// detectable, otherwise the override gets silently clobbered on the next
+/// provider change.
+fn legacy_matching_config(user: &str) -> SshConfigFile {
+    let config_str = format!(
+        "Host do-web\n  HostName 1.2.3.4\n  User {}\n  # purple:provider digitalocean:1\n\n",
+        user
+    );
+    SshConfigFile {
+        elements: SshConfigFile::parse_content(&config_str),
+        path: test_config_path(),
+        crlf: false,
+        bom: false,
+    }
+}
+
+#[test]
+fn test_sync_baselines_marker_for_legacy_matching_host() {
+    // Legacy provider host, User already equals the provider user, no marker.
+    let mut config = legacy_matching_config("root");
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].provider_user.as_deref(),
+        Some("root"),
+        "first sync must baseline the provider_user marker on a legacy host"
+    );
+}
+
+#[test]
+fn test_sync_protects_post_upgrade_override_on_legacy_host() {
+    // Reviewer scenario: legacy host matches provider user, no marker.
+    let mut config = legacy_matching_config("root");
+    let mut section = make_section();
+    section.user = "root".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    // First sync after upgrade establishes the baseline marker.
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    // User manually overrides this host AFTER upgrading.
+    let mut edited = config.host_entries()[0].clone();
+    edited.user = "deploy".to_string();
+    config.update_host("do-web", &edited);
+
+    // Provider user changes; the post-upgrade override must survive.
+    section.user = "admin".to_string();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].user,
+        "deploy",
+        "a manual override made after the baseline marker exists must survive"
+    );
+}
+
+#[test]
+fn test_sync_adopts_provider_key_for_legacy_host_without_marker() {
+    let config_str = "\
+Host do-web
+  HostName 1.2.3.4
+  IdentityFile ~/.ssh/old_key
+  # purple:provider digitalocean:1
+
+";
+    let mut config = SshConfigFile {
+        elements: SshConfigFile::parse_content(config_str),
+        path: test_config_path(),
+        crlf: false,
+        bom: false,
+    };
+    let mut section = make_section();
+    section.identity_file = "~/.ssh/new_key".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].identity_file,
+        "~/.ssh/new_key",
+        "a legacy provider host without a key marker adopts the current provider key"
+    );
+}
+
+#[test]
+fn test_sync_empty_provider_key_does_not_touch_existing_host() {
+    let mut section = make_section();
+    section.identity_file = "~/.ssh/key".to_string();
+    let mut config = sync_one(&section);
+
+    section.identity_file = String::new();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(
+        config.host_entries()[0].identity_file,
+        "~/.ssh/key",
+        "clearing the provider key must not remove an existing host's IdentityFile"
+    );
+}
+
+#[test]
+fn test_sync_second_identity_file_change_still_propagates() {
+    let mut section = make_section();
+    section.identity_file = "~/.ssh/k1".to_string();
+    let mut config = sync_one(&section);
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+
+    section.identity_file = "~/.ssh/k2".to_string();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(config.host_entries()[0].identity_file, "~/.ssh/k2");
+
+    section.identity_file = "~/.ssh/k3".to_string();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(
+        config.host_entries()[0].identity_file,
+        "~/.ssh/k3",
+        "a second provider key change must also propagate"
+    );
+}
+
+#[test]
+fn test_sync_baselines_both_user_and_key_markers_together() {
+    // Legacy host with BOTH User and IdentityFile set, no markers, values
+    // match the section. One sync must baseline both markers independently.
+    let config_str = "\
+Host do-web
+  HostName 1.2.3.4
+  User root
+  IdentityFile ~/.ssh/id
+  # purple:provider digitalocean:1
+
+";
+    let mut config = SshConfigFile {
+        elements: SshConfigFile::parse_content(config_str),
+        path: test_config_path(),
+        crlf: false,
+        bom: false,
+    };
+    let mut section = make_section();
+    section.user = "root".to_string();
+    section.identity_file = "~/.ssh/id".to_string();
+    let remote = vec![ProviderHost::new(
+        "1".to_string(),
+        "web".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let entry = &config.host_entries()[0];
+    assert_eq!(entry.provider_user.as_deref(), Some("root"));
+    assert_eq!(entry.provider_key.as_deref(), Some("~/.ssh/id"));
+    // Directives themselves are untouched by a baseline-only sync.
+    assert_eq!(entry.user, "root");
+    assert_eq!(entry.identity_file, "~/.ssh/id");
+}
+
+#[test]
+fn test_sync_new_host_writes_provider_user_and_key_markers() {
+    let mut section = make_section();
+    section.user = "admin".to_string();
+    section.identity_file = "~/.ssh/id".to_string();
+    let config = sync_one(&section);
+    let entry = &config.host_entries()[0];
+    assert_eq!(entry.provider_user.as_deref(), Some("admin"));
+    assert_eq!(entry.provider_key.as_deref(), Some("~/.ssh/id"));
+}
+
+// =========================================================================
 // SyncResult struct
 // =========================================================================
 

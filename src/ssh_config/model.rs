@@ -102,6 +102,13 @@ pub struct HostEntry {
     pub provider_meta: Vec<(String, String)>,
     /// Unix timestamp when the host was marked stale (disappeared from provider sync).
     pub stale: Option<u64>,
+    /// Last-synced provider username from purple:provider_user comment. Lets
+    /// sync detect a manual per-host User override (user != marker) and
+    /// propagate a changed provider user to hosts still on the old value.
+    pub provider_user: Option<String>,
+    /// Last-synced provider identity file from purple:provider_key comment.
+    /// Same override-detection role as provider_user for IdentityFile.
+    pub provider_key: Option<String>,
 }
 
 impl Default for HostEntry {
@@ -126,6 +133,8 @@ impl Default for HostEntry {
             certificate_file: String::new(),
             provider_meta: Vec::new(),
             stale: None,
+            provider_user: None,
+            provider_key: None,
         }
     }
 }
@@ -1200,6 +1209,43 @@ impl SshConfigFile {
             return false;
         }
         block.set_provider_tags(tags);
+        true
+    }
+
+    /// Record the last-synced provider username on a host block by alias.
+    /// Empty value removes the marker. Same shared-block and pattern refusal
+    /// as the other purple-marker setters: a wrong-block mutation would
+    /// mis-track override state and let sync clobber a manual User edit.
+    #[must_use = "check the return value to detect silently-skipped mutations (renamed, deleted or shared-block hosts)"]
+    pub fn set_host_provider_user(&mut self, alias: &str, user: &str) -> bool {
+        if alias.is_empty() || is_host_pattern(alias) {
+            return false;
+        }
+        let Some(block) = self.find_host_block_mut(alias) else {
+            return false;
+        };
+        if is_host_pattern(&block.host_pattern) {
+            return false;
+        }
+        block.set_provider_user(user);
+        true
+    }
+
+    /// Record the last-synced provider identity file on a host block by alias.
+    /// Empty value removes the marker. Same safety invariants as
+    /// `set_host_provider_user`.
+    #[must_use = "check the return value to detect silently-skipped mutations (renamed, deleted or shared-block hosts)"]
+    pub fn set_host_provider_key(&mut self, alias: &str, key: &str) -> bool {
+        if alias.is_empty() || is_host_pattern(alias) {
+            return false;
+        }
+        let Some(block) = self.find_host_block_mut(alias) else {
+            return false;
+        };
+        if is_host_pattern(&block.host_pattern) {
+            return false;
+        }
+        block.set_provider_key(key);
         true
     }
 

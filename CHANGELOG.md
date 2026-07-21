@@ -1,3 +1,9 @@
+## 3.23.0 - 2026-07-21
+
+- feat: Change a provider's username once, every host follows.
+- feat: Update the default username or SSH key on a cloud provider and purple carries it to every host from that provider on the next sync, so you never hand-edit them one by one.
+- feat: Your per-host tweaks stay yours. If you set a different username or key on a specific host, changing the provider default leaves that host untouched.
+
 ## 3.22.1 - 2026-06-16
 
 - change: Calmer detail panels that read at a glance.

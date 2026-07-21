@@ -4160,11 +4160,18 @@ Host do-db-1
         false,
     );
     assert_eq!(result.removed, 1);
-    assert_eq!(result.unchanged, 1);
+    // web-1 survives. Being a legacy host without a provider_user marker, this
+    // first sync establishes its baseline marker, so it counts as updated.
+    assert_eq!(result.updated, 1);
+    assert_eq!(result.unchanged, 0);
 
     let output = config.serialize();
     assert!(output.contains("Host do-web-1"), "web-1 preserved");
     assert!(!output.contains("Host do-db-1"), "db-1 removed");
+    assert!(
+        output.contains("# purple:provider_user root"),
+        "surviving legacy host gains its provider_user baseline marker"
+    );
 }
 
 #[test]

@@ -1538,6 +1538,142 @@ fn test_set_provider_tags_does_not_delete_user_tags() {
     assert_eq!(entry.provider_tags, vec!["new1", "new2"]);
 }
 
+// =========================================================================
+// provider_user / provider_key marker parsing and round-trip tests
+// =========================================================================
+
+#[test]
+fn test_provider_user_parsing() {
+    let config = parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider_user admin\n");
+    assert_eq!(
+        first_block(&config)
+            .to_host_entry()
+            .provider_user
+            .as_deref(),
+        Some("admin")
+    );
+}
+
+#[test]
+fn test_provider_key_parsing_preserves_spaces() {
+    let config =
+        parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider_key ~/my keys/id_ed25519\n");
+    assert_eq!(
+        first_block(&config).to_host_entry().provider_key.as_deref(),
+        Some("~/my keys/id_ed25519")
+    );
+}
+
+#[test]
+fn test_provider_user_key_absent() {
+    let config = parse_str("Host s\n  HostName 10.0.0.1\n");
+    let entry = first_block(&config).to_host_entry();
+    assert!(entry.provider_user.is_none());
+    assert!(entry.provider_key.is_none());
+}
+
+#[test]
+fn test_empty_provider_user_marker_parses_as_none() {
+    let config = parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider_user\n");
+    assert!(first_block(&config).to_host_entry().provider_user.is_none());
+}
+
+#[test]
+fn test_set_host_provider_user_round_trip() {
+    let mut config = parse_str("Host s\n  HostName 10.0.0.1\n");
+    assert!(config.set_host_provider_user("s", "admin"));
+    let serialized = config.serialize();
+    let reparsed = parse_str(&serialized);
+    assert_eq!(
+        reparsed.host_entries()[0].provider_user.as_deref(),
+        Some("admin")
+    );
+}
+
+#[test]
+fn test_set_host_provider_user_empty_removes_marker() {
+    let mut config = parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider_user admin\n");
+    assert!(config.set_host_provider_user("s", ""));
+    assert!(first_block(&config).to_host_entry().provider_user.is_none());
+}
+
+#[test]
+fn test_provider_user_marker_does_not_collide_with_provider_marker() {
+    // The `_user` suffix (no space) must not be swallowed by the
+    // `# purple:provider ` marker parser, and vice versa.
+    let config = parse_str(
+        "Host s\n  HostName 10.0.0.1\n  # purple:provider digitalocean:123\n  # purple:provider_user admin\n",
+    );
+    let block = first_block(&config);
+    assert_eq!(
+        block.provider(),
+        Some(("digitalocean".to_string(), "123".to_string()))
+    );
+    assert_eq!(
+        block.to_host_entry().provider_user.as_deref(),
+        Some("admin")
+    );
+}
+
+#[test]
+fn test_set_provider_user_preserves_provider_marker() {
+    let mut config =
+        parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider digitalocean:123\n");
+    assert!(config.set_host_provider_user("s", "admin"));
+    let block = first_block(&config);
+    assert_eq!(
+        block.provider(),
+        Some(("digitalocean".to_string(), "123".to_string()))
+    );
+    assert_eq!(
+        block.to_host_entry().provider_user.as_deref(),
+        Some("admin")
+    );
+}
+
+#[test]
+fn test_set_host_provider_key_round_trip() {
+    let mut config = parse_str("Host s\n  HostName 10.0.0.1\n");
+    assert!(config.set_host_provider_key("s", "~/.ssh/id_ed25519"));
+    let reparsed = parse_str(&config.serialize());
+    assert_eq!(
+        reparsed.host_entries()[0].provider_key.as_deref(),
+        Some("~/.ssh/id_ed25519")
+    );
+}
+
+#[test]
+fn test_set_host_provider_key_empty_removes_marker() {
+    let mut config = parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider_key ~/.ssh/id\n");
+    assert!(config.set_host_provider_key("s", ""));
+    assert!(first_block(&config).to_host_entry().provider_key.is_none());
+}
+
+#[test]
+fn test_set_provider_key_preserves_provider_marker() {
+    let mut config =
+        parse_str("Host s\n  HostName 10.0.0.1\n  # purple:provider digitalocean:123\n");
+    assert!(config.set_host_provider_key("s", "~/.ssh/id"));
+    let block = first_block(&config);
+    assert_eq!(
+        block.provider(),
+        Some(("digitalocean".to_string(), "123".to_string()))
+    );
+    assert_eq!(
+        block.to_host_entry().provider_key.as_deref(),
+        Some("~/.ssh/id")
+    );
+}
+
+#[test]
+fn test_set_host_provider_user_refuses_pattern_alias() {
+    // Wildcard aliases must be refused so a `Host *.prod` pattern can never
+    // have a provider marker silently assigned to every host it resolves.
+    let mut config = parse_str("Host *.prod\n  User root\n");
+    assert!(!config.set_host_provider_user("*.prod", "admin"));
+    assert!(!config.set_host_provider_key("*.prod", "~/.ssh/id"));
+}
+
 #[test]
 fn test_set_askpass_does_not_delete_similar_comments() {
     // A hypothetical "# purple:askpass_backup test" should NOT be deleted by set_askpass

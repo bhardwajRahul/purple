@@ -212,6 +212,50 @@ pub fn sync_provider(
                             .any(|rt| rt.eq_ignore_ascii_case(t.trim()))
                     });
 
+                // User and identity file come from the section config, not the
+                // remote API. Track the last-synced value per host in
+                // # purple:provider_user / # purple:provider_key so a change to
+                // the provider config propagates to existing hosts, while a
+                // manual per-host override (host value != marker) is preserved.
+                // A host with no marker yet (synced before this existed) is
+                // treated as managed and adopts the current provider value once.
+                // Only propagate when BOTH the provider value and the host's
+                // current value are non-empty: we never strip a directive by
+                // clearing the field, and we never inject one into a host that
+                // has none (a fresh sync sets it at creation; an existing host
+                // without the directive is left as the user left it).
+                let user_changed = !section.user.is_empty()
+                    && !entry.user.is_empty()
+                    && entry
+                        .provider_user
+                        .as_deref()
+                        .is_none_or(|m| m == entry.user)
+                    && entry.user != section.user;
+                let key_changed = !section.identity_file.is_empty()
+                    && !entry.identity_file.is_empty()
+                    && entry
+                        .provider_key
+                        .as_deref()
+                        .is_none_or(|m| m == entry.identity_file)
+                    && entry.identity_file != section.identity_file;
+
+                // Establish the tracking baseline on a legacy provider host
+                // (synced before these markers existed) whose value already
+                // matches the provider config, so a manual override made AFTER
+                // this sync is detectable. Without it such a host stays
+                // marker-less and a later override would be clobbered on the
+                // next provider change. Records the host's current value, so it
+                // never changes a directive. `user_changed` (divergence) takes
+                // precedence and writes the marker itself.
+                let user_needs_baseline = !section.user.is_empty()
+                    && !entry.user.is_empty()
+                    && entry.provider_user.is_none()
+                    && !user_changed;
+                let key_needs_baseline = !section.identity_file.is_empty()
+                    && !entry.identity_file.is_empty()
+                    && entry.provider_key.is_none()
+                    && !key_changed;
+
                 if alias_changed
                     || ip_changed
                     || tags_changed
@@ -219,6 +263,10 @@ pub fn sync_provider(
                     || user_tags_overlap
                     || first_migration
                     || was_stale
+                    || user_changed
+                    || key_changed
+                    || user_needs_baseline
+                    || key_needs_baseline
                 {
                     if dry_run {
                         result.updated += 1;
@@ -241,11 +289,25 @@ pub fn sync_provider(
                             || user_tags_overlap
                             || first_migration
                             || was_stale
+                            || user_changed
+                            || key_changed
+                            || user_needs_baseline
+                            || key_needs_baseline
                         {
-                            if alias_changed || ip_changed {
+                            if alias_changed || ip_changed || user_changed || key_changed {
                                 let updated = HostEntry {
                                     alias: new_alias.clone(),
                                     hostname: remote.ip.clone(),
+                                    user: if user_changed {
+                                        section.user.clone()
+                                    } else {
+                                        entry.user.clone()
+                                    },
+                                    identity_file: if key_changed {
+                                        section.identity_file.clone()
+                                    } else {
+                                        entry.identity_file.clone()
+                                    },
                                     ..entry.clone()
                                 };
                                 config.update_host(existing_alias, &updated);
@@ -256,6 +318,23 @@ pub fn sync_provider(
                             } else {
                                 existing_alias
                             };
+                            // Record the last-synced provider value so a later
+                            // manual edit is detectable and the next provider
+                            // change also propagates. On divergence the marker
+                            // takes the new provider value; on a pure baseline
+                            // it records the host's current (matching) value.
+                            if user_changed {
+                                let _ = config.set_host_provider_user(tags_alias, &section.user);
+                            } else if user_needs_baseline {
+                                let _ = config.set_host_provider_user(tags_alias, &entry.user);
+                            }
+                            if key_changed {
+                                let _ = config
+                                    .set_host_provider_key(tags_alias, &section.identity_file);
+                            } else if key_needs_baseline {
+                                let _ =
+                                    config.set_host_provider_key(tags_alias, &entry.identity_file);
+                            }
                             if tags_changed || first_migration {
                                 let _ = config.set_host_provider_tags(tags_alias, &trimmed_remote);
                             }
@@ -411,6 +490,14 @@ pub fn sync_provider(
                 }
                 if !remote.metadata.is_empty() {
                     let _ = config.set_host_meta(&alias, &remote.metadata);
+                }
+                // Baseline the last-synced provider connection values so a
+                // later manual override is detectable on the next sync.
+                if !section.user.is_empty() {
+                    let _ = config.set_host_provider_user(&alias, &section.user);
+                }
+                if !section.identity_file.is_empty() {
+                    let _ = config.set_host_provider_key(&alias, &section.identity_file);
                 }
             }
 

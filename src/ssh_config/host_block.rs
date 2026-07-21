@@ -101,6 +101,38 @@ impl HostBlock {
         })
     }
 
+    /// Extract the last-synced provider username from a purple:provider_user
+    /// comment. Returns `None` when absent or empty. The `_user`/`_key` suffix
+    /// (no space) keeps these clear of the `# purple:provider ` marker parser.
+    pub fn provider_user(&self) -> Option<String> {
+        self.single_value_marker("# purple:provider_user")
+    }
+
+    /// Extract the last-synced provider identity file from a
+    /// purple:provider_key comment. Returns `None` when absent or empty.
+    pub fn provider_key(&self) -> Option<String> {
+        self.single_value_marker("# purple:provider_key")
+    }
+
+    /// Read a single-value `# purple:<name> <value>` comment, trimmed.
+    /// Returns `None` when the comment is absent or carries no value.
+    fn single_value_marker(&self, prefix: &str) -> Option<String> {
+        let with_space = format!("{} ", prefix);
+        for d in &self.directives {
+            if !d.is_non_directive {
+                continue;
+            }
+            let trimmed = d.raw_line.trim();
+            if let Some(rest) = trimmed.strip_prefix(with_space.as_str()) {
+                let value = rest.trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+        None
+    }
+
     /// Extract provider info from purple:provider comment in directives.
     /// Returns (provider_name, server_id), e.g. ("digitalocean", "412345678").
     /// Label is dropped here; use `provider_id()` for the full identifier.
@@ -576,6 +608,43 @@ impl HostBlock {
         );
     }
 
+    /// Set the last-synced provider username marker. Empty value removes it.
+    pub fn set_provider_user(&mut self, user: &str) {
+        self.set_single_value_marker("# purple:provider_user", user);
+    }
+
+    /// Set the last-synced provider identity file marker. Empty value removes it.
+    pub fn set_provider_key(&mut self, key: &str) {
+        self.set_single_value_marker("# purple:provider_key", key);
+    }
+
+    /// Replace (or, when `value` is empty, remove) a single-value
+    /// `# purple:<name> <value>` comment. Routes the value through
+    /// `sanitize_raw_line_value` so a stray newline cannot inject directives.
+    fn set_single_value_marker(&mut self, prefix: &str, value: &str) {
+        let indent = self.detect_indent();
+        let with_space = format!("{} ", prefix);
+        self.directives.retain(|d| {
+            !(d.is_non_directive && {
+                let t = d.raw_line.trim();
+                t == prefix || t.starts_with(with_space.as_str())
+            })
+        });
+        let value = Self::sanitize_raw_line_value(value.trim());
+        if !value.is_empty() {
+            let pos = self.content_end();
+            self.directives.insert(
+                pos,
+                Directive {
+                    key: String::new(),
+                    value: String::new(),
+                    raw_line: format!("{}{} {}", indent, prefix, value),
+                    is_non_directive: true,
+                },
+            );
+        }
+    }
+
     /// Extract a convenience HostEntry view from this block.
     ///
     /// Matches OpenSSH `ssh_config(5)`: "Unless noted otherwise, for each
@@ -632,6 +701,8 @@ impl HostBlock {
         entry.vault_addr = self.vault_addr();
         entry.provider_meta = self.meta();
         entry.stale = self.stale();
+        entry.provider_user = self.provider_user();
+        entry.provider_key = self.provider_key();
         entry
     }
 
