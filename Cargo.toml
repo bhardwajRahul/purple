@@ -38,7 +38,9 @@ sha2 = "0.10"
 hmac = "0.12"
 quick-xml = { version = "0.41", features = ["serde", "serialize"] }
 rsa = { version = "0.9", features = ["sha2"] }
-base64 = "0.22"
+# default-features off drops the `simd-unsafe` feature, keeping base64 at
+# `#![forbid(unsafe_code)]`. We only ever use the scalar GeneralPurpose engine.
+base64 = { version = "0.23", default-features = false, features = ["std"] }
 libc = "0.2"
 log = "0.4"
 simplelog = "0.12"
