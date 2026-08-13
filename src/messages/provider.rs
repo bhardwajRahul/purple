@@ -53,7 +53,7 @@ pub fn contains_control_chars(name: &str) -> String {
     format!("{} contains control characters.", name)
 }
 
-pub const TOKEN_FORMAT_AWS: &str = "Token format: AccessKeyId:SecretAccessKey";
+pub const TOKEN_FORMAT_AWS: &str = "Format: AccessKeyId:Secret[:SessionToken]";
 pub const URL_REQUIRED_PROXMOX: &str = "URL is required for Proxmox VE.";
 pub const PROJECT_REQUIRED_GCP: &str = "Project ID can't be empty. Set your GCP project ID.";
 pub const COMPARTMENT_REQUIRED_OCI: &str =

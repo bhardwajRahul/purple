@@ -10,7 +10,7 @@
 │   ● gateway-vpn                      infra           3h  ││ User          ops                    │
 │   ● podman-ed╭ Providers > AWS EC2 ───────────────────────────────────────────────╮9             │
 │   ● prod-eu1 ├─ Token* ───────────────────────────────────────────────────────────┤              │
-│   ● prod-eu2 │ AccessKeyId:Secret (or use Profile)                                │              │
+│   ● prod-eu2 │ AccessKeyId:Secret[:SessionToken] (or use Profile)                 │              │
 │   ● customer-├─ Profile* ─────────────────────────────────────────────────────────┤──────────────╯
 │   ● customer-│                                                                    │──────────────╮
 │   ✖ legacy-pr├─ Regions* ─────────────────────────────────────────────────────────┤              │
@@ -1280,6 +1280,21 @@
 (49,12) fg=Reset bg=Reset mod=DIM
 (50,12) fg=Reset bg=Reset mod=DIM
 (51,12) fg=Reset bg=Reset mod=DIM
+(52,12) fg=Reset bg=Reset mod=DIM
+(53,12) fg=Reset bg=Reset mod=DIM
+(54,12) fg=Reset bg=Reset mod=DIM
+(55,12) fg=Reset bg=Reset mod=DIM
+(56,12) fg=Reset bg=Reset mod=DIM
+(57,12) fg=Reset bg=Reset mod=DIM
+(58,12) fg=Reset bg=Reset mod=DIM
+(59,12) fg=Reset bg=Reset mod=DIM
+(60,12) fg=Reset bg=Reset mod=DIM
+(61,12) fg=Reset bg=Reset mod=DIM
+(62,12) fg=Reset bg=Reset mod=DIM
+(63,12) fg=Reset bg=Reset mod=DIM
+(64,12) fg=Reset bg=Reset mod=DIM
+(65,12) fg=Reset bg=Reset mod=DIM
+(66,12) fg=Reset bg=Reset mod=DIM
 (84,12) fg=Reset bg=Reset mod=DIM
 (85,12) fg=DarkGray bg=Reset mod=DIM
 (86,12) fg=DarkGray bg=Reset mod=DIM

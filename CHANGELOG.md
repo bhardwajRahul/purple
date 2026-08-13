@@ -1,3 +1,8 @@
+## 3.24.0 - 2026-08-13
+
+- feat: AWS syncs with the credentials your company hands out.
+- feat: Sync your EC2 hosts on temporary credentials from IAM Identity Center, assume-role or get-session-token. purple picks the session token up from your profile or from the token you paste in, then signs it into every request, so a fleet on short-lived keys stays as easy to sync as one on a permanent key pair.
+
 ## 3.23.0 - 2026-07-21
 
 - feat: Change a provider's username once, every host follows.
