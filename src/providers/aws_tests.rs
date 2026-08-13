@@ -122,6 +122,7 @@ fn test_sign_request_format() {
     let creds = AwsCredentials {
         access_key: "AKIDEXAMPLE".to_string(),
         secret_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
+        session_token: None,
     };
     let auth = sign_request(
         &creds,
@@ -143,6 +144,7 @@ fn test_sign_request_deterministic() {
     let creds = AwsCredentials {
         access_key: "AK".to_string(),
         secret_key: "SK".to_string(),
+        session_token: None,
     };
     let a = sign_request(
         &creds,
@@ -168,6 +170,7 @@ fn test_sign_request_different_regions() {
     let creds = AwsCredentials {
         access_key: "AK".to_string(),
         secret_key: "SK".to_string(),
+        session_token: None,
     };
     let a = sign_request(
         &creds,
@@ -231,10 +234,134 @@ fn test_parse_credentials_whitespace_handling() {
 
 #[test]
 fn test_parse_credentials_extra_keys_ignored() {
-    let content = "[default]\naws_access_key_id = AK\naws_secret_access_key = SK\naws_session_token = TOKEN\nregion = us-east-1\n";
+    let content =
+        "[default]\naws_access_key_id = AK\naws_secret_access_key = SK\nregion = us-east-1\n";
     let creds = parse_credentials(content, "default").unwrap();
     assert_eq!(creds.access_key, "AK");
     assert_eq!(creds.secret_key, "SK");
+    assert_eq!(creds.session_token, None);
+}
+
+#[test]
+fn test_parse_credentials_session_token() {
+    let content = "[default]\naws_access_key_id = ASIAEXAMPLE\naws_secret_access_key = SK\naws_session_token = TOKEN\n";
+    let creds = parse_credentials(content, "default").unwrap();
+    assert_eq!(creds.access_key, "ASIAEXAMPLE");
+    assert_eq!(creds.secret_key, "SK");
+    assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
+}
+
+#[test]
+fn test_sign_request_includes_security_token_when_present() {
+    let creds = AwsCredentials {
+        access_key: "ASIAEXAMPLE".to_string(),
+        secret_key: "SK".to_string(),
+        session_token: Some("TOKEN".to_string()),
+    };
+    let auth = sign_request(
+        &creds,
+        "eu-central-1",
+        "ec2.eu-central-1.amazonaws.com",
+        "Action=DescribeInstances&Version=2016-11-15",
+        "20240101T000000Z",
+        "20240101",
+    );
+    assert!(auth.contains("SignedHeaders=host;x-amz-date;x-amz-security-token,"));
+}
+
+#[test]
+fn test_sign_request_session_token_changes_signature() {
+    let base = AwsCredentials {
+        access_key: "ASIAEXAMPLE".to_string(),
+        secret_key: "SK".to_string(),
+        session_token: None,
+    };
+    let with_token = AwsCredentials {
+        access_key: "ASIAEXAMPLE".to_string(),
+        secret_key: "SK".to_string(),
+        session_token: Some("TOKEN".to_string()),
+    };
+    let args = (
+        "eu-central-1",
+        "ec2.eu-central-1.amazonaws.com",
+        "Action=DescribeInstances",
+        "20240101T000000Z",
+        "20240101",
+    );
+    let a = sign_request(&base, args.0, args.1, args.2, args.3, args.4);
+    let b = sign_request(&with_token, args.0, args.1, args.2, args.3, args.4);
+    assert_ne!(a, b);
+}
+
+#[test]
+fn test_resolve_credentials_env_without_session_token() {
+    let env = crate::runtime::env::Env::for_test("/tmp/x")
+        .with_var("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE")
+        .with_var("AWS_SECRET_ACCESS_KEY", "SECRET");
+    let creds = resolve_credentials("", "", &env).unwrap();
+    assert_eq!(creds.access_key, "AKIDEXAMPLE");
+    assert_eq!(creds.secret_key, "SECRET");
+    assert_eq!(creds.session_token, None);
+}
+
+#[test]
+fn test_resolve_credentials_env_with_session_token() {
+    let env = crate::runtime::env::Env::for_test("/tmp/x")
+        .with_var("AWS_ACCESS_KEY_ID", "ASIAEXAMPLE")
+        .with_var("AWS_SECRET_ACCESS_KEY", "SECRET")
+        .with_var("AWS_SESSION_TOKEN", "TOKEN");
+    let creds = resolve_credentials("", "", &env).unwrap();
+    assert_eq!(creds.access_key, "ASIAEXAMPLE");
+    assert_eq!(creds.secret_key, "SECRET");
+    assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
+}
+
+#[test]
+fn test_resolve_credentials_profile_shadows_env_session_token() {
+    // A configured profile wins over the environment, so every field comes
+    // from the credentials file even when both sources are populated.
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws_dir = home.path().join(".aws");
+    std::fs::create_dir_all(&aws_dir).expect("create .aws");
+    std::fs::write(
+        aws_dir.join("credentials"),
+        "[default]\naws_access_key_id = ASIAFROMFILE\naws_secret_access_key = FILESECRET\naws_session_token = FILETOKEN\n",
+    )
+    .expect("write credentials file");
+
+    let env = crate::runtime::env::Env::for_test(home.path())
+        .with_var("AWS_ACCESS_KEY_ID", "ASIAFROMENV")
+        .with_var("AWS_SECRET_ACCESS_KEY", "ENVSECRET")
+        .with_var("AWS_SESSION_TOKEN", "ENVTOKEN");
+
+    let creds = resolve_credentials("", "default", &env).expect("profile resolves from file");
+    assert_eq!(creds.access_key, "ASIAFROMFILE");
+    assert_eq!(creds.secret_key, "FILESECRET");
+    assert_eq!(creds.session_token.as_deref(), Some("FILETOKEN"));
+}
+
+#[test]
+fn test_resolve_credentials_token_with_session_token() {
+    let creds = resolve_credentials(
+        "ASIAEXAMPLE:SECRET:TOKEN",
+        "",
+        &crate::runtime::env::Env::empty(),
+    )
+    .unwrap();
+    assert_eq!(creds.access_key, "ASIAEXAMPLE");
+    assert_eq!(creds.secret_key, "SECRET");
+    assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
+}
+
+#[test]
+fn test_resolve_credentials_token_trailing_separator() {
+    // An empty third component leaves the secret key intact and yields no
+    // session token.
+    let creds = resolve_credentials("AKID:SECRET:", "", &crate::runtime::env::Env::empty())
+        .expect("access key and secret are both present");
+    assert_eq!(creds.access_key, "AKID");
+    assert_eq!(creds.secret_key, "SECRET");
+    assert_eq!(creds.session_token, None);
 }
 
 #[test]
@@ -965,4 +1092,100 @@ fn fetch_from_maps_auth_failure_to_provider_error() {
         matches!(result, Err(ProviderError::AuthFailed)),
         "a 401 from the region must surface as AuthFailed, got {result:?}"
     );
+}
+
+#[test]
+fn fetch_sends_security_token_header_for_temporary_credentials() {
+    // Both EC2 calls must carry x-amz-security-token, because the signature
+    // declares it in SignedHeaders.
+    let mut server = mockito::Server::new();
+    let instances = server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "Action".into(),
+            "DescribeInstances".into(),
+        ))
+        .match_header("x-amz-security-token", "TOKEN")
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(
+            r#"<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+  <reservationSet><item><instancesSet><item>
+    <instanceId>i-1234567890</instanceId>
+    <instanceState><name>running</name></instanceState>
+    <ipAddress>54.1.2.3</ipAddress>
+    <imageId>ami-12345678</imageId>
+    <tagSet><item><key>Name</key><value>web-1</value></item></tagSet>
+  </item></instancesSet></item></reservationSet>
+</DescribeInstancesResponse>"#,
+        )
+        .create();
+    let images = server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "Action".into(),
+            "DescribeImages".into(),
+        ))
+        .match_header("x-amz-security-token", "TOKEN")
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(
+            r#"<DescribeImagesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+  <imagesSet><item><imageId>ami-12345678</imageId><name>amzn2-ami-hvm-2.0</name></item></imagesSet>
+</DescribeImagesResponse>"#,
+        )
+        .create();
+
+    let aws = Aws {
+        regions: vec!["us-east-1".to_string()],
+        profile: String::new(),
+    };
+    let url = server.url();
+    let hosts = aws
+        .fetch_with_endpoint(
+            |_region| url.clone(),
+            "ASIAEXAMPLE:SECRET:TOKEN",
+            &AtomicBool::new(false),
+            &crate::runtime::env::Env::empty(),
+            &|_| {},
+        )
+        .expect("a signed request carrying the session token must reach the mock");
+    instances.assert();
+    images.assert();
+    assert_eq!(hosts.len(), 1);
+}
+
+#[test]
+fn fetch_omits_security_token_header_for_static_credentials() {
+    // Long-lived keys sign without the token, so the header must be absent.
+    let mut server = mockito::Server::new();
+    let instances = server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .match_header("x-amz-security-token", mockito::Matcher::Missing)
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(
+            r#"<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+  <reservationSet></reservationSet>
+</DescribeInstancesResponse>"#,
+        )
+        .create();
+
+    let aws = Aws {
+        regions: vec!["us-east-1".to_string()],
+        profile: String::new(),
+    };
+    let url = server.url();
+    let hosts = aws
+        .fetch_with_endpoint(
+            |_region| url.clone(),
+            "AKID:SECRET",
+            &AtomicBool::new(false),
+            &crate::runtime::env::Env::empty(),
+            &|_| {},
+        )
+        .expect("static credentials must reach the mock without a token header");
+    instances.assert();
+    assert!(hosts.is_empty());
 }

@@ -208,6 +208,11 @@ impl Env {
         }
     }
 
+    /// `AWS_SESSION_TOKEN`, set alongside temporary STS credentials.
+    pub fn aws_session_token(&self) -> Option<&str> {
+        self.var("AWS_SESSION_TOKEN")
+    }
+
     /// `PURPLE_TOKEN`, the self-invocation auth token.
     pub fn purple_token(&self) -> Option<&str> {
         self.var("PURPLE_TOKEN")
@@ -367,6 +372,23 @@ mod tests {
         assert_eq!(only_id.aws_credentials(), None);
         let both = only_id.with_var("AWS_SECRET_ACCESS_KEY", "secret");
         assert_eq!(both.aws_credentials(), Some(("AKIA", "secret")));
+    }
+
+    #[test]
+    fn aws_session_token_reads_env_var() {
+        let env = Env::for_test("/tmp/x");
+        assert_eq!(env.aws_session_token(), None);
+        let with_token = env.with_var("AWS_SESSION_TOKEN", "TOKEN");
+        assert_eq!(with_token.aws_session_token(), Some("TOKEN"));
+    }
+
+    #[test]
+    fn aws_session_token_is_independent_of_key_pair() {
+        // Temporary credentials always arrive as a triple, but the accessor
+        // must not depend on the key pair being present.
+        let env = Env::for_test("/tmp/x").with_var("AWS_SESSION_TOKEN", "TOKEN");
+        assert_eq!(env.aws_credentials(), None);
+        assert_eq!(env.aws_session_token(), Some("TOKEN"));
     }
 
     #[test]
