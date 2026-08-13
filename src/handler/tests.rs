@@ -1029,6 +1029,58 @@ fn test_provider_form_shift_tab_reverse() {
     );
 }
 
+/// Leaving the Token field with an AWS token that carries no separator is the
+/// only shape that warrants the format hint.
+fn leave_aws_token_field(token: &str) -> App {
+    let mut app = make_form_app_focused_on("aws", ProviderFormField::Token);
+    app.providers.form_mut().token = token.to_string();
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    app
+}
+
+#[test]
+fn test_aws_token_without_separator_warns_about_format() {
+    let app = leave_aws_token_field("AKIAIOSFODNN7EXAMPLE");
+    assert_status_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
+#[test]
+fn test_aws_token_pair_does_not_warn() {
+    let app = leave_aws_token_field("AKIAIOSFODNN7EXAMPLE:secretkey");
+    assert_status_not_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
+#[test]
+fn test_aws_token_with_session_token_does_not_warn() {
+    let app = leave_aws_token_field("ASIAIOSFODNN7EXAMPLE:secretkey:sessiontoken");
+    assert_status_not_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
+#[test]
+fn test_aws_empty_token_does_not_warn() {
+    let app = leave_aws_token_field("   ");
+    assert_status_not_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
+#[test]
+fn test_non_aws_token_without_separator_does_not_warn() {
+    let mut app = make_form_app_focused_on("digitalocean", ProviderFormField::Token);
+    app.providers.form_mut().token = "plain-token".to_string();
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    assert_status_not_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
+#[test]
+fn test_aws_token_warning_stays_out_of_other_fields() {
+    let mut app = make_form_app_focused_on("aws", ProviderFormField::AliasPrefix);
+    app.providers.form_mut().token = "AKIAIOSFODNN7EXAMPLE".to_string();
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    assert_status_not_contains(&app, crate::messages::TOKEN_FORMAT_AWS);
+}
+
 #[test]
 fn test_provider_form_proxmox_has_extra_fields() {
     let mut app = make_form_app_focused_on("proxmox", ProviderFormField::Url);
