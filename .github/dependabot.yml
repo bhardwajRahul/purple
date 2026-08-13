@@ -4,6 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # netlink-packet-sock-diag 0.4.2 pins netlink-packet-core ^0.7, so core
+      # 0.8 puts two incompatible copies in the graph and SockDiagMessage stops
+      # satisfying NetlinkDeserializable. Patches within 0.7 still come through.
+      - dependency-name: netlink-packet-core
+        versions: [">= 0.8"]
 
   - package-ecosystem: cargo
     directory: /fuzz
