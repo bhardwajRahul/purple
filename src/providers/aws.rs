@@ -108,12 +108,33 @@ fn resolve_credentials(
             });
         }
     }
+    // A config saved without a token and without a profile is valid, so name
+    // the three sources here rather than point at a token that was never set.
+    if token.trim().is_empty() {
+        return Err(ProviderError::Execute(
+            crate::messages::AWS_NO_CREDENTIALS.to_string(),
+        ));
+    }
     Err(ProviderError::AuthFailed)
+}
+
+/// The INI section header for a profile. One definition so the parser and
+/// the error path agree on what counts as present.
+fn profile_header(profile: &str) -> String {
+    format!("[{}]", profile)
+}
+
+/// Whether the file carries the profile's section at all. Separates "no such
+/// profile" from "profile is there but holds no key pair", which is what an
+/// IAM Identity Center profile looks like: the keys live in the SSO cache.
+fn has_profile_section(content: &str, profile: &str) -> bool {
+    let header = profile_header(profile);
+    content.lines().any(|line| line.trim() == header)
 }
 
 /// Parse AWS credentials from INI content (testable without filesystem).
 fn parse_credentials(content: &str, profile: &str) -> Option<AwsCredentials> {
-    let header = format!("[{}]", profile);
+    let header = profile_header(profile);
     let mut in_section = false;
     let mut access_key = String::new();
     let mut secret_key = String::new();
@@ -157,8 +178,17 @@ fn read_credentials_file(
         .paths()
         .ok_or(ProviderError::AuthFailed)?
         .aws_credentials_file();
-    let content = std::fs::read_to_string(&path).map_err(|_| ProviderError::AuthFailed)?;
-    parse_credentials(&content, profile).ok_or(ProviderError::AuthFailed)
+    let shown = path.display().to_string();
+    let content = std::fs::read_to_string(&path).map_err(|_| {
+        ProviderError::Execute(crate::messages::aws_credentials_file_unreadable(&shown))
+    })?;
+    parse_credentials(&content, profile).ok_or_else(|| {
+        ProviderError::Execute(if has_profile_section(&content, profile) {
+            crate::messages::aws_profile_without_keys(profile, &shown)
+        } else {
+            crate::messages::aws_profile_not_found(profile, &shown)
+        })
+    })
 }
 
 // --- SigV4 signing ---

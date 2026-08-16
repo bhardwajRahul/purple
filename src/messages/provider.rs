@@ -54,6 +54,33 @@ pub fn contains_control_chars(name: &str) -> String {
 }
 
 pub const TOKEN_FORMAT_AWS: &str = "Format: AccessKeyId:Secret[:SessionToken]";
+/// Sync-time failure for an AWS config that carries no token and no profile
+/// while the environment holds no credentials either.
+pub const AWS_NO_CREDENTIALS: &str = "No AWS credentials. Set a token or a profile on the provider. Otherwise export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.";
+
+/// A profile is set, so it takes priority over the token and the environment.
+/// These two say why it did not work, instead of blaming the API token.
+pub fn aws_credentials_file_unreadable(path: &str) -> String {
+    format!(
+        "Can't read {}. The provider is set to use a profile, so nothing else is tried.",
+        path
+    )
+}
+
+pub fn aws_profile_not_found(profile: &str, path: &str) -> String {
+    format!(
+        "Profile '{}' is not in {}. Only that file is read, never ~/.aws/config, so a profile declared there stays invisible. A profile also takes priority, so the token and the environment are not tried.",
+        profile, path
+    )
+}
+
+/// The profile block exists but holds no key pair.
+pub fn aws_profile_without_keys(profile: &str, path: &str) -> String {
+    format!(
+        "Profile '{}' in {} has no key pair. Write aws_access_key_id and aws_secret_access_key into it or clear the profile and let purple read your environment.",
+        profile, path
+    )
+}
 pub const URL_REQUIRED_PROXMOX: &str = "URL is required for Proxmox VE.";
 pub const PROJECT_REQUIRED_GCP: &str = "Project ID can't be empty. Set your GCP project ID.";
 pub const COMPARTMENT_REQUIRED_OCI: &str =

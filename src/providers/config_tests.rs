@@ -1586,3 +1586,105 @@ fn provider_section_debug_redacts_vault_addr() {
         "expected token and vault_addr both redacted: {dbg}"
     );
 }
+
+#[test]
+fn provider_section_log_record_keeps_the_token_out() {
+    let section = ProviderSection {
+        token: "super-secret-token".to_string(),
+        alias_prefix: "aws".to_string(),
+        user: "root".to_string(),
+        profile: "default".to_string(),
+        regions: "eu-central-1".to_string(),
+        auto_sync: true,
+        ..Default::default()
+    };
+    let record = section.log_record();
+    assert!(
+        !record.contains("super-secret-token"),
+        "token leaked: {record}"
+    );
+    assert!(
+        record.contains("token=set"),
+        "token state missing: {record}"
+    );
+    assert!(record.contains("prefix='aws'"), "prefix missing: {record}");
+    assert!(
+        record.contains("regions='eu-central-1'"),
+        "regions missing: {record}"
+    );
+}
+
+#[test]
+fn provider_section_log_record_marks_an_empty_token() {
+    let record = ProviderSection::default().log_record();
+    assert!(
+        record.contains("token=empty"),
+        "empty marker missing: {record}"
+    );
+    // Whitespace counts as empty here too, matching what the sync does with
+    // it. Logging `set` for a token the sync ignores misleads the reader.
+    let blank = ProviderSection {
+        token: "   ".to_string(),
+        ..Default::default()
+    };
+    assert!(
+        blank.log_record().contains("token=empty"),
+        "whitespace token logged as set: {}",
+        blank.log_record()
+    );
+}
+
+#[test]
+fn provider_section_log_record_names_the_field_each_provider_uses() {
+    // A Proxmox save is about the URL, a GCP save about the project. Fields
+    // the provider does not use stay out instead of printing as empty.
+    let proxmox = ProviderSection {
+        url: "https://pve.example.com:8006".to_string(),
+        token: "user@pam!t=s".to_string(),
+        ..Default::default()
+    };
+    let record = proxmox.log_record();
+    assert!(
+        record.contains("url='https://pve.example.com:8006'"),
+        "url missing: {record}"
+    );
+    assert!(
+        !record.contains("project="),
+        "empty field printed: {record}"
+    );
+    assert!(
+        !record.contains("regions="),
+        "empty field printed: {record}"
+    );
+
+    let gcp = ProviderSection {
+        project: "my-project".to_string(),
+        ..Default::default()
+    };
+    let record = gcp.log_record();
+    assert!(
+        record.contains("project='my-project'"),
+        "project missing: {record}"
+    );
+    assert!(!record.contains("url="), "empty field printed: {record}");
+}
+
+#[test]
+fn provider_section_log_record_leaves_vault_addr_out() {
+    // Same reason the Debug impl redacts it: the address reveals internal
+    // Vault topology.
+    let section = ProviderSection {
+        vault_addr: "https://vault.internal.example.com:8200".to_string(),
+        vault_role: "ssh/sign/admin".to_string(),
+        ..Default::default()
+    };
+    let record = section.log_record();
+    assert!(
+        !record.contains("vault.internal.example.com"),
+        "vault_addr leaked: {record}"
+    );
+    assert!(
+        record.contains("vault_role='ssh/sign/admin'"),
+        "vault_role missing: {record}"
+    );
+}

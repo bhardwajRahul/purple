@@ -213,9 +213,12 @@ impl Env {
         self.var("AWS_SESSION_TOKEN")
     }
 
-    /// `PURPLE_TOKEN`, the self-invocation auth token.
+    /// `PURPLE_TOKEN`, the self-invocation auth token. A variable that is
+    /// exported but blank (`export PURPLE_TOKEN="$UNSET"`) reads as absent:
+    /// it is ambient shell state, not a token the caller supplied.
     pub fn purple_token(&self) -> Option<&str> {
         self.var("PURPLE_TOKEN")
+            .filter(|token| !token.trim().is_empty())
     }
 
     /// True when `NO_COLOR` is present (any value), per the no-color convention.
@@ -372,6 +375,29 @@ mod tests {
         assert_eq!(only_id.aws_credentials(), None);
         let both = only_id.with_var("AWS_SECRET_ACCESS_KEY", "secret");
         assert_eq!(both.aws_credentials(), Some(("AKIA", "secret")));
+    }
+
+    #[test]
+    fn purple_token_treats_a_blank_variable_as_absent() {
+        // `export PURPLE_TOKEN="$UNSET"` leaves the variable present and
+        // empty. Reading that as a supplied token makes callers skip their
+        // stored-token fallback and save the blank over a real credential.
+        assert_eq!(Env::for_test("/tmp/x").purple_token(), None);
+        for blank in ["", "   "] {
+            assert_eq!(
+                Env::for_test("/tmp/x")
+                    .with_var("PURPLE_TOKEN", blank)
+                    .purple_token(),
+                None,
+                "a blank PURPLE_TOKEN must read as absent"
+            );
+        }
+        assert_eq!(
+            Env::for_test("/tmp/x")
+                .with_var("PURPLE_TOKEN", "tok")
+                .purple_token(),
+            Some("tok")
+        );
     }
 
     #[test]

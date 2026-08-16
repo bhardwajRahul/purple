@@ -362,6 +362,25 @@ pub const WARN_VERIFY_TLS_NOT_USED: &str =
 pub const WARN_REGIONS_NOT_USED: &str = "Warning: --regions is only used by the AWS, Scaleway, GCP, Azure and Oracle providers. \
      Ignoring.";
 
+/// A token was asked for but resolved to nothing. Valid for providers that
+/// read credentials elsewhere, so the save goes through. Saying so out loud
+/// separates a deliberate clear from a script that piped a blank secret.
+pub fn warn_token_resolved_empty(display_name: &str) -> String {
+    format!(
+        "Warning: empty token. {} will look for credentials elsewhere when it syncs.",
+        display_name
+    )
+}
+
+/// Same case, except a stored token gets overwritten by the empty one. The
+/// loss is the part worth naming: nothing else reports it.
+pub fn warn_token_replaced_with_empty(display_name: &str) -> String {
+    format!(
+        "Warning: empty token replaces the one stored for {}. It will look for credentials elsewhere when it syncs.",
+        display_name
+    )
+}
+
 /// Per-host status prefixes for `purple sync` output. Indented two
 /// spaces so the result line aligns under the `Syncing X...` header.
 /// `--dry-run` mode prepends "Would have:" so the user knows nothing

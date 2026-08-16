@@ -130,6 +130,45 @@ impl ProviderSection {
     pub fn provider(&self) -> &str {
         &self.id.provider
     }
+
+    /// One-line summary of what a save wrote, for the state-change log.
+    /// Optional fields only show up when set, so each provider's record names
+    /// the fields it actually uses. Credential values stay out of it: the
+    /// token reads as set or empty and `vault_addr` is left out entirely,
+    /// matching what the `Debug` impl redacts.
+    pub fn log_record(&self) -> String {
+        let mut parts = vec![
+            format!("prefix='{}'", self.alias_prefix),
+            format!("user='{}'", self.user),
+            // Trimmed, because every gate that reads the token trims first.
+            // A whitespace-only token logged as set would contradict the
+            // sync, which treats it as absent.
+            format!(
+                "token={}",
+                if self.token.trim().is_empty() {
+                    "empty"
+                } else {
+                    "set"
+                }
+            ),
+        ];
+        for (name, value) in [
+            ("url", &self.url),
+            ("profile", &self.profile),
+            ("regions", &self.regions),
+            ("project", &self.project),
+            ("compartment", &self.compartment),
+            ("identity_file", &self.identity_file),
+            ("vault_role", &self.vault_role),
+        ] {
+            if !value.is_empty() {
+                parts.push(format!("{}='{}'", name, value));
+            }
+        }
+        parts.push(format!("verify_tls={}", self.verify_tls));
+        parts.push(format!("auto_sync={}", self.auto_sync));
+        parts.join(" ")
+    }
 }
 
 /// Manual `Debug` so secret-bearing fields never leak into log lines,

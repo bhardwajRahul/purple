@@ -451,6 +451,51 @@ fn test_provider_config_parse_vault_role_present() {
 // =========================================================================
 
 #[test]
+fn test_submit_provider_form_aws_accepts_empty_token_and_profile() {
+    // Credentials come from AWS_ACCESS_KEY_ID / _SECRET_ACCESS_KEY /
+    // _SESSION_TOKEN at sync time, which is not knowable when saving.
+    let mut app = make_form_app_focused_on("aws", ProviderFormField::Token);
+    app.providers.form_mut().token = String::new();
+    app.providers.form_mut().profile = String::new();
+    app.providers.form_mut().regions = "eu-central-1".to_string();
+    app.providers.form_mut().alias_prefix = "aws".to_string();
+    submit_form(&mut app);
+    let section = app
+        .providers
+        .config()
+        .section("aws")
+        .expect("aws section must be saved without a token or a profile");
+    assert_eq!(section.token, "");
+    assert_eq!(section.profile, "");
+    assert_eq!(section.regions, "eu-central-1");
+    assert!(
+        !matches!(app.screen, Screen::ProviderForm { .. }),
+        "aws form must close after a successful submit"
+    );
+}
+
+#[test]
+fn test_submit_provider_form_aws_accepts_empty_token_with_profile() {
+    let mut app = make_form_app_focused_on("aws", ProviderFormField::Token);
+    app.providers.form_mut().token = String::new();
+    app.providers.form_mut().profile = "default".to_string();
+    app.providers.form_mut().regions = "eu-central-1".to_string();
+    app.providers.form_mut().alias_prefix = "aws".to_string();
+    submit_form(&mut app);
+    let section = app
+        .providers
+        .config()
+        .section("aws")
+        .expect("aws section must be saved on profile credentials alone");
+    assert_eq!(section.token, "");
+    assert_eq!(section.profile, "default");
+    assert!(
+        !matches!(app.screen, Screen::ProviderForm { .. }),
+        "aws form must close after a successful submit"
+    );
+}
+
+#[test]
 fn test_submit_provider_form_rejects_control_chars_in_token() {
     let mut app = make_form_app_focused_on("digitalocean", ProviderFormField::Token);
     app.providers.form_mut().token = "tok\x01en".to_string();
@@ -7397,16 +7442,28 @@ fn provider_optional_fields_are_complement() {
 }
 
 #[test]
-fn provider_mandatory_fields_aws_token_and_profile() {
+fn provider_mandatory_fields_aws_token_and_profile_optional() {
+    // Neither field is individually mandatory: AWS resolves credentials from
+    // the token, from the profile, or from the environment, so asterisking
+    // either one would promise a requirement that validation does not enforce.
     use crate::app::ProviderFormField;
     assert!(
-        ProviderFormField::is_mandatory_field(ProviderFormField::Token, "aws"),
-        "AWS Token should be mandatory (asterisked)"
+        !ProviderFormField::is_mandatory_field(ProviderFormField::Token, "aws"),
+        "AWS Token should not be mandatory (profile or environment may supply it)"
     );
     assert!(
-        ProviderFormField::is_mandatory_field(ProviderFormField::Profile, "aws"),
-        "AWS Profile should be mandatory (asterisked)"
+        !ProviderFormField::is_mandatory_field(ProviderFormField::Profile, "aws"),
+        "AWS Profile should not be mandatory (token or environment may supply it)"
     );
+    // Still shown in collapsed mode: optional is not the same as hidden.
+    assert!(ProviderFormField::is_required_field(
+        ProviderFormField::Token,
+        "aws"
+    ));
+    assert!(ProviderFormField::is_required_field(
+        ProviderFormField::Profile,
+        "aws"
+    ));
 }
 
 #[test]

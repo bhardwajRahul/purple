@@ -731,9 +731,10 @@ impl ProviderFormField {
     /// Whether a field is mandatory for form submission (asterisk in renderer).
     /// Distinct from `is_required_field` which controls progressive disclosure.
     ///
-    /// AWS: Token and Profile both get an asterisk. At least one must be filled
-    /// (Token for inline keys, Profile for ~/.aws/credentials).
-    /// Tailscale: Token is optional (empty = local CLI mode).
+    /// Token: asterisked unless the provider can resolve credentials elsewhere
+    /// (`ProviderKind::token_is_optional`).
+    /// Profile: never asterisked. Only AWS shows it. AWS also takes a token or
+    /// environment credentials, so no single one of those fields is mandatory.
     /// OVH: Regions (= Endpoint) is mandatory (unlike GCP/Oracle where it has
     /// a meaningful default).
     /// Label: only rendered when the form is in label-entry mode, and always
@@ -743,10 +744,8 @@ impl ProviderFormField {
         match field {
             ProviderFormField::Label => true,
             ProviderFormField::Url => true,
-            ProviderFormField::Token => {
-                !matches!(kind, Some(ProviderKind::Tailscale | ProviderKind::Teleport))
-            }
-            ProviderFormField::Profile => kind == Some(ProviderKind::Aws),
+            ProviderFormField::Token => !kind.is_some_and(ProviderKind::token_is_optional),
+            ProviderFormField::Profile => false,
             ProviderFormField::Project => kind.is_some_and(ProviderKind::has_project_field),
             ProviderFormField::Compartment => kind == Some(ProviderKind::Oracle),
             ProviderFormField::Regions => {

@@ -389,6 +389,54 @@ fn test_resolve_credentials_empty_parts() {
 }
 
 #[test]
+fn test_resolve_credentials_nothing_configured_names_the_sources() {
+    // The config saves without a token and without a profile, so the sync-time
+    // failure has to say where credentials can come from.
+    // `AwsCredentials` has no Debug on purpose, so unwrap the error side.
+    let err = resolve_credentials("", "", &crate::runtime::env::Env::empty())
+        .err()
+        .expect("no token, no profile and no environment must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("AWS_ACCESS_KEY_ID"), "unhelpful error: {msg}");
+    assert!(
+        !msg.contains("API token"),
+        "must not blame a token that was never set: {msg}"
+    );
+}
+
+#[test]
+fn test_resolve_credentials_missing_profile_names_the_profile() {
+    // A profile takes priority and is used on its own, so its failure must
+    // not read as a token problem. The token here is deliberately valid.
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path().join(".aws")).expect("mkdir");
+    std::fs::write(
+        home.path().join(".aws").join("credentials"),
+        "[other]\naws_access_key_id = AKID\naws_secret_access_key = SECRET\n",
+    )
+    .expect("write");
+    let env = crate::runtime::env::Env::for_test(home.path());
+    let err = resolve_credentials("AKID:SECRET", "missing", &env)
+        .err()
+        .expect("a profile that is not in the file must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("missing"), "profile not named: {msg}");
+    assert!(!msg.contains("API token"), "blames the token: {msg}");
+}
+
+#[test]
+fn test_resolve_credentials_malformed_token_still_blames_the_token() {
+    // A token that was set but cannot be parsed keeps the auth error.
+    let err = resolve_credentials("AKID:", "", &crate::runtime::env::Env::empty())
+        .err()
+        .expect("a malformed token must fail");
+    assert!(
+        err.to_string().contains("API token"),
+        "malformed token should point at the token: {err}"
+    );
+}
+
+#[test]
 fn test_resolve_credentials_no_colon() {
     // No colon in token: split_once fails, falls through to env vars
     // Token-only (no colon) should not produce valid credentials from token path
@@ -747,13 +795,47 @@ fn test_aws_mixed_valid_invalid_region_error() {
 // =========================================================================
 
 #[test]
-fn test_resolve_credentials_bad_profile_returns_auth_failed() {
-    // Non-existent profile should return AuthFailed (not Http)
+fn test_read_credentials_file_without_a_home_returns_auth_failed() {
+    // No paths means no ~/.aws/credentials to look in. Distinct from the
+    // profile-shaped failures below, which name what went wrong.
     let result = read_credentials_file(
         "nonexistent-profile-xyz",
         &crate::runtime::env::Env::empty(),
     );
     assert!(matches!(result, Err(ProviderError::AuthFailed)));
+}
+
+#[test]
+fn test_read_credentials_file_separates_missing_profile_from_missing_keys() {
+    // An SSO profile has its section in the file but keeps the key pair in
+    // the SSO cache. Telling the user it is "not in the file" while they are
+    // looking straight at it is the misdirection worth avoiding.
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path().join(".aws")).expect("mkdir");
+    std::fs::write(
+        home.path().join(".aws").join("credentials"),
+        "[sso-profile]\nregion = eu-central-1\n",
+    )
+    .expect("write");
+    let env = crate::runtime::env::Env::for_test(home.path());
+
+    let present = read_credentials_file("sso-profile", &env)
+        .err()
+        .expect("a profile without keys must fail")
+        .to_string();
+    assert!(
+        present.contains("no key pair"),
+        "should say the keys are missing: {present}"
+    );
+
+    let absent = read_credentials_file("not-there", &env)
+        .err()
+        .expect("a profile that is absent must fail")
+        .to_string();
+    assert!(
+        absent.contains("is not in"),
+        "should say the profile is absent: {absent}"
+    );
 }
 
 // =========================================================================

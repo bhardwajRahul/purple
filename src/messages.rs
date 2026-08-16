@@ -506,7 +506,7 @@ pub mod hints {
     pub const PROVIDER_URL: &str = "https://pve.example.com:8006";
     pub const PROVIDER_TOKEN_DEFAULT: &str = "your-api-token";
     pub const PROVIDER_TOKEN_PROXMOX: &str = "user@pam!token=secret";
-    pub const PROVIDER_TOKEN_AWS: &str = "AccessKeyId:Secret[:SessionToken] (or use Profile)";
+    pub const PROVIDER_TOKEN_AWS: &str = "AccessKeyId:Secret[:SessionToken] (or Profile or env)";
     pub const PROVIDER_TOKEN_GCP: &str = "/path/to/service-account.json (or access token)";
     pub const PROVIDER_TOKEN_AZURE: &str = "/path/to/service-principal.json (or access token)";
     pub const PROVIDER_TOKEN_TAILSCALE: &str = "API key (leave empty for local CLI)";

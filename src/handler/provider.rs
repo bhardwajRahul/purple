@@ -976,16 +976,11 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         }
     }
 
-    // Token is required unless the form marks it optional for this provider
-    // (local-CLI providers such as Tailscale and Teleport). AWS also accepts
-    // an empty token when a profile is set (credentials from ~/.aws/credentials).
-    let token_required = crate::app::ProviderFormField::is_mandatory_field(
-        crate::app::ProviderFormField::Token,
-        provider_name.as_str(),
-    );
-    if token_required
-        && app.providers.form_mut().token.trim().is_empty()
-        && (kind != Some(ProviderKind::Aws) || app.providers.form_mut().profile.trim().is_empty())
+    // Token may be left unset for providers that resolve credentials
+    // elsewhere: an AWS profile or environment, the Tailscale or Teleport
+    // local CLI.
+    if app.providers.form_mut().token.trim().is_empty()
+        && !kind.is_some_and(ProviderKind::token_is_optional)
     {
         let hint = if kind == Some(ProviderKind::Gcp) {
             crate::messages::PROVIDER_TOKEN_REQUIRED_GCP.to_string()
@@ -1078,6 +1073,9 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         vault_addr: app.providers.form_mut().vault_addr.trim().to_string(),
     };
 
+    // Captured before the section moves into the config.
+    let saved_record = section.log_record();
+
     // Snapshot for rollback. When migrating from bare to labeled, we have
     // an extra rename step on the existing section as well. Capture it.
     let old_section_by_id = app.providers.config().section_by_id(&form_id).cloned();
@@ -1145,6 +1143,7 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         app.notify_error(crate::messages::failed_to_save(&e));
         return;
     }
+    log::debug!("[purple] provider saved: [{}] {}", form_id, saved_record);
     // Migration succeeded. Before clearing the pending state, also rewrite
     // any legacy 2-segment markers in ~/.ssh/config for this provider to
     // the new `existing_label`. Without this, the formerly-bare config's

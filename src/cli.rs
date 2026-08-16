@@ -436,9 +436,18 @@ pub fn handle_provider_command(
                 compartment = None;
             }
 
-            // When updating an existing section, fall back to stored values for fields not supplied
+            // When updating an existing section, fall back to stored values for
+            // fields not supplied. Matched on the exact id being written: a
+            // lookup by provider name alone returns the first section, which
+            // would carry one account's token into another account's config.
+            // The label is validated further down; an invalid one simply
+            // matches nothing here.
+            let target_id = match label.as_deref() {
+                Some(l) => providers::config::ProviderConfigId::labeled(provider.clone(), l),
+                None => providers::config::ProviderConfigId::bare(provider.clone()),
+            };
             let existing_section = providers::config::ProviderConfig::load(env.paths())
-                .section(&provider)
+                .section_by_id(&target_id)
                 .cloned();
 
             if let Some(ref existing) = existing_section {
@@ -510,14 +519,14 @@ pub fn handle_provider_command(
                 }
             }
 
-            // AWS allows empty token when --profile is set
-            let aws_has_profile = kind == Some(ProviderKind::Aws)
-                && profile.as_deref().is_some_and(|p| !p.trim().is_empty());
-            let token = if aws_has_profile
-                && token.is_none()
-                && !token_stdin
-                && env.purple_token().is_none()
-            {
+            // Token may be left unset for providers that resolve credentials
+            // elsewhere: an AWS profile or environment, the Tailscale or
+            // Teleport local CLI. `token_omitted` only decides whether to skip
+            // resolve_token, which exits when it finds nothing at all. It never
+            // decides whether an empty token is acceptable.
+            let token_omitted = token.is_none() && !token_stdin && env.purple_token().is_none();
+            let token_optional = kind.is_some_and(ProviderKind::token_is_optional);
+            let token = if token_optional && token_omitted {
                 String::new()
             } else {
                 match super::resolve_token(env, token, token_stdin) {
@@ -529,10 +538,29 @@ pub fn handle_provider_command(
                 }
             };
 
-            if token.trim().is_empty()
-                && !aws_has_profile
-                && !matches!(kind, Some(ProviderKind::Tailscale | ProviderKind::Teleport))
-            {
+            // Asking for a token that resolves to nothing stays legal here, so
+            // `--token ""` still clears a stored one. A script that piped a
+            // blank secret looks identical from here, so it gets said out loud,
+            // and losing a stored credential is named separately.
+            if token.trim().is_empty() && token_optional && !token_omitted {
+                let display_name = providers::provider_display_name(&provider);
+                let replaces_stored = existing_section
+                    .as_ref()
+                    .is_some_and(|s| !s.token.trim().is_empty());
+                if replaces_stored {
+                    eprintln!(
+                        "{}",
+                        crate::messages::cli::warn_token_replaced_with_empty(display_name)
+                    );
+                } else {
+                    eprintln!(
+                        "{}",
+                        crate::messages::cli::warn_token_resolved_empty(display_name)
+                    );
+                }
+            }
+
+            if token.trim().is_empty() && !token_optional {
                 if kind == Some(ProviderKind::Gcp) {
                     eprintln!("{}", crate::messages::cli::PROVIDER_TOKEN_REQUIRED_GCP);
                 } else if kind == Some(ProviderKind::Oracle) {
@@ -691,10 +719,14 @@ pub fn handle_provider_command(
                 vault_addr: String::new(),
             };
 
+            // Captured before the section moves into the config.
+            let saved_record = section.log_record();
             config.set_section(section);
-            config
-                .save()
-                .map_err(|e| anyhow::anyhow!("Failed to save: {}", e))?;
+            config.save().map_err(|e| {
+                log::warn!("[config] Save failed for [{}]: {}", id, e);
+                anyhow::anyhow!("Failed to save: {}", e)
+            })?;
+            log::debug!("[purple] provider saved: [{}] {}", id, saved_record);
             println!("{}", crate::messages::cli::saved_config(&id.to_string()));
             Ok(())
         }
@@ -750,9 +782,15 @@ pub fn handle_provider_command(
                     count
                 }
             };
-            config
-                .save()
-                .map_err(|e| anyhow::anyhow!("Failed to save: {}", e))?;
+            config.save().map_err(|e| {
+                log::warn!("[config] Save failed removing [{}]: {}", id, e);
+                anyhow::anyhow!("Failed to save: {}", e)
+            })?;
+            log::debug!(
+                "[purple] provider removed: [{}], {} section(s)",
+                id,
+                removed
+            );
             if removed == 1 {
                 println!("{}", crate::messages::cli::removed_config(&provider));
             } else {

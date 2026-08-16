@@ -123,6 +123,34 @@ impl ProviderKind {
         }
     }
 
+    /// Whether a saved config may leave the `token` field empty.
+    ///
+    /// Tailscale falls back to the local CLI and Teleport has no token at all,
+    /// it always reads the local `tsh`. AWS resolves credentials from the
+    /// token, from `--profile` (`~/.aws/credentials`) or from
+    /// `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` in
+    /// the environment, so whether an empty token works is only known at sync
+    /// time, not when the config is saved.
+    pub fn token_is_optional(self) -> bool {
+        match self {
+            ProviderKind::Aws | ProviderKind::Tailscale | ProviderKind::Teleport => true,
+            ProviderKind::Azure
+            | ProviderKind::DigitalOcean
+            | ProviderKind::Gcp
+            | ProviderKind::Hetzner
+            | ProviderKind::I3d
+            | ProviderKind::Leaseweb
+            | ProviderKind::Linode
+            | ProviderKind::Oracle
+            | ProviderKind::Ovh
+            | ProviderKind::Proxmox
+            | ProviderKind::Scaleway
+            | ProviderKind::Transip
+            | ProviderKind::UpCloud
+            | ProviderKind::Vultr => false,
+        }
+    }
+
     /// Whether the CLI's `--regions` flag applies. Subset of `has_regions_field`
     /// because not every provider with a regions form field also exposes the CLI flag.
     pub fn accepts_cli_regions(self) -> bool {
@@ -412,6 +440,21 @@ mod tests {
                 assert!(kind.has_regions_field(), "{kind:?} picker without field");
                 assert_ne!(*kind, ProviderKind::Azure, "azure regions are free-form");
             }
+        }
+    }
+
+    #[test]
+    fn token_is_optional_set() {
+        for (_, kind) in ALL {
+            let want = matches!(
+                kind,
+                ProviderKind::Aws | ProviderKind::Tailscale | ProviderKind::Teleport
+            );
+            assert_eq!(
+                kind.token_is_optional(),
+                want,
+                "token optionality for {kind:?}"
+            );
         }
     }
 

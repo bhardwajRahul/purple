@@ -195,7 +195,7 @@
       "name": "How do I sync AWS EC2 instances with purple?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "In the TUI, press S to open the provider list, then add AWS. Select your regions from the region picker and fill in your credentials profile or access key. The CLI alternative is purple provider add aws --profile default --regions us-east-1,eu-west-1. EC2 tags are synced (excluding internal aws:* tags). AMI names are resolved for OS metadata."
+        "text": "In the TUI, press S to open the provider list, then add AWS. Select your regions from the region picker and fill in your credentials profile or access key. Leave both empty and purple uses the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY exported in the shell it was started from. The CLI alternative is purple provider add aws --profile default --regions us-east-1,eu-west-1. EC2 tags are synced (excluding internal aws:* tags). AMI names are resolved for OS metadata."
       }
     },
     {
@@ -1293,7 +1293,7 @@ footer .sep { margin: 0 0.3em; }
       </details>
       <details>
         <summary>How do I sync AWS EC2 instances with purple?</summary>
-        <div class="answer">In the TUI, press <code>S</code> to open the provider list, then add AWS. Select your regions from the region picker and fill in your credentials profile or access key. The CLI alternative is <code>purple provider add aws --profile default --regions us-east-1,eu-west-1</code>. EC2 tags are synced (excluding internal aws:* tags). AMI names are resolved for OS metadata.</div>
+        <div class="answer">In the TUI, press <code>S</code> to open the provider list, then add AWS. Select your regions from the region picker and fill in your credentials profile or access key. Leave both empty and purple uses the <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> exported in the shell it was started from. The CLI alternative is <code>purple provider add aws --profile default --regions us-east-1,eu-west-1</code>. EC2 tags are synced (excluding internal aws:* tags). AMI names are resolved for OS metadata.</div>
       </details>
       <details>
         <summary>How do I sync Google Cloud (GCP) instances with purple?</summary>
