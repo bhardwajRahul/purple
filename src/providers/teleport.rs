@@ -246,18 +246,26 @@ struct TshOutput {
 
 /// Run `tsh <args>` with stdin closed, a timeout and cancel support. A
 /// closed stdin keeps an expired session from waiting on a login prompt.
+/// The child gets its own process group so cancel and timeout also take
+/// down anything tsh spawned; otherwise a grandchild holding the pipes
+/// keeps the readers alive.
 fn run_tsh(
     env: &Env,
     tsh: &std::path::Path,
     args: &[&str],
     cancel: &AtomicBool,
 ) -> Result<TshOutput, ProviderError> {
-    let mut child = env
-        .command(&tsh.to_string_lossy())
-        .args(args)
+    let mut cmd = env.command(&tsh.to_string_lossy());
+    cmd.args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|e| ProviderError::Execute(format!("Failed to run tsh: {}", e)))?;
 
@@ -284,16 +292,14 @@ fn run_tsh(
     let label = args.first().copied().unwrap_or("");
     let outcome: Result<bool, ProviderError> = loop {
         if cancel.load(Ordering::Relaxed) {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_process_group(&mut child);
             break Err(ProviderError::Cancelled);
         }
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status.success()),
             Ok(None) => {
                 if start.elapsed() >= TSH_TIMEOUT {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    kill_process_group(&mut child);
                     break Err(ProviderError::Execute(format!(
                         "tsh {label} timed out after {}s.",
                         TSH_TIMEOUT.as_secs()
@@ -302,8 +308,7 @@ fn run_tsh(
                 std::thread::sleep(TSH_POLL);
             }
             Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_process_group(&mut child);
                 break Err(ProviderError::Execute(format!(
                     "Failed to wait for tsh {label}: {}",
                     e
@@ -321,6 +326,22 @@ fn run_tsh(
         stdout,
         stderr,
     })
+}
+
+/// Kill the child and everything in its process group, then reap it.
+fn kill_process_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pgid = child.id() as libc::pid_t;
+        if pgid > 0 {
+            // SAFETY: plain syscall on a pid we own; a stale pgid only yields ESRCH.
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Trim tsh's stderr down to something a toast can show.

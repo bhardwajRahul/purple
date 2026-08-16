@@ -7351,6 +7351,26 @@ fn provider_required_fields_proxmox() {
 }
 
 #[test]
+fn provider_required_fields_teleport_lead_with_user() {
+    // No Token for Teleport: User is the collapsed-mode field and comes first,
+    // so the form opens on a visible field instead of an empty box.
+    let required = crate::app::ProviderFormField::required_fields_for("teleport");
+    assert_eq!(required, vec![crate::app::ProviderFormField::User]);
+    let all = crate::app::ProviderFormField::fields_for("teleport");
+    assert_eq!(all[0], crate::app::ProviderFormField::User);
+    assert!(!all.contains(&crate::app::ProviderFormField::Token));
+    assert!(!all.contains(&crate::app::ProviderFormField::VaultRole));
+    // Every other provider keeps User out of the collapsed view.
+    for provider in ["digitalocean", "aws", "tailscale", "proxmox"] {
+        assert!(
+            !crate::app::ProviderFormField::required_fields_for(provider)
+                .contains(&crate::app::ProviderFormField::User),
+            "{provider} must not show User in collapsed mode"
+        );
+    }
+}
+
+#[test]
 fn provider_optional_fields_are_complement() {
     for provider in &[
         "aws",
@@ -7361,6 +7381,8 @@ fn provider_optional_fields_are_complement() {
         "oracle",
         "ovh",
         "scaleway",
+        "tailscale",
+        "teleport",
     ] {
         let all = crate::app::ProviderFormField::fields_for(provider);
         let required = crate::app::ProviderFormField::required_fields_for(provider);
@@ -7418,6 +7440,7 @@ fn provider_required_fields_prefix_of_all_fields() {
         "ovh",
         "scaleway",
         "tailscale",
+        "teleport",
         "transip",
         "leaseweb",
         "i3d",

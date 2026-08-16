@@ -82,6 +82,7 @@
     "Atomic writes with automatic backups",
     "Split-pane detail panel with connection info, activity sparkline, provider metadata, tunnels and snippets",
     "Shell completions for Bash, zsh, fish",
+    "Configurable ssh command for interactive logins: kitty's kitten ssh or any wrapper that takes ssh arguments, via the ssh_command preference or PURPLE_SSH_COMMAND",
     "MCP server for AI agent integration (Claude Code, Cursor): list hosts, run commands and manage containers via JSON-RPC 2.0 over stdio"
   ]
 }
@@ -1226,6 +1227,10 @@ footer .sep { margin: 0 0.3em; }
     <div class="feat">
       <span class="feat-icon">🤖</span>
       <span class="feat-text"><strong>Let AI agents manage your servers.</strong> Built-in MCP server with one-click <code>.mcpb</code> install for Claude Desktop. Works with Claude Code, Cursor, Windsurf and any MCP-compatible agent. Read-only mode keeps agents on a leash and every call lands in the audit log.</span>
+    </div>
+    <div class="feat">
+      <span class="feat-icon">🐱</span>
+      <span class="feat-text"><strong>Bring your own ssh.</strong> Point purple at kitty's <code>kitten ssh</code> or any wrapper that takes ssh arguments with one preference or <code>PURPLE_SSH_COMMAND</code>. Interactive logins use it; tunnels, snippets and transfers stay on plain ssh.</span>
     </div>
     <div class="feat">
       <span class="feat-icon">📬</span>

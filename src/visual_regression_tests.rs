@@ -1785,6 +1785,21 @@ fn visual_provider_form() {
 }
 
 #[test]
+fn visual_provider_form_teleport() {
+    // Teleport has no Token field. The collapsed form must still show its
+    // lead field (User, the Teleport login) with focus on it.
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.open_provider_form(crate::providers::config::ProviderConfigId::bare("teleport"));
+    assert_eq!(
+        app.providers.form().focused_field,
+        crate::app::ProviderFormField::User
+    );
+    let actual = render_screen(&mut app);
+    assert_golden("provider_form_teleport", &actual);
+}
+
+#[test]
 fn visual_provider_form_label_entry() {
     // Issue #51: when the user adds an N-th labeled config (with at least one
     // labeled section already present), the form opens with a `Label` input

@@ -566,6 +566,32 @@ fn fetch_reports_unparseable_ls_output() {
 #[cfg(unix)]
 #[test]
 fn fetch_honors_cancel() {
+    // Cancel while the stub is inside its `sleep`: the sleep is a grandchild
+    // holding the pipes, so only a process-group kill returns promptly.
+    let home = tempfile::tempdir().unwrap();
+    let env = stub_env(home.path()).with_var("MOCK_TSH_SLEEP", "5");
+    let cancel = std::sync::Arc::new(AtomicBool::new(false));
+    let flag = std::sync::Arc::clone(&cancel);
+    let trigger = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    let start = std::time::Instant::now();
+    let err = provider()
+        .fetch_hosts_cancellable("", &cancel, &env)
+        .unwrap_err();
+    trigger.join().unwrap();
+    assert!(matches!(err, ProviderError::Cancelled), "{err}");
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "cancel took {:?}",
+        start.elapsed()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn fetch_honors_cancel_set_up_front() {
     let home = tempfile::tempdir().unwrap();
     let env = stub_env(home.path()).with_var("MOCK_TSH_SLEEP", "5");
     let cancel = AtomicBool::new(true);
@@ -574,7 +600,7 @@ fn fetch_honors_cancel() {
         .fetch_hosts_cancellable("", &cancel, &env)
         .unwrap_err();
     assert!(matches!(err, ProviderError::Cancelled), "{err}");
-    assert!(start.elapsed() < Duration::from_secs(4));
+    assert!(start.elapsed() < Duration::from_secs(3));
 }
 
 impl ProviderHost {

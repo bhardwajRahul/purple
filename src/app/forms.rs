@@ -660,10 +660,11 @@ impl ProviderFormField {
     ];
 
     /// Teleport has no token and issues its own certificates, so neither the
-    /// Token nor the Vault fields apply.
+    /// Token nor the Vault fields apply. User (the Teleport login) leads so the
+    /// collapsed form has a field to show.
     const TELEPORT_FIELDS: &[ProviderFormField] = &[
-        ProviderFormField::AliasPrefix,
         ProviderFormField::User,
+        ProviderFormField::AliasPrefix,
         ProviderFormField::IdentityFile,
         ProviderFormField::AutoSync,
     ];
@@ -768,6 +769,9 @@ impl ProviderFormField {
             ProviderFormField::Project => kind.is_some_and(ProviderKind::has_project_field),
             ProviderFormField::Compartment => kind == Some(ProviderKind::Oracle),
             ProviderFormField::Regions => kind.is_some_and(ProviderKind::has_regions_field),
+            // Teleport shows the login user up front; every other provider
+            // keeps User behind the expand step.
+            ProviderFormField::User => kind == Some(ProviderKind::Teleport),
             _ => false,
         }
     }
