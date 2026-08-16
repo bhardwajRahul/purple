@@ -18,13 +18,12 @@
 #      tagged with [external], [config] or [purple] so the user (and the
 #      log analyzer in a future incident) can attribute the failure
 #      without reading source.
-#   5. No em-dashes in user-facing message strings. Use periods. The
-#      check is scoped to messages.rs / messages/cli.rs string literals
-#      — em-dashes in code/doc comments are not flagged because they
-#      don't reach the user.
+#   5. User-facing message strings separate clauses with periods. Scoped
+#      to the string literals in messages.rs and messages/, since code
+#      and doc comments never reach the user.
 #   6. No hardcoded format!("[A-Z]...") in library modules whose Result
 #      chains surface to the user as toasts or CLI eprintln output.
-#      Centralisation keeps wording consistent and makes future i18n
+#      Centralization keeps wording consistent and makes future i18n
 #      tractable.
 
 set -e
@@ -145,18 +144,14 @@ if [ -n "$HITS" ]; then
     FAIL=1
 fi
 
-# 5. Em-dashes in user-facing message strings.
+# 5. Clause separation in user-facing message strings.
 # Scope: every Rust file under src/messages/, plus the legacy src/messages.rs.
-# Earlier release scoped this check to two files only; em-dashes silently
-# accumulated in src/messages/footer.rs and src/messages/whats_new*.rs.
-# Em-dashes in doc comments (`/// foo — bar`) and code comments
-# (`// baz — qux`) are tolerated as legacy; the writing-style rule
-# targets text the user actually sees.
+# Comments are skipped: only text the user actually sees is checked.
 HITS=$(grep -rn '"[^"]*—[^"]*"' src/messages.rs src/messages/ 2>/dev/null \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
 if [ -n "$HITS" ]; then
-    echo "ERROR: em-dash in user-facing message string."
-    echo "       Use periods to separate clauses."
+    echo "ERROR: message string joins clauses with a dash."
+    echo "       Use a period instead."
     echo "$HITS"
     FAIL=1
 fi

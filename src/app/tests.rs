@@ -1428,7 +1428,7 @@ fn group_by_label_tag() {
     assert_eq!(GroupBy::Tag("env".to_string()).label(), "tag: env");
 }
 
-// --- New validation tests from review findings ---
+// --- Host form validation ---
 
 #[test]
 fn test_validate_rejects_hash_in_alias() {

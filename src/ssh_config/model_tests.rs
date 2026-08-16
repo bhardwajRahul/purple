@@ -4559,10 +4559,10 @@ fn find_hosts_by_id_does_not_match_other_label_in_include() {
     );
 }
 
-// ── Critical audit regression tests ────────────────────────────────
-// Each block below pins a specific audit finding from the multi-agent
-// 2026-05-16 SSH config audit. Removing or weakening any of these tests
-// re-opens the corresponding data-loss or injection vulnerability.
+// ── Data-loss and injection regression tests ───────────────────────
+// Each block below pins one way the parser or writer can lose user data
+// or let an injected line become a live directive. Removing or weakening
+// any of these tests re-opens the corresponding hole.
 
 // Helper: every line of `serialized` must NOT, after re-parsing, become an
 // active SSH directive for `key`. Comments containing the keyword in their

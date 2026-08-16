@@ -166,7 +166,7 @@ jobs:
       - name: Keybinding invariants
         run: ./scripts/check-keybindings.sh
 
-      - name: Conventions (fault-domain log tags, atomic writes, em-dashes)
+      - name: Conventions
         run: ./scripts/check-conventions.sh
 
   smoke-tui:

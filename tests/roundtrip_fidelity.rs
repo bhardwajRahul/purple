@@ -3627,7 +3627,7 @@ fn crlf_preserved_after_delete_host() {
     }
 }
 
-// --- New tests from review findings ---
+// --- Edge cases that must leave the file untouched ---
 
 #[test]
 fn update_host_nonexistent_is_noop() {
