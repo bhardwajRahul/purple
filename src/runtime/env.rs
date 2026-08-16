@@ -9,81 +9,250 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// The four categories purple's files fall into, following the XDG Base
+/// Directory split. Each resolves to its own directory; by default all four
+/// point at the legacy `~/.purple`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Category {
+    /// Files the user edits or syncs as dotfiles: preferences, snippets,
+    /// providers, themes.
+    Config,
+    /// Files that are important and not regenerable but not config: signed
+    /// certificates and the original SSH config backup.
+    Data,
+    /// History, recents, activity ledgers, logs and retry markers.
+    State,
+    /// Regenerable caches: the container cache and the version check.
+    Cache,
+}
+
+impl Category {
+    pub const ALL: [Category; 4] = [
+        Category::Config,
+        Category::Data,
+        Category::State,
+        Category::Cache,
+    ];
+
+    /// The explicit purple override variable, e.g. `PURPLE_CONFIG_DIR`.
+    pub fn purple_var(self) -> &'static str {
+        match self {
+            Category::Config => "PURPLE_CONFIG_DIR",
+            Category::Data => "PURPLE_DATA_DIR",
+            Category::State => "PURPLE_STATE_DIR",
+            Category::Cache => "PURPLE_CACHE_DIR",
+        }
+    }
+
+    /// The XDG base directory variable, e.g. `XDG_CONFIG_HOME`.
+    pub fn xdg_var(self) -> &'static str {
+        match self {
+            Category::Config => "XDG_CONFIG_HOME",
+            Category::Data => "XDG_DATA_HOME",
+            Category::State => "XDG_STATE_HOME",
+            Category::Cache => "XDG_CACHE_HOME",
+        }
+    }
+
+    /// Lowercase name for log lines.
+    pub fn name(self) -> &'static str {
+        match self {
+            Category::Config => "config",
+            Category::Data => "data",
+            Category::State => "state",
+            Category::Cache => "cache",
+        }
+    }
+}
+
+/// Subdirectory under an XDG base directory.
+const XDG_APP_DIR: &str = "purple";
+
 /// Home-derived file locations under `~/.purple` and `~/.ssh`. One place that
 /// knows the on-disk layout; every consumer asks here instead of joining the
 /// home directory itself.
-#[derive(Clone)]
+///
+/// The purple files live in four category directories (see [`Category`]).
+/// [`Paths::new`] puts all four at `~/.purple`; [`Paths::resolve`] honors the
+/// `PURPLE_*_DIR` and `XDG_*_HOME` variables per category.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paths {
     home: PathBuf,
+    config_dir: PathBuf,
+    data_dir: PathBuf,
+    state_dir: PathBuf,
+    cache_dir: PathBuf,
 }
 
 impl Paths {
+    /// The legacy layout: every category under `~/.purple`.
     pub fn new(home: impl Into<PathBuf>) -> Self {
-        Self { home: home.into() }
+        let home = home.into();
+        let legacy = home.join(".purple");
+        Self {
+            home,
+            config_dir: legacy.clone(),
+            data_dir: legacy.clone(),
+            state_dir: legacy.clone(),
+            cache_dir: legacy,
+        }
+    }
+
+    /// Resolve each category directory from the environment. Precedence per
+    /// category: `PURPLE_<CATEGORY>_DIR` when set and non-empty (a leading
+    /// `~/` expands to the home directory), then `$XDG_<CATEGORY>_HOME/purple`
+    /// when that variable is set, non-empty and absolute (a relative XDG path
+    /// is invalid per the spec and ignored), else the legacy `~/.purple`.
+    pub fn resolve(home: impl Into<PathBuf>, var: impl Fn(&str) -> Option<String>) -> Self {
+        let mut paths = Self::new(home);
+        for category in Category::ALL {
+            let dir = resolve_category(&paths.home, category, &var);
+            *paths.dir_mut(category) = dir;
+        }
+        paths
+    }
+
+    fn dir_mut(&mut self, category: Category) -> &mut PathBuf {
+        match category {
+            Category::Config => &mut self.config_dir,
+            Category::Data => &mut self.data_dir,
+            Category::State => &mut self.state_dir,
+            Category::Cache => &mut self.cache_dir,
+        }
     }
 
     pub fn home(&self) -> &Path {
         &self.home
     }
 
-    /// `~/.purple`.
-    pub fn purple_dir(&self) -> PathBuf {
+    /// `~/.purple`, the single directory every category used before the
+    /// split. Only the migration reads from here.
+    pub fn legacy_dir(&self) -> PathBuf {
         self.home.join(".purple")
     }
 
-    /// `~/.purple/preferences`.
+    /// The directory a category resolved to.
+    pub fn dir(&self, category: Category) -> &Path {
+        match category {
+            Category::Config => &self.config_dir,
+            Category::Data => &self.data_dir,
+            Category::State => &self.state_dir,
+            Category::Cache => &self.cache_dir,
+        }
+    }
+
+    /// Preferences, snippets, providers and themes.
+    pub fn config_dir(&self) -> &Path {
+        &self.config_dir
+    }
+
+    /// Signed certificates and the original SSH config backup.
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// History, recents, ledgers, logs and retry markers.
+    pub fn state_dir(&self) -> &Path {
+        &self.state_dir
+    }
+
+    /// Container cache and version check.
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    /// True when at least one category lives outside `~/.purple`.
+    pub fn is_split(&self) -> bool {
+        let legacy = self.legacy_dir();
+        Category::ALL.iter().any(|c| self.dir(*c) != legacy)
+    }
+
+    /// `<config>/preferences`.
     pub fn preferences(&self) -> PathBuf {
-        self.purple_dir().join("preferences")
+        self.config_dir.join("preferences")
     }
 
-    /// `~/.purple/snippets`.
-    pub fn snippets_dir(&self) -> PathBuf {
-        self.purple_dir().join("snippets")
+    /// `<config>/snippets`, the INI-style snippet store.
+    pub fn snippets_file(&self) -> PathBuf {
+        self.config_dir.join("snippets")
     }
 
-    /// `~/.purple/container_cache.jsonl`.
-    pub fn container_cache(&self) -> PathBuf {
-        self.purple_dir().join("container_cache.jsonl")
-    }
-
-    /// `~/.purple/purple.log`.
-    pub fn log_file(&self) -> PathBuf {
-        self.purple_dir().join("purple.log")
-    }
-
-    /// `~/.purple/history.tsv`.
-    pub fn history(&self) -> PathBuf {
-        self.purple_dir().join("history.tsv")
-    }
-
-    /// `~/.purple/key_activity.json`.
-    pub fn key_activity(&self) -> PathBuf {
-        self.purple_dir().join("key_activity.json")
-    }
-
-    /// `~/.purple/snippet_runs.json`.
-    pub fn snippet_runs(&self) -> PathBuf {
-        self.purple_dir().join("snippet_runs.json")
-    }
-
-    /// `~/.purple/sync_history.tsv`.
-    pub fn sync_history(&self) -> PathBuf {
-        self.purple_dir().join("sync_history.tsv")
-    }
-
-    /// `~/.purple/recents.json`.
-    pub fn recents(&self) -> PathBuf {
-        self.purple_dir().join("recents.json")
-    }
-
-    /// `~/.purple/providers`, the provider config file.
+    /// `<config>/providers`, the provider config file.
     pub fn providers_config(&self) -> PathBuf {
-        self.purple_dir().join("providers")
+        self.config_dir.join("providers")
     }
 
-    /// `~/.purple/themes`, the custom theme directory.
+    /// `<config>/themes`, the custom theme directory.
     pub fn themes_dir(&self) -> PathBuf {
-        self.purple_dir().join("themes")
+        self.config_dir.join("themes")
+    }
+
+    /// `<data>/certs`.
+    pub fn certs_dir(&self) -> PathBuf {
+        self.data_dir.join("certs")
+    }
+
+    /// `<data>/certs/<alias>-cert.pub`.
+    pub fn cert_for(&self, alias: &str) -> PathBuf {
+        self.certs_dir().join(format!("{alias}-cert.pub"))
+    }
+
+    /// `<data>/config.original`, the untouched SSH config backup taken on
+    /// the first launch.
+    pub fn config_original(&self) -> PathBuf {
+        self.data_dir.join("config.original")
+    }
+
+    /// `<state>/history.tsv`.
+    pub fn history(&self) -> PathBuf {
+        self.state_dir.join("history.tsv")
+    }
+
+    /// `<state>/recents.json`.
+    pub fn recents(&self) -> PathBuf {
+        self.state_dir.join("recents.json")
+    }
+
+    /// `<state>/key_activity.json`.
+    pub fn key_activity(&self) -> PathBuf {
+        self.state_dir.join("key_activity.json")
+    }
+
+    /// `<state>/snippet_runs.json`.
+    pub fn snippet_runs(&self) -> PathBuf {
+        self.state_dir.join("snippet_runs.json")
+    }
+
+    /// `<state>/sync_history.tsv`.
+    pub fn sync_history(&self) -> PathBuf {
+        self.state_dir.join("sync_history.tsv")
+    }
+
+    /// `<state>/purple.log`.
+    pub fn log_file(&self) -> PathBuf {
+        self.state_dir.join("purple.log")
+    }
+
+    /// `<state>/mcp-audit.log`.
+    pub fn mcp_audit_log(&self) -> PathBuf {
+        self.state_dir.join("mcp-audit.log")
+    }
+
+    /// Askpass retry marker `<state>/.askpass_<safe>`. The alias is
+    /// sanitized (`/`, `\`, `.` become `_`) to prevent path traversal.
+    pub fn askpass_marker(&self, alias: &str) -> PathBuf {
+        let safe = alias.replace(['/', '\\', '.'], "_");
+        self.state_dir.join(format!(".askpass_{safe}"))
+    }
+
+    /// `<cache>/container_cache.jsonl`.
+    pub fn container_cache(&self) -> PathBuf {
+        self.cache_dir.join("container_cache.jsonl")
+    }
+
+    /// `<cache>/last_version_check`.
+    pub fn last_version_check(&self) -> PathBuf {
+        self.cache_dir.join("last_version_check")
     }
 
     /// `~/.aws/credentials`, the shared AWS credentials file.
@@ -91,32 +260,48 @@ impl Paths {
         self.home.join(".aws").join("credentials")
     }
 
-    /// `~/.purple/last_version_check`.
-    pub fn last_version_check(&self) -> PathBuf {
-        self.purple_dir().join("last_version_check")
-    }
-
-    /// `~/.purple/certs`.
-    pub fn certs_dir(&self) -> PathBuf {
-        self.purple_dir().join("certs")
-    }
-
-    /// `~/.purple/certs/<alias>-cert.pub`.
-    pub fn cert_for(&self, alias: &str) -> PathBuf {
-        self.certs_dir().join(format!("{alias}-cert.pub"))
-    }
-
     /// `~/.ssh`.
     pub fn ssh_dir(&self) -> PathBuf {
         self.home.join(".ssh")
     }
 
-    /// Askpass retry marker `~/.purple/.askpass_<safe>`. The alias is
-    /// sanitised (`/`, `\`, `.` become `_`) to prevent path traversal.
-    pub fn askpass_marker(&self, alias: &str) -> PathBuf {
-        let safe = alias.replace(['/', '\\', '.'], "_");
-        self.purple_dir().join(format!(".askpass_{safe}"))
+    /// `path` for display, with the home directory abbreviated to `~`.
+    pub fn abbreviate_home(&self, path: &Path) -> String {
+        match path.strip_prefix(&self.home) {
+            Ok(rest) if !rest.as_os_str().is_empty() => format!("~/{}", rest.display()),
+            _ => path.display().to_string(),
+        }
     }
+}
+
+/// One category's directory per the precedence documented on
+/// [`Paths::resolve`].
+fn resolve_category(
+    home: &Path,
+    category: Category,
+    var: &impl Fn(&str) -> Option<String>,
+) -> PathBuf {
+    if let Some(explicit) = var(category.purple_var()).filter(|v| !v.trim().is_empty()) {
+        return expand_home(home, &explicit);
+    }
+    if let Some(base) = var(category.xdg_var()).filter(|v| !v.trim().is_empty()) {
+        let base = PathBuf::from(base);
+        if base.is_absolute() {
+            return base.join(XDG_APP_DIR);
+        }
+    }
+    home.join(".purple")
+}
+
+/// Expand a leading `~/`, `$HOME/` or `${HOME}/` in an override value. A
+/// value written in a file rather than typed in a shell arrives unexpanded.
+fn expand_home(home: &Path, value: &str) -> PathBuf {
+    for prefix in ["~/", "$HOME/", "${HOME}/"] {
+        if let Some(rest) = value.strip_prefix(prefix) {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(value)
 }
 
 /// The resolved environment for one process run: the home-derived paths plus a
@@ -146,13 +331,17 @@ impl Env {
 
     /// Capture the real process environment: the home directory and a snapshot
     /// of all environment variables. The single point where production reads
-    /// `std::env` and `dirs::home_dir`.
+    /// `std::env` and `dirs::home_dir`. The category directories resolve from
+    /// the same snapshot.
     pub fn from_process() -> Self {
-        Self::new_inner(dirs::home_dir().map(Paths::new), std::env::vars().collect())
+        let vars: HashMap<String, String> = std::env::vars().collect();
+        let paths = dirs::home_dir().map(|home| Paths::resolve(home, |k| vars.get(k).cloned()));
+        Self::new_inner(paths, vars)
     }
 
-    /// A test environment rooted at `home` with no environment variables. Add
-    /// variables with [`Env::with_var`].
+    /// A test environment rooted at `home` with the legacy layout and no
+    /// environment variables. Add variables with [`Env::with_var`], swap the
+    /// layout with [`Env::with_paths`].
     pub fn for_test(home: impl Into<PathBuf>) -> Self {
         Self::new_inner(Some(Paths::new(home)), HashMap::new())
     }
@@ -178,6 +367,14 @@ impl Env {
     #[must_use]
     pub fn with_var(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.vars.insert(key.into(), value.into());
+        self
+    }
+
+    /// Builder: replace the paths, e.g. with a split layout from
+    /// [`Paths::resolve`]. Chainable, for test construction.
+    #[must_use]
+    pub fn with_paths(mut self, paths: Paths) -> Self {
+        self.paths = Some(paths);
         self
     }
 
@@ -287,15 +484,24 @@ impl std::fmt::Debug for Env {
 mod tests {
     use super::*;
 
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        }
+    }
+
     #[test]
     fn paths_derive_under_purple_and_ssh() {
         let p = Paths::new("/home/u");
-        assert_eq!(p.purple_dir(), PathBuf::from("/home/u/.purple"));
+        assert_eq!(p.legacy_dir(), PathBuf::from("/home/u/.purple"));
         assert_eq!(
             p.preferences(),
             PathBuf::from("/home/u/.purple/preferences")
         );
-        assert_eq!(p.snippets_dir(), PathBuf::from("/home/u/.purple/snippets"));
+        assert_eq!(p.snippets_file(), PathBuf::from("/home/u/.purple/snippets"));
         assert_eq!(
             p.container_cache(),
             PathBuf::from("/home/u/.purple/container_cache.jsonl")
@@ -307,7 +513,185 @@ mod tests {
             PathBuf::from("/home/u/.purple/last_version_check")
         );
         assert_eq!(p.certs_dir(), PathBuf::from("/home/u/.purple/certs"));
+        assert_eq!(
+            p.config_original(),
+            PathBuf::from("/home/u/.purple/config.original")
+        );
+        assert_eq!(
+            p.mcp_audit_log(),
+            PathBuf::from("/home/u/.purple/mcp-audit.log")
+        );
         assert_eq!(p.ssh_dir(), PathBuf::from("/home/u/.ssh"));
+        assert!(!p.is_split());
+    }
+
+    #[test]
+    fn legacy_layout_puts_every_category_under_dot_purple() {
+        let p = Paths::new("/home/u");
+        for c in Category::ALL {
+            assert_eq!(p.dir(c), Path::new("/home/u/.purple"), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn resolve_without_variables_is_the_legacy_layout() {
+        let resolved = Paths::resolve("/home/u", |_| None);
+        assert_eq!(resolved, Paths::new("/home/u"));
+    }
+
+    #[test]
+    fn resolve_honors_each_xdg_variable_independently() {
+        let vars = [("XDG_CONFIG_HOME", "/home/u/.config")];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        assert_eq!(p.config_dir(), Path::new("/home/u/.config/purple"));
+        assert_eq!(
+            p.preferences(),
+            PathBuf::from("/home/u/.config/purple/preferences")
+        );
+        assert_eq!(
+            p.themes_dir(),
+            PathBuf::from("/home/u/.config/purple/themes")
+        );
+        // The other categories stay put when their variable is unset.
+        assert_eq!(p.data_dir(), Path::new("/home/u/.purple"));
+        assert_eq!(p.state_dir(), Path::new("/home/u/.purple"));
+        assert_eq!(p.cache_dir(), Path::new("/home/u/.purple"));
+        assert!(p.is_split());
+    }
+
+    #[test]
+    fn resolve_maps_every_file_to_its_category() {
+        let vars = [
+            ("XDG_CONFIG_HOME", "/x/cfg"),
+            ("XDG_DATA_HOME", "/x/data"),
+            ("XDG_STATE_HOME", "/x/state"),
+            ("XDG_CACHE_HOME", "/x/cache"),
+        ];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        assert_eq!(p.preferences(), PathBuf::from("/x/cfg/purple/preferences"));
+        assert_eq!(p.snippets_file(), PathBuf::from("/x/cfg/purple/snippets"));
+        assert_eq!(
+            p.providers_config(),
+            PathBuf::from("/x/cfg/purple/providers")
+        );
+        assert_eq!(p.themes_dir(), PathBuf::from("/x/cfg/purple/themes"));
+        assert_eq!(p.certs_dir(), PathBuf::from("/x/data/purple/certs"));
+        assert_eq!(
+            p.cert_for("web"),
+            PathBuf::from("/x/data/purple/certs/web-cert.pub")
+        );
+        assert_eq!(
+            p.config_original(),
+            PathBuf::from("/x/data/purple/config.original")
+        );
+        assert_eq!(p.history(), PathBuf::from("/x/state/purple/history.tsv"));
+        assert_eq!(p.recents(), PathBuf::from("/x/state/purple/recents.json"));
+        assert_eq!(
+            p.key_activity(),
+            PathBuf::from("/x/state/purple/key_activity.json")
+        );
+        assert_eq!(
+            p.snippet_runs(),
+            PathBuf::from("/x/state/purple/snippet_runs.json")
+        );
+        assert_eq!(
+            p.sync_history(),
+            PathBuf::from("/x/state/purple/sync_history.tsv")
+        );
+        assert_eq!(p.log_file(), PathBuf::from("/x/state/purple/purple.log"));
+        assert_eq!(
+            p.mcp_audit_log(),
+            PathBuf::from("/x/state/purple/mcp-audit.log")
+        );
+        assert_eq!(
+            p.askpass_marker("a"),
+            PathBuf::from("/x/state/purple/.askpass_a")
+        );
+        assert_eq!(
+            p.container_cache(),
+            PathBuf::from("/x/cache/purple/container_cache.jsonl")
+        );
+        assert_eq!(
+            p.last_version_check(),
+            PathBuf::from("/x/cache/purple/last_version_check")
+        );
+        // Home-relative paths outside purple's own tree do not move.
+        assert_eq!(p.ssh_dir(), PathBuf::from("/home/u/.ssh"));
+        assert_eq!(
+            p.aws_credentials_file(),
+            PathBuf::from("/home/u/.aws/credentials")
+        );
+        assert_eq!(p.legacy_dir(), PathBuf::from("/home/u/.purple"));
+    }
+
+    #[test]
+    fn resolve_prefers_purple_override_over_xdg() {
+        let vars = [
+            ("PURPLE_CONFIG_DIR", "/srv/purple-cfg"),
+            ("XDG_CONFIG_HOME", "/home/u/.config"),
+        ];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        // The override is used verbatim: no `purple` subdirectory appended.
+        assert_eq!(p.config_dir(), Path::new("/srv/purple-cfg"));
+    }
+
+    #[test]
+    fn resolve_expands_home_in_purple_overrides() {
+        for value in ["~/purple-cfg", "$HOME/purple-cfg", "${HOME}/purple-cfg"] {
+            let vars = [("PURPLE_CONFIG_DIR", value)];
+            let p = Paths::resolve("/home/u", lookup(&vars));
+            assert_eq!(p.config_dir(), Path::new("/home/u/purple-cfg"), "{value}");
+        }
+    }
+
+    #[test]
+    fn resolve_treats_empty_variables_as_unset() {
+        let vars = [
+            ("PURPLE_STATE_DIR", ""),
+            ("XDG_STATE_HOME", "  "),
+            ("XDG_CACHE_HOME", ""),
+        ];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        assert_eq!(p.state_dir(), Path::new("/home/u/.purple"));
+        assert_eq!(p.cache_dir(), Path::new("/home/u/.purple"));
+    }
+
+    #[test]
+    fn resolve_ignores_relative_xdg_paths() {
+        // The spec calls a relative XDG path invalid; it must be ignored.
+        let vars = [("XDG_DATA_HOME", "relative/share")];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        assert_eq!(p.data_dir(), Path::new("/home/u/.purple"));
+    }
+
+    #[test]
+    fn resolve_empty_purple_override_falls_through_to_xdg() {
+        let vars = [
+            ("PURPLE_DATA_DIR", ""),
+            ("XDG_DATA_HOME", "/home/u/.local/share"),
+        ];
+        let p = Paths::resolve("/home/u", lookup(&vars));
+        assert_eq!(p.data_dir(), Path::new("/home/u/.local/share/purple"));
+    }
+
+    #[test]
+    fn category_variable_names() {
+        assert_eq!(Category::Config.purple_var(), "PURPLE_CONFIG_DIR");
+        assert_eq!(Category::Data.xdg_var(), "XDG_DATA_HOME");
+        assert_eq!(Category::State.purple_var(), "PURPLE_STATE_DIR");
+        assert_eq!(Category::Cache.xdg_var(), "XDG_CACHE_HOME");
+        assert_eq!(Category::State.name(), "state");
+    }
+
+    #[test]
+    fn abbreviate_home_swaps_the_home_prefix_for_a_tilde() {
+        let p = Paths::new("/home/u");
+        assert_eq!(
+            p.abbreviate_home(&p.config_original()),
+            "~/.purple/config.original"
+        );
+        assert_eq!(p.abbreviate_home(Path::new("/srv/x/y")), "/srv/x/y");
+        assert_eq!(p.abbreviate_home(Path::new("/home/u")), "/home/u");
     }
 
     #[test]
@@ -334,6 +718,14 @@ mod tests {
         assert_eq!(env.paths().unwrap().home(), Path::new("/tmp/x"));
         assert_eq!(env.var("ANYTHING"), None);
         assert!(!env.no_color());
+    }
+
+    #[test]
+    fn with_paths_replaces_the_layout() {
+        let split = Paths::resolve("/tmp/x", lookup(&[("XDG_CACHE_HOME", "/tmp/c")]));
+        let env = Env::for_test("/tmp/x").with_paths(split.clone());
+        assert_eq!(env.paths(), Some(&split));
+        assert_eq!(env.paths().unwrap().cache_dir(), Path::new("/tmp/c/purple"));
     }
 
     #[test]

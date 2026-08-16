@@ -9256,7 +9256,7 @@ fn migrate_renames_persistent_state_moves_history_recents_and_collapsed_on_disk(
     // `App::apply_alias_renames` but without in-memory state.
     let dir = tempfile::tempdir().expect("tempdir");
     let paths = crate::runtime::env::Paths::new(dir.path());
-    std::fs::create_dir_all(paths.purple_dir()).unwrap();
+    std::fs::create_dir_all(paths.state_dir()).unwrap();
     let history_path = paths.history();
 
     // Seed history.tsv. Schema: alias \t last_connected \t count \t csv-of-timestamps.
@@ -9316,7 +9316,7 @@ fn migrate_renames_persistent_state_moves_history_recents_and_collapsed_on_disk(
 fn migrate_renames_persistent_state_skips_identity_pairs() {
     let dir = tempfile::tempdir().expect("tempdir");
     let paths = crate::runtime::env::Paths::new(dir.path());
-    std::fs::create_dir_all(paths.purple_dir()).unwrap();
+    std::fs::create_dir_all(paths.state_dir()).unwrap();
     let history_path = paths.history();
 
     // Seed an entry. An identity-pair rename must leave it untouched

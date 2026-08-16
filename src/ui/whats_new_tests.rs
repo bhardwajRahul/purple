@@ -5,9 +5,13 @@ use crate::animation::AnimationState;
 use crate::app::{App, Screen, WhatsNewState};
 use crate::changelog;
 
+/// These tests set the color mode and the changelog override, both process
+/// globals, so they serialize on the shared test lock like every other
+/// theme mutator.
 fn test_override_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 fn build_app() -> App {
@@ -35,7 +39,7 @@ fn render_with_fixture(width: u16, height: u16, scroll: u16, fixture_path: &str)
     crate::preferences::save_last_seen_version(paths.as_ref(), "0.0.1").unwrap();
     app.screen = Screen::WhatsNew(WhatsNewState { scroll });
     let fixture = std::fs::read_to_string(fixture_path).unwrap();
-    changelog::set_test_override(fixture);
+    let _override = changelog::set_test_override(fixture);
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut anim = AnimationState::default();
@@ -49,7 +53,6 @@ fn render_with_fixture(width: u16, height: u16, scroll: u16, fixture_path: &str)
         }
         captured.push('\n');
     }
-    changelog::clear_test_override();
     captured
 }
 
@@ -89,7 +92,7 @@ fn whats_new_shows_up_to_ten_recent_releases() {
     for i in (1..=12).rev() {
         fixture.push_str(&format!("## 1.{i}.0 - 2026-01-01\n- feat: bullet\n\n"));
     }
-    changelog::set_test_override(fixture);
+    let _override = changelog::set_test_override(fixture);
 
     let backend = TestBackend::new(120, 200);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -105,7 +108,6 @@ fn whats_new_shows_up_to_ten_recent_releases() {
         }
         out.push('\n');
     }
-    changelog::clear_test_override();
 
     assert!(out.contains("1.12.0"), "newest version must render");
     assert!(
@@ -129,7 +131,8 @@ fn renders_scroll_indicator_when_content_overflows() {
     let mut app = build_app();
     app.screen = Screen::WhatsNew(WhatsNewState { scroll: 5 });
 
-    changelog::set_test_override("## 1.0.0\n- feat: a\n- feat: b\n- feat: c\n".into());
+    let _override =
+        changelog::set_test_override("## 1.0.0\n- feat: a\n- feat: b\n- feat: c\n".into());
     let backend = TestBackend::new(120, 20);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut anim = AnimationState::default();
@@ -143,7 +146,6 @@ fn renders_scroll_indicator_when_content_overflows() {
             out.push_str(buf[(x, y)].symbol());
         }
     }
-    changelog::clear_test_override();
     assert!(
         out.contains('/'),
         "scroll indicator '/' missing, got:\n{out}"

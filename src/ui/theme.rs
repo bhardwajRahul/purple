@@ -1884,8 +1884,5 @@ pub fn update_badge() -> Style {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[cfg(test)]
 #[path = "theme_tests.rs"]
 mod tests;

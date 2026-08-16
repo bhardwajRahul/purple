@@ -1047,7 +1047,9 @@ mod param_form_tests {
 
     #[test]
     fn esc_on_clean_form_returns_to_snippet_picker() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1057,7 +1059,9 @@ mod param_form_tests {
 
     #[test]
     fn esc_on_clean_form_returns_to_host_list_when_tab_origin() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         // Opened from the Snippets tab: Esc returns there (HostList), not the
         // host-list snippet picker.
@@ -1070,7 +1074,9 @@ mod param_form_tests {
 
     #[test]
     fn typing_a_char_inserts_into_focused_param() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         let params = vec![crate::snippet::SnippetParam {
             name: "name".to_string(),
@@ -1114,7 +1120,9 @@ mod param_form_tests {
 
     #[test]
     fn dirty_esc_arms_discard_confirmation() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_dirty_app();
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1124,7 +1132,9 @@ mod param_form_tests {
 
     #[test]
     fn discard_confirm_y_closes_form_and_returns_to_picker() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_dirty_app();
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1137,7 +1147,9 @@ mod param_form_tests {
 
     #[test]
     fn discard_confirm_n_clears_pending_and_keeps_form() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_dirty_app();
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1152,7 +1164,9 @@ mod param_form_tests {
     // false negative on No that would dismiss the discard confirm).
     #[test]
     fn discard_confirm_unrelated_key_keeps_pending() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_dirty_app();
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1166,7 +1180,9 @@ mod param_form_tests {
     // it ever does.
     #[test]
     fn empty_param_form_right_and_char_do_not_panic() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app(); // param_form is SnippetParamFormState::new(&[])
         let (tx, _rx) = mpsc::channel();
         handle_param_form_key(&mut app, k(KeyCode::Right), &tx);
@@ -1224,7 +1240,9 @@ mod output_tests {
 
     #[test]
     fn j_scrolls_output_down_one_line() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_output(5);
         handle_output_key(&mut app, k(KeyCode::Char('j')));
         let state = app.snippets.output().expect("output state");
@@ -1233,7 +1251,9 @@ mod output_tests {
 
     #[test]
     fn esc_closes_overlay_and_clears_output_state() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_output(3);
         handle_output_key(&mut app, k(KeyCode::Esc));
         assert!(matches!(app.screen, Screen::HostList));

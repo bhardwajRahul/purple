@@ -411,96 +411,71 @@ fn test_sync_summary_diff_suffix_omitted_when_all_zero() {
 // first_launch_init
 // =========================================================================
 
+/// A fresh home with the legacy layout plus an SSH config path inside it.
+fn first_launch_fixture() -> (
+    tempfile::TempDir,
+    crate::runtime::env::Paths,
+    std::path::PathBuf,
+) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = crate::runtime::env::Paths::new(dir.path());
+    let config_path = dir.path().join("config");
+    (dir, paths, config_path)
+}
+
 #[test]
 fn first_launch_creates_dir_and_backup() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("config");
-    let _ = std::fs::create_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
     std::fs::write(&config_path, "Host myserver\n  HostName 10.0.0.1\n").unwrap();
 
-    let result = first_launch_init(&purple_dir, &config_path);
+    let result = first_launch_init(&paths, &config_path);
     assert_eq!(
         result,
         Some(true),
         "Should return Some(true) when config exists"
     );
-    assert!(purple_dir.exists(), ".purple dir should be created");
-    let backup = purple_dir.join("config.original");
+    assert!(paths.data_dir().is_dir(), "data dir should be created");
+    let backup = paths.config_original();
     assert!(backup.exists(), "config.original should be created");
     assert_eq!(
         std::fs::read_to_string(&backup).unwrap(),
         "Host myserver\n  HostName 10.0.0.1\n"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn first_launch_returns_none_on_second_call() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_twice_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("config");
-    let _ = std::fs::create_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
     std::fs::write(&config_path, "Host a\n").unwrap();
 
-    assert!(first_launch_init(&purple_dir, &config_path).is_some());
-    assert!(first_launch_init(&purple_dir, &config_path).is_none());
-
-    let _ = std::fs::remove_dir_all(&dir);
+    assert!(first_launch_init(&paths, &config_path).is_some());
+    assert!(first_launch_init(&paths, &config_path).is_none());
 }
 
 #[test]
 fn first_launch_no_config_file_skips_backup() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_no_cfg_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
 
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("nonexistent_config");
-
-    let result = first_launch_init(&purple_dir, &config_path);
+    let result = first_launch_init(&paths, &config_path);
     assert_eq!(
         result,
         Some(false),
         "Should return Some(false) when no config"
     );
-    assert!(purple_dir.exists(), ".purple dir should be created");
+    assert!(paths.data_dir().is_dir(), "data dir should be created");
     assert!(
-        !purple_dir.join("config.original").exists(),
+        !paths.config_original().exists(),
         "config.original should NOT be created when config does not exist"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn first_launch_backup_not_overwritten() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_no_overwrite_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("config");
-    let _ = std::fs::create_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
     std::fs::write(&config_path, "original content\n").unwrap();
 
-    first_launch_init(&purple_dir, &config_path);
-    let backup = purple_dir.join("config.original");
+    first_launch_init(&paths, &config_path);
+    let backup = paths.config_original();
     assert_eq!(
         std::fs::read_to_string(&backup).unwrap(),
         "original content\n"
@@ -508,7 +483,7 @@ fn first_launch_backup_not_overwritten() {
 
     // Modify the config and call again (simulates second launch)
     std::fs::write(&config_path, "modified content\n").unwrap();
-    first_launch_init(&purple_dir, &config_path);
+    first_launch_init(&paths, &config_path);
 
     // Backup should still have original content
     assert_eq!(
@@ -516,42 +491,82 @@ fn first_launch_backup_not_overwritten() {
         "original content\n",
         "config.original should never be overwritten"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn first_launch_has_backup_true_when_config_exists() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_has_backup_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("config");
-    let _ = std::fs::create_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
     std::fs::write(&config_path, "Host a\n").unwrap();
 
-    assert_eq!(first_launch_init(&purple_dir, &config_path), Some(true));
-
-    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(first_launch_init(&paths, &config_path), Some(true));
 }
 
 #[test]
 fn first_launch_has_backup_false_without_config() {
-    let dir = std::env::temp_dir().join(format!(
-        "purple_test_first_launch_no_backup_{:?}",
-        std::thread::current().id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
+    let (_dir, paths, config_path) = first_launch_fixture();
 
-    let purple_dir = dir.join(".purple");
-    let config_path = dir.join("nonexistent");
+    assert_eq!(first_launch_init(&paths, &config_path), Some(false));
+}
 
-    assert_eq!(first_launch_init(&purple_dir, &config_path), Some(false));
+#[cfg(unix)]
+#[test]
+fn first_launch_makes_the_data_dir_private_even_when_it_already_exists() {
+    use std::os::unix::fs::PermissionsExt;
+    // Logging opens its file before the welcome check runs, so the directory
+    // usually exists by now with the default mode. First launch still ends
+    // with 0700.
+    let (_dir, paths, config_path) = first_launch_fixture();
+    std::fs::create_dir_all(paths.data_dir()).unwrap();
+    std::fs::set_permissions(paths.data_dir(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(&config_path, "Host a\n").unwrap();
 
-    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(first_launch_init(&paths, &config_path), Some(true));
+    let mode = std::fs::metadata(paths.data_dir())
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o700);
+}
+
+#[test]
+fn first_launch_backs_up_into_the_data_dir_of_a_split_layout() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let data = dir.path().join("data").to_string_lossy().to_string();
+    let paths = crate::runtime::env::Paths::resolve(dir.path(), move |k| {
+        (k == "XDG_DATA_HOME").then(|| data.clone())
+    });
+    let config_path = dir.path().join("config");
+    std::fs::write(&config_path, "Host a\n").unwrap();
+
+    assert_eq!(first_launch_init(&paths, &config_path), Some(true));
+    assert_eq!(
+        paths.config_original(),
+        dir.path().join("data/purple/config.original")
+    );
+    assert!(paths.config_original().exists());
+    assert!(
+        !paths.legacy_dir().exists(),
+        "the legacy dir is not created"
+    );
+}
+
+#[test]
+fn first_launch_is_over_once_any_category_holds_a_file() {
+    // Preferences live in the config dir; their presence alone means purple
+    // ran before, even when the data dir is still empty.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cfg = dir.path().join("cfg").to_string_lossy().to_string();
+    let paths = crate::runtime::env::Paths::resolve(dir.path(), move |k| {
+        (k == "XDG_CONFIG_HOME").then(|| cfg.clone())
+    });
+    std::fs::create_dir_all(paths.config_dir()).unwrap();
+    std::fs::write(paths.preferences(), "theme=Purple\n").unwrap();
+    let config_path = dir.path().join("config");
+    std::fs::write(&config_path, "Host a\n").unwrap();
+
+    assert_eq!(first_launch_init(&paths, &config_path), None);
+    assert!(!paths.config_original().exists());
 }
 
 // =========================================================================

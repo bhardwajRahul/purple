@@ -207,7 +207,7 @@ pub fn vault_external_edits_no_write(summary: &str) -> String {
 pub fn vault_reparse_failed(signed: usize, e: &impl std::fmt::Display) -> String {
     format!(
         "Signed {} certs but cannot re-parse ssh config after external edit: {}. \
-         Certs are on disk under ~/.purple/certs/.",
+         Certs are on disk in purple's certs directory.",
         signed, e
     )
 }

@@ -1923,15 +1923,9 @@ fn visual_whats_new() {
     let mut app = demo::build_demo_app();
     app.screen = Screen::WhatsNew(crate::app::WhatsNewState::default());
     let fixture = std::fs::read_to_string("tests/fixtures/changelog/simple.md").unwrap();
-    crate::changelog::set_test_override(fixture);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let actual = render_screen(&mut app);
-        assert_golden("whats_new", &actual);
-    }));
-    crate::changelog::clear_test_override();
-    if let Err(e) = result {
-        std::panic::resume_unwind(e);
-    }
+    let _override = crate::changelog::set_test_override(fixture);
+    let actual = render_screen(&mut app);
+    assert_golden("whats_new", &actual);
 }
 
 // ---------------------------------------------------------------------------

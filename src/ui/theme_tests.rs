@@ -74,7 +74,6 @@ fn theme_error_returns_bold_red_truecolor() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     let style = error();
     assert_eq!(style.fg, Some(Color::Rgb(239, 68, 68)));
@@ -87,7 +86,6 @@ fn theme_selected_row_removes_dim() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     let style = selected_row();
@@ -103,7 +101,6 @@ fn init_no_color_env_forces_mode_zero() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     // NO_COLOR wins over COLORTERM. The injected Env (no home) means load_theme
     // finds no prefs file, so this exercises only the env-driven color decision.
     let env = crate::runtime::env::Env::for_test("/nonexistent-purple-home")
@@ -120,7 +117,6 @@ fn init_colorterm_truecolor_sets_mode_two() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(1, Ordering::Release);
     let env = crate::runtime::env::Env::for_test("/nonexistent-purple-home")
         .with_var("COLORTERM", "truecolor");
@@ -135,7 +131,6 @@ fn theme_no_color_mode_ignores_colors() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(0);
     let style = error();
     assert_eq!(style.fg, None);
@@ -378,7 +373,6 @@ fn catppuccin_mocha_selected_row_has_dark_fg() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::catppuccin_mocha());
     let style = selected_row();
@@ -394,7 +388,6 @@ fn catppuccin_latte_footer_key_has_dark_fg() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::catppuccin_latte());
     let style = footer_key();
@@ -418,7 +411,6 @@ fn no_color_mode_forces_no_color_theme() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(0, Ordering::Release);
     set_theme(ThemeDef::no_color());
 
@@ -450,7 +442,6 @@ fn online_dot_pulsing_starts_at_regular_mid_brightness() {
     // Visual regression goldens render at tick=0; verify tick=0 produces
     // the Regular (mid) state — neither BOLD nor DIM — so the pulse cycle
     // begins at the visually neutral point and goldens stay reproducible.
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(1, Ordering::Release);
     set_theme(ThemeDef::purple());
 
@@ -471,7 +462,6 @@ fn online_dot_pulsing_cycles_through_peak_mid_and_trough() {
     //   tick=7  sin≈+0.99 → peak  (BOLD via success slot, which is BOLD by default)
     //   tick=15 sin(pi)=0 → mid   (Regular: BOLD explicitly removed, no DIM)
     //   tick=22 sin≈-0.99 → trough (DIM via success_dim slot)
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(1, Ordering::Release);
     set_theme(ThemeDef::purple());
 
@@ -489,7 +479,6 @@ fn online_dot_pulsing_repeats_every_period() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(1, Ordering::Release);
     set_theme(ThemeDef::purple());
 
@@ -508,7 +497,6 @@ fn online_dot_pulsing_truecolor_lerps_brightness() {
     //   2. No BOLD / DIM modifier is set — the signal is hue-brightness only.
     //   3. The peak frame is brighter (higher channel sum) than the trough,
     //      confirming the sin-driven alpha actually modulates the colour.
-    let _lock = TEST_MUTEX.lock().unwrap();
     COLOR_MODE.store(2, Ordering::Release);
     set_theme(ThemeDef::purple());
 
@@ -566,7 +554,6 @@ fn accent_reads_from_accent_slot_not_border() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     let purple = accent();
@@ -592,7 +579,6 @@ fn accent_bold_matches_accent_with_bold_modifier() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     let plain = accent();
@@ -608,7 +594,6 @@ fn tunnel_active_and_tag_user_match_accent() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     let a = accent();
@@ -622,7 +607,6 @@ fn section_card_title_takes_the_border_tone_with_bold() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     let title = section_card_title();
@@ -645,7 +629,6 @@ fn set_color_mode_overrides_the_global_color_mode() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     set_color_mode(2);
     assert_eq!(color_mode(), 2, "truecolor forced regardless of terminal");
     set_color_mode(0);
@@ -658,7 +641,6 @@ fn healthy_matches_online_dot() {
     let _global_test_lock = crate::demo_flag::GLOBAL_TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let _lock = TEST_MUTEX.lock().unwrap();
     init_with_mode(2);
     set_theme(ThemeDef::purple());
     // healthy() and online_dot() share the success_dim slot today.

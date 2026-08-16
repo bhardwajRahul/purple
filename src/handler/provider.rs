@@ -1239,7 +1239,9 @@ mod label_migration_tests {
 
     #[test]
     fn esc_returns_to_providers_and_clears_pending() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         let (tx, _rx) = mpsc::channel();
         handle_label_migration_key(&mut app, k(KeyCode::Esc), &tx);
@@ -1249,7 +1251,9 @@ mod label_migration_tests {
 
     #[test]
     fn tab_toggles_focused_field() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         let (tx, _rx) = mpsc::channel();
         handle_label_migration_key(&mut app, k(KeyCode::Tab), &tx);
@@ -1319,7 +1323,9 @@ mod labeled_add_tests {
 
     #[test]
     fn open_add_flow_with_existing_labeled_enters_label_mode() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1340,7 +1346,9 @@ mod labeled_add_tests {
         // The migration screen handles label collection for the bare-to-labeled
         // transition. Label-entry on the form must stay off so the two flows
         // don't double-prompt for a name.
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1356,7 +1364,9 @@ mod labeled_add_tests {
 
     #[test]
     fn open_add_flow_with_zero_existing_opens_bare_form() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         open_add_config_flow(&mut app, "proxmox");
         assert!(matches!(app.screen, Screen::ProviderForm { ref id }
@@ -1368,7 +1378,9 @@ mod labeled_add_tests {
     fn open_form_for_existing_labeled_does_not_enable_label_entry() {
         // Editing an already-named labeled config must not surface the label
         // input. Rename is out of scope here; the user changes other fields.
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1399,7 +1411,9 @@ mod labeled_add_tests {
 
     #[test]
     fn char_input_on_label_field_rejects_illegal_chars() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1420,7 +1434,9 @@ mod labeled_add_tests {
 
     #[test]
     fn char_input_on_label_field_caps_at_32_chars() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1435,7 +1451,9 @@ mod labeled_add_tests {
 
     #[test]
     fn submit_with_empty_label_keeps_form_open_and_focuses_label() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1466,7 +1484,9 @@ mod labeled_add_tests {
         // fields, and presses Enter. The new section must land in the config
         // under the typed label (not under an empty-string label that
         // validate() would reject) and the form must close.
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()
@@ -1522,7 +1542,9 @@ mod labeled_add_tests {
         // label must no longer count as a collision, the label-entry flow
         // must accept it, and the new section must land in the config under
         // the same id with full provider data.
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers.config_mut().set_section(ProviderSection {
             alias_prefix: "pve-server1".to_string(),
@@ -1600,7 +1622,9 @@ mod labeled_add_tests {
 
     #[test]
     fn submit_with_duplicate_label_keeps_form_open() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app();
         app.providers
             .config_mut()

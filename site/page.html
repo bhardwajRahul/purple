@@ -83,6 +83,7 @@
     "Split-pane detail panel with connection info, activity sparkline, provider metadata, tunnels and snippets",
     "Shell completions for Bash, zsh, fish",
     "Configurable ssh command for interactive logins: kitty's kitten ssh or any wrapper that takes ssh arguments, via the ssh_command preference or PURPLE_SSH_COMMAND",
+    "XDG Base Directory support: config, data, state and cache split across XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME (or PURPLE_*_DIR overrides), ~/.purple by default",
     "MCP server for AI agent integration (Claude Code, Cursor): list hosts, run commands and manage containers via JSON-RPC 2.0 over stdio"
   ]
 }
@@ -340,6 +341,14 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "Run with --verbose to enable debug logging, then purple logs --tail in another terminal. Logs are written to ~/.purple/purple.log with fault domain prefixes: [external] for remote/tool errors, [config] for local config issues. Set PURPLE_LOG=trace for maximum detail."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does purple follow the XDG Base Directory specification?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, once you set the variables. With XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME or XDG_CACHE_HOME set (or a PURPLE_CONFIG_DIR, PURPLE_DATA_DIR, PURPLE_STATE_DIR or PURPLE_CACHE_DIR override) purple keeps that category under $XDG_..._HOME/purple: preferences, snippets, providers and themes are config, certificates and the original SSH config backup are data, history, recents and logs are state, the container cache and version check are cache. Existing files are copied over on the first run and ~/.purple is left untouched. Without those variables everything stays in ~/.purple."
       }
     }
   ]
@@ -1233,6 +1242,10 @@ footer .sep { margin: 0 0.3em; }
       <span class="feat-text"><strong>Bring your own ssh.</strong> Point purple at kitty's <code>kitten ssh</code> or any wrapper that takes ssh arguments with one preference or <code>PURPLE_SSH_COMMAND</code>. Interactive logins use it; tunnels, snippets and transfers stay on plain ssh.</span>
     </div>
     <div class="feat">
+      <span class="feat-icon">📁</span>
+      <span class="feat-text"><strong>Your dotfiles, your rules.</strong> Set <code>XDG_CONFIG_HOME</code> and friends (or <code>PURPLE_CONFIG_DIR</code> and friends) and purple splits its files into config, data, state and cache, copying what it has on the first run. Leave them unset and everything stays in <code>~/.purple</code>.</span>
+    </div>
+    <div class="feat">
       <span class="feat-icon">📬</span>
       <span class="feat-text"><strong>Release notes in the TUI.</strong> A summary of everything that changed since you last opened purple, right on startup. Press n to reopen.</span>
     </div>
@@ -1366,6 +1379,10 @@ footer .sep { margin: 0 0.3em; }
       <details>
         <summary>How do I troubleshoot connection problems?</summary>
         <div class="answer">Run with <code>--verbose</code> to enable debug logging, then <code>purple logs --tail</code> in another terminal. Logs are written to <code>~/.purple/purple.log</code> with fault domain prefixes: <code>[external]</code> for remote/tool errors, <code>[config]</code> for local config issues. Set <code>PURPLE_LOG=trace</code> for maximum detail.</div>
+      </details>
+      <details>
+        <summary>Does purple follow the XDG Base Directory specification?</summary>
+        <div class="answer">Yes, once you set the variables. With <code>XDG_CONFIG_HOME</code>, <code>XDG_DATA_HOME</code>, <code>XDG_STATE_HOME</code> or <code>XDG_CACHE_HOME</code> set (or a <code>PURPLE_CONFIG_DIR</code>, <code>PURPLE_DATA_DIR</code>, <code>PURPLE_STATE_DIR</code> or <code>PURPLE_CACHE_DIR</code> override) purple keeps that category under <code>$XDG_..._HOME/purple</code>: preferences, snippets, providers and themes are config, certificates and the original SSH config backup are data, history, recents and logs are state, the container cache and version check are cache. Existing files are copied over on the first run and <code>~/.purple</code> is left untouched. Without those variables everything stays in <code>~/.purple</code>.</div>
       </details>
       <div class="man-foot"><span>purple v__VERSION__</span><span>__DATE__</span><span>PURPLE(1)</span></div>
     </div>

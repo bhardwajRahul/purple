@@ -854,9 +854,15 @@ fn marker_path_special_chars_in_alias() {
 }
 
 #[test]
-fn marker_path_is_in_dot_purple_dir() {
-    let path = marker_path(Some(&crate::runtime::env::Paths::new("/home/u")), "test").unwrap();
-    assert!(path.to_string_lossy().contains(".purple/"));
+fn marker_path_is_in_the_state_dir() {
+    let legacy = crate::runtime::env::Paths::new("/home/u");
+    let path = marker_path(Some(&legacy), "test").unwrap();
+    assert!(path.starts_with("/home/u/.purple/"));
+    let split = crate::runtime::env::Paths::resolve("/home/u", |k| {
+        (k == "XDG_STATE_HOME").then(|| "/home/u/.local/state".to_string())
+    });
+    let path = marker_path(Some(&split), "test").unwrap();
+    assert!(path.starts_with("/home/u/.local/state/purple/"));
 }
 
 // =========================================================================

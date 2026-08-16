@@ -24,9 +24,13 @@ Code behind `std::process::exit` cannot be reached from a unit test. Spawn the
 real binary against a temp `HOME` instead and assert on the exit status plus
 what lands on disk. `tests/provider_add_e2e.rs` is the pattern to copy.
 
-The suite has a known race: run it with `--test-threads=1` if a batch of
-render tests fails for no apparent reason. Some of them read global theme
-state that a parallel test is allowed to change.
+The color mode, the theme and the demo flag are process globals. A test that
+sets one of them, directly or through `demo::build_demo_app()`, holds
+`crate::demo_flag::GLOBAL_TEST_LOCK` for its whole run so it never overlaps a
+parallel render test. Take it poison-tolerant
+(`.lock().unwrap_or_else(|e| e.into_inner())`) so one failing test does not
+cascade into `PoisonError` in every other. `./scripts/check-conventions.sh`
+rejects a test file that calls a mutator without naming the shared lock.
 
 ## Changing the UI
 

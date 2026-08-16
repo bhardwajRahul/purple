@@ -44,7 +44,7 @@ pub fn render(frame: &mut Frame, app: &mut App, spinner_tick: u64) {
     let top_bar_height: u16 = 3;
     let bishop_size = bishop::pick_bishop_size(area.height);
 
-    let show_strip = vault_ssh::vault_ssh_in_use(app.hosts_state.list());
+    let show_strip = vault_ssh::vault_ssh_in_use(app.hosts_state.list(), app.env().paths());
     let strip_rows = if show_strip {
         vault_strip::active_strip_rows(app)
     } else {

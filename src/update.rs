@@ -169,8 +169,8 @@ fn write_version_cache(
     let Some(paths) = paths else {
         return;
     };
-    let dir = paths.purple_dir();
-    if let Err(e) = std::fs::create_dir_all(&dir) {
+    let dir = paths.cache_dir();
+    if let Err(e) = std::fs::create_dir_all(dir) {
         debug!("[config] Failed to create version cache directory: {e}");
         return;
     }

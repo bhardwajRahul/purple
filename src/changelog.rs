@@ -139,24 +139,35 @@ pub mod test_override {
     use std::sync::Mutex;
     static OVERRIDE: Mutex<Option<String>> = Mutex::new(None);
     pub fn set(s: String) {
-        *OVERRIDE.lock().unwrap() = Some(s);
+        *OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
     }
     pub fn clear() {
-        *OVERRIDE.lock().unwrap() = None;
+        *OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     pub fn get() -> Option<String> {
-        OVERRIDE.lock().unwrap().clone()
+        OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// Process-wide changelog override for render tests. Holding the guard keeps
+/// the fixture in place; dropping it (also on panic) clears the override.
+/// The override is global, so callers must serialize on
+/// `crate::demo_flag::GLOBAL_TEST_LOCK` before taking one.
+#[cfg(test)]
+pub struct TestOverride(());
+
+#[cfg(test)]
+impl Drop for TestOverride {
+    fn drop(&mut self) {
+        test_override::clear();
     }
 }
 
 #[cfg(test)]
-pub fn set_test_override(s: String) {
+#[must_use = "the override clears when this guard drops"]
+pub fn set_test_override(s: String) -> TestOverride {
     test_override::set(s);
-}
-
-#[cfg(test)]
-pub fn clear_test_override() {
-    test_override::clear();
+    TestOverride(())
 }
 
 pub fn current_for_render() -> Cow<'static, [Section]> {

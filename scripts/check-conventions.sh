@@ -25,6 +25,10 @@
 #      chains surface to the user as toasts or CLI eprintln output.
 #      Centralization keeps wording consistent and makes future i18n
 #      tractable.
+#   7. Tests that set the color mode, the theme or the demo flag hold the
+#      shared test lock, so they never overlap a parallel render test.
+#   8. Only runtime::env::Paths joins `.purple`. Every other module asks
+#      it for a path, so a category can move without stragglers.
 
 set -e
 
@@ -191,6 +195,62 @@ for f in "${LIBRARY_FILES[@]}"; do
         FAIL=1
     fi
 done
+
+# 7. Tests that flip process-global theme or demo state hold the shared
+# test lock.
+#
+# The color mode, the theme and the demo flag are process globals. A test
+# that sets one of them (directly or through `build_demo_app`, which
+# enables demo mode) races every parallel test that renders, unless it
+# holds `crate::demo_flag::GLOBAL_TEST_LOCK` while it runs. Private
+# per-module locks do not serialize against the rest of the suite. The
+# check is per file: a test file (or the `#[cfg(test)] mod` region of a
+# source file) that calls a mutator must name the shared lock somewhere.
+MUTATORS='init_with_mode\(|set_color_mode\(|set_theme\(|demo_flag::enable\(|build_demo_app\(|theme::init\('
+while IFS= read -r f; do
+    base=$(basename "$f")
+    if [[ "$base" == *_tests.rs || "$base" == tests.rs ]]; then
+        region=$(cat "$f")
+    else
+        region=$(awk '
+        BEGIN { p=0; pending=0 }
+        {
+            if (!p) {
+                if ($0 ~ /^[[:space:]]*#\[cfg\(test\)\]/) { pending=1; next }
+                if (pending) {
+                    if ($0 ~ /^[[:space:]]*#\[/) { next }
+                    if ($0 ~ /^[[:space:]]*(pub(\([a-z]+\))?[[:space:]]+)?mod[[:space:]]+[A-Za-z_]+/) { p=1; print; next }
+                    pending=0
+                }
+                next
+            }
+            print
+        }' "$f")
+    fi
+    [ -z "$region" ] && continue
+    if echo "$region" | grep -qE "$MUTATORS"; then
+        if ! echo "$region" | grep -qE 'GLOBAL_TEST_LOCK|GLOBAL_TEST_IO_LOCK'; then
+            echo "ERROR: $f: test code sets the theme, color mode or demo flag without the shared test lock."
+            echo "       Hold crate::demo_flag::GLOBAL_TEST_LOCK for the whole test."
+            FAIL=1
+        fi
+    fi
+done < <(find src/ -name '*.rs')
+
+# 8. One place knows the on-disk layout.
+#
+# `runtime::env::Paths` maps every purple file to its category directory
+# (config, data, state, cache) and resolves the XDG and PURPLE_*_DIR
+# variables. Production code joins `.purple` nowhere else, so a category
+# can move without a stray hardcoded path staying behind.
+HITS=$(grep -rn '"\.purple"' "$SCAN_ROOT" --include='*.rs' \
+    | grep -v '/runtime/env\.rs:' || true)
+if [ -n "$HITS" ]; then
+    echo "ERROR: hardcoded .purple path outside runtime::env::Paths."
+    echo "       Add an accessor to Paths and call that instead."
+    echo "$HITS" | sed "s|$SCAN_ROOT|src|g"
+    FAIL=1
+fi
 
 if [ $FAIL -eq 0 ]; then
     echo "Convention checks: OK"

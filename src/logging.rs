@@ -201,6 +201,15 @@ pub fn write_banner(info: &BannerInfo<'_>, paths: Option<&crate::runtime::env::P
     if let Some(vault_info) = info.vault_ssh_info {
         banner.push_str(&format!("    vault_ssh={vault_info}\n"));
     }
+    if let Some(p) = paths {
+        banner.push_str(&format!(
+            "    dirs: config={} data={} state={} cache={}\n",
+            p.config_dir().display(),
+            p.data_dir().display(),
+            p.state_dir().display(),
+            p.cache_dir().display()
+        ));
+    }
     banner.push_str(&format!("    log_level={}\n", info.level));
 
     // Note: banner lines use \x20 (space) prefix to prevent the Rust string
@@ -430,8 +439,6 @@ mod tests {
 
     #[test]
     fn write_banner_creates_output() {
-        // write_banner uses log_path() which returns ~/.purple/purple.log,
-        // so we test the banner formatting logic via struct construction
         let info = BannerInfo {
             version: "0.0.0-test",
             config_path: "/tmp/config",
@@ -449,17 +456,34 @@ mod tests {
             proxy_env: "none",
         };
 
-        // Verify the banner struct fields are accessible and well-formed
-        assert_eq!(info.version, "0.0.0-test");
-        assert_eq!(info.providers.len(), 1);
-        assert!(info.vault_ssh_info.is_some());
-        assert_eq!(info.theme, "Purple");
-        assert_eq!(info.hosts, 42);
-        assert_eq!(info.snippets, 7);
-        assert_eq!(info.proxy_env, "none");
+        // The banner lands in the state directory's log file and names the
+        // resolved category directories, so a support bundle shows where
+        // purple read and wrote.
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state").to_string_lossy().to_string();
+        let paths = crate::runtime::env::Paths::resolve(dir.path(), move |k| {
+            (k == "XDG_STATE_HOME").then(|| state.clone())
+        });
+        std::fs::create_dir_all(paths.state_dir()).unwrap();
+        write_banner(&info, Some(&paths));
 
-        // We can't easily redirect log_path() in a unit test, but we can
-        // verify the format_now_utc helper used by write_banner
+        let body = std::fs::read_to_string(paths.log_file()).unwrap();
+        assert!(body.contains("--- purple v0.0.0-test started at "));
+        assert!(body.contains("hosts=42 patterns=3 snippets=7"));
+        assert!(body.contains("providers=testprov"));
+        assert!(body.contains("vault_ssh=enabled (addr=https://vault:8200)"));
+        assert!(
+            body.contains(&format!(
+                "dirs: config={} data={} state={} cache={}",
+                paths.config_dir().display(),
+                paths.data_dir().display(),
+                paths.state_dir().display(),
+                paths.cache_dir().display()
+            )),
+            "{body}"
+        );
+        assert!(body.contains("log_level=warn"));
+
         let ts = format_now_utc();
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 20);

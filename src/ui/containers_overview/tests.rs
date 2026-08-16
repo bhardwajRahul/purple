@@ -32,6 +32,14 @@ fn cache_with(entries: &[RawCacheEntry<'_>]) -> HashMap<String, ContainerCacheEn
     map
 }
 
+/// `build_demo_app` flips the global demo flag, so every test that builds one
+/// holds the shared test lock for its whole run.
+fn demo_lock() -> std::sync::MutexGuard<'static, ()> {
+    crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
 fn app_with_cache(cache: HashMap<String, ContainerCacheEntry>) -> App {
     let mut app = crate::demo::build_demo_app();
     app.container_state.set_cache(cache);
@@ -40,6 +48,7 @@ fn app_with_cache(cache: HashMap<String, ContainerCacheEntry>) -> App {
 
 #[test]
 fn alpha_host_sort_orders_by_host_then_name() {
+    let _lock = demo_lock();
     let cache = cache_with(&[
         ("zeus", &[("1", "alpha", "img", "running")]),
         (
@@ -62,6 +71,7 @@ fn alpha_host_sort_orders_by_host_then_name() {
 
 #[test]
 fn alpha_container_sort_orders_by_name_then_host() {
+    let _lock = demo_lock();
     let cache = cache_with(&[
         ("zeus", &[("1", "alpha", "img", "running")]),
         ("apollo", &[("2", "zebra", "img", "running")]),
@@ -76,6 +86,7 @@ fn alpha_container_sort_orders_by_name_then_host() {
 
 #[test]
 fn search_filters_on_alias_name_or_image() {
+    let _lock = demo_lock();
     let cache = cache_with(&[
         ("zeus", &[("1", "alpha", "redis:7", "running")]),
         ("apollo", &[("2", "zebra", "postgres:16", "exited")]),
@@ -94,6 +105,7 @@ fn search_filters_on_alias_name_or_image() {
 
 #[test]
 fn empty_search_query_returns_everything() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("zeus", &[("1", "alpha", "img", "running")])]);
     let mut app = app_with_cache(cache);
     app.search.set_query(Some(String::new()));
@@ -317,6 +329,7 @@ fn seed_inspect_exit_code(app: &mut App, id: &str, exit_code: i32) {
 
 #[test]
 fn container_has_nonzero_exit_docker_status_nonzero() {
+    let _lock = demo_lock();
     let app = app_with_cache(HashMap::new());
     let c = make_container_info("c1", "exited", "Exited (137) 2h ago");
     assert!(container_has_nonzero_exit(&app, &c));
@@ -324,6 +337,7 @@ fn container_has_nonzero_exit_docker_status_nonzero() {
 
 #[test]
 fn container_has_nonzero_exit_docker_status_zero() {
+    let _lock = demo_lock();
     let app = app_with_cache(HashMap::new());
     let c = make_container_info("c2", "exited", "Exited (0) 1m ago");
     assert!(!container_has_nonzero_exit(&app, &c));
@@ -331,6 +345,7 @@ fn container_has_nonzero_exit_docker_status_zero() {
 
 #[test]
 fn container_has_nonzero_exit_podman_empty_status_with_inspect_nonzero() {
+    let _lock = demo_lock();
     let mut app = app_with_cache(HashMap::new());
     app.containers_overview.inspect_cache_mut().entries.clear();
     seed_inspect_exit_code(&mut app, "c3", 137);
@@ -340,6 +355,7 @@ fn container_has_nonzero_exit_podman_empty_status_with_inspect_nonzero() {
 
 #[test]
 fn container_has_nonzero_exit_podman_empty_status_no_inspect_is_false() {
+    let _lock = demo_lock();
     // No false alarm when we have no exit signal yet.
     let mut app = app_with_cache(HashMap::new());
     app.containers_overview.inspect_cache_mut().entries.clear();
@@ -349,6 +365,7 @@ fn container_has_nonzero_exit_podman_empty_status_no_inspect_is_false() {
 
 #[test]
 fn container_has_nonzero_exit_running_state_blocks_inspect_fallback() {
+    let _lock = demo_lock();
     // A stale inspect saying exit=137 must not flag a currently
     // running container as failed.
     let mut app = app_with_cache(HashMap::new());
@@ -360,6 +377,7 @@ fn container_has_nonzero_exit_running_state_blocks_inspect_fallback() {
 
 #[test]
 fn container_has_nonzero_exit_podman3_stopped_state_uses_fallback() {
+    let _lock = demo_lock();
     // Podman 3.x uses state="stopped" where podman 5.x / docker use
     // "exited". Both must accept the inspect fallback.
     let mut app = app_with_cache(HashMap::new());
@@ -384,6 +402,7 @@ fn cached_fp(app: &App) -> Option<u64> {
 
 #[test]
 fn view_cache_starts_empty_and_populates_on_first_call() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("host1", &[("id1", "web", "nginx", "running")])]);
     let app = app_with_cache(cache);
     // Demo build_demo_app pre-populates and the assignment of a new
@@ -398,6 +417,7 @@ fn view_cache_starts_empty_and_populates_on_first_call() {
 
 #[test]
 fn view_cache_hits_on_identical_state() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("h", &[("i", "a", "img", "running")])]);
     let app = app_with_cache(cache);
     *app.containers_overview.view_cache().borrow_mut() = None;
@@ -411,6 +431,7 @@ fn view_cache_hits_on_identical_state() {
 
 #[test]
 fn view_cache_invalidates_on_sort_mode_change() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("h", &[("i", "a", "img", "running")])]);
     let mut app = app_with_cache(cache);
     *app.containers_overview.view_cache().borrow_mut() = None;
@@ -424,6 +445,7 @@ fn view_cache_invalidates_on_sort_mode_change() {
 
 #[test]
 fn view_cache_invalidates_on_search_query_change() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("h", &[("i", "web", "img", "running")])]);
     let mut app = app_with_cache(cache);
     *app.containers_overview.view_cache().borrow_mut() = None;
@@ -436,6 +458,7 @@ fn view_cache_invalidates_on_search_query_change() {
 
 #[test]
 fn view_cache_invalidates_on_container_cache_timestamp_bump() {
+    let _lock = demo_lock();
     let mut app = app_with_cache(cache_with(&[("h", &[("i", "web", "img", "running")])]));
     *app.containers_overview.view_cache().borrow_mut() = None;
     let _ = visible_rows(&app);
@@ -449,6 +472,7 @@ fn view_cache_invalidates_on_container_cache_timestamp_bump() {
 
 #[test]
 fn view_cache_invalidates_on_collapsed_hosts_toggle() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("h", &[("i", "web", "img", "running")])]);
     let mut app = app_with_cache(cache);
     *app.containers_overview.view_cache().borrow_mut() = None;
@@ -1489,6 +1513,7 @@ fn host_detail_text(app: &App, alias: &str, total: usize, running: usize) -> Str
 
 #[test]
 fn host_detail_renders_status_and_fleet_cards_for_healthy_host() {
+    let _lock = demo_lock();
     // Demo cache + inspect data is the easiest seed: every demo
     // host has a fleet, runtime label, and (most) carry an
     // engine_version on the cache entry.
@@ -1511,6 +1536,7 @@ fn host_detail_renders_status_and_fleet_cards_for_healthy_host() {
 
 #[test]
 fn host_detail_attention_card_appears_for_dead_or_oom_or_restart_loop() {
+    let _lock = demo_lock();
     // bastion-ams in the demo carries a container with restart_count=14
     // (app-backend) so the inspect-aggregate ATTENTION row triggers.
     let app = crate::demo::build_demo_app();
@@ -1531,6 +1557,7 @@ fn host_detail_attention_card_appears_for_dead_or_oom_or_restart_loop() {
 
 #[test]
 fn host_detail_runtime_falls_back_to_label_only_without_engine_version() {
+    let _lock = demo_lock();
     // gateway-vpn in the demo deliberately omits engine_version on
     // its cache line. The Runtime row must still render with just
     // "Docker" (no trailing version).
@@ -1555,6 +1582,7 @@ fn host_detail_runtime_falls_back_to_label_only_without_engine_version() {
 
 #[test]
 fn host_detail_actions_disable_when_nothing_running() {
+    let _lock = demo_lock();
     let cache = cache_with(&[(
         "host-x",
         &[("1", "a", "img", "exited"), ("2", "b", "img", "exited")],
@@ -1567,6 +1595,7 @@ fn host_detail_actions_disable_when_nothing_running() {
 
 #[test]
 fn host_detail_actions_verbs_align_with_card_value_column() {
+    let _lock = demo_lock();
     // The ACTIONS card key column must use `design::SECTION_LABEL_W`
     // so action verbs sit at the same X as the values in sibling
     // cards (STATUS / FLEET / HOST). A regression to a narrower key
@@ -1602,6 +1631,7 @@ fn host_detail_actions_verbs_align_with_card_value_column() {
 
 #[test]
 fn host_detail_last_card_stretches_to_panel_bottom() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("host-y", &[("1", "n", "img", "running")])]);
     let app = app_with_cache(cache);
     let lines = build_host_detail_lines(&app, "host-y", 1, 1, 60, 40);
@@ -1640,6 +1670,7 @@ fn cache_with_age(alias: &str, age_secs: u64) -> HashMap<String, ContainerCacheE
 
 #[test]
 fn host_detail_attention_card_fires_for_stale_listing() {
+    let _lock = demo_lock();
     let cache = cache_with_age("host-stale", 700);
     let app = app_with_cache(cache);
     let text = host_detail_text(&app, "host-stale", 1, 1);
@@ -1650,6 +1681,7 @@ fn host_detail_attention_card_fires_for_stale_listing() {
 
 #[test]
 fn host_detail_no_attention_card_when_listing_is_fresh_and_nothing_wrong() {
+    let _lock = demo_lock();
     let cache = cache_with_age("host-fresh", 30);
     let app = app_with_cache(cache);
     let text = host_detail_text(&app, "host-fresh", 1, 1);
@@ -1665,6 +1697,7 @@ fn host_detail_no_attention_card_when_listing_is_fresh_and_nothing_wrong() {
 
 #[test]
 fn host_detail_fleet_shows_count_when_tunnel_count_is_set_but_inactive() {
+    let _lock = demo_lock();
     // Seed a fresh host with tunnel_count > 0 so the FLEET card
     // takes the count branch. We append a HostEntry directly because
     // the demo app's fixed host list does not contain "host-tc".
@@ -1686,6 +1719,7 @@ fn host_detail_fleet_shows_count_when_tunnel_count_is_set_but_inactive() {
 
 #[test]
 fn host_detail_fleet_marks_group_folded_when_collapsed() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("host-fold", &[("1", "n", "img", "running")])]);
     let mut app = app_with_cache(cache);
     app.containers_overview.toggle_host_collapsed("host-fold");
@@ -1696,6 +1730,7 @@ fn host_detail_fleet_marks_group_folded_when_collapsed() {
 
 #[test]
 fn host_detail_actions_label_changes_when_group_collapsed() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("host-ex", &[("1", "n", "img", "running")])]);
     let mut app = app_with_cache(cache);
     app.containers_overview.toggle_host_collapsed("host-ex");
@@ -1706,6 +1741,7 @@ fn host_detail_actions_label_changes_when_group_collapsed() {
 
 #[test]
 fn host_detail_ping_renders_each_status_variant() {
+    let _lock = demo_lock();
     let cache = cache_with(&[("host-p", &[("1", "n", "img", "running")])]);
     let mut app = app_with_cache(cache);
 
@@ -1741,6 +1777,7 @@ fn host_detail_ping_renders_each_status_variant() {
 
 #[test]
 fn restart_loop_threshold_boundary_at_five_excludes_six_includes() {
+    let _lock = demo_lock();
     // Boundary: > 5, not >= 5. A container at exactly 5 must NOT
     // surface as a restart loop; one at 6 must.
     let app = crate::demo::build_demo_app();
@@ -1806,6 +1843,7 @@ fn restart_loop_threshold_boundary_at_five_excludes_six_includes() {
 
 #[test]
 fn host_detail_truncates_restart_loop_rows_at_attention_cap() {
+    let _lock = demo_lock();
     // Seed five containers each with restart_count above threshold.
     // The ATTENTION card must render at most ATTENTION_RESTART_LOOP_CAP
     // (= 3) restart-loop rows; the rest are dropped silently.
@@ -1856,6 +1894,7 @@ fn host_detail_truncates_restart_loop_rows_at_attention_cap() {
 
 #[test]
 fn host_detail_action_qualifier_uses_count_with_correct_pluralisation() {
+    let _lock = demo_lock();
     // Singular vs plural matters for one-off operator readability.
     let cache_one = cache_with(&[("host-1", &[("1", "n", "img", "running")])]);
     let app_one = app_with_cache(cache_one);

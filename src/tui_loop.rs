@@ -25,12 +25,11 @@ use crate::{
 };
 
 pub fn run_tui(mut app: App) -> Result<()> {
-    // First-launch welcome hint (one-shot: creates .purple/ so it won't show again)
+    // First-launch welcome hint (one-shot: backs up the SSH config so it won't show again)
     if app.status_center.status().is_none() && !app.demo_mode {
         let paths = app.env().paths().cloned();
         if let Some(paths) = paths {
-            let purple_dir = paths.purple_dir();
-            if let Some(has_backup) = first_launch_init(&purple_dir, app.reload.config_path()) {
+            if let Some(has_backup) = first_launch_init(&paths, app.reload.config_path()) {
                 let host_count = app.hosts_state.list().len();
                 let known_hosts_count = if host_count == 0 {
                     import::count_known_hosts_candidates(Some(&paths))
@@ -172,11 +171,12 @@ fn spawn_startup_tasks(app: &mut App, events_tx: &std::sync::mpsc::Sender<AppEve
     // navigate through each host first (or hit R). The actual validation
     // is `ssh-keygen -L`, cheap, runs off-thread, and reuses the same
     // `CertCheckResult` event path as the lazy selection-driven check.
+    let paths = app.env().paths().cloned();
     let vault_aliases: Vec<(String, String)> = app
         .hosts_state
         .list()
         .iter()
-        .filter(|h| vault_ssh::has_purple_vault_context(h))
+        .filter(|h| vault_ssh::has_purple_vault_context(h, paths.as_ref()))
         .filter(|h| !app.vault.is_cert_check_in_flight(&h.alias))
         .filter(|h| !app.vault.has_cert(&h.alias))
         .map(|h| (h.alias.clone(), h.certificate_file.clone()))
@@ -419,7 +419,8 @@ fn lazy_cert_check(app: &mut App, events_tx: &std::sync::mpsc::Sender<AppEvent>)
                 app.providers.config(),
             )
             .is_some();
-            let cert_file = vault_ssh::cert_file_in_purple_dir(&s.certificate_file);
+            let cert_file =
+                vault_ssh::cert_file_in_purple_dir(&s.certificate_file, app.env().paths());
             (s.alias.clone(), s.certificate_file.clone(), role, cert_file)
         })
     else {

@@ -35,6 +35,14 @@ pub fn failed_to_save(e: &impl std::fmt::Display) -> String {
 pub const CONFIG_CHANGED_EXTERNALLY: &str =
     "Config changed externally. Press Esc and re-open to pick up changes.";
 
+// ── Welcome ─────────────────────────────────────────────────────────
+
+pub const WELCOME_BACKUP_TAKEN: &str = "Your original config has been backed up";
+/// Second line under the backup notice, naming where the copy went.
+pub fn welcome_backup_location(path: &str) -> String {
+    format!("to {path}")
+}
+
 // ── Demo mode ───────────────────────────────────────────────────────
 
 pub const DEMO_CONNECTION_DISABLED: &str = "Demo mode. Connection disabled.";

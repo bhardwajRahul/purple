@@ -167,6 +167,7 @@ purple is an open-source terminal SSH manager and SSH config editor written in R
 - Shell completions (bash, zsh, fish)
 - Jump (: key): universal fuzzy search bar. Find any host, tunnel, container, snippet or action across the entire SSH config in one keystroke. Searches alias, hostname, tags, provider, the SSH `User` and `IdentityFile` directives, `ProxyJump` chains and Vault SSH roles. Field prefixes scope to a single directive: `user:eric`, `host:db`, `proxy:bastion`, `vault:prod-admin`, `tag:web`. Match-source hint surfaces non-visible matches inline (e.g. a host that matched on User shows `via eric`). Recent picks persist across sessions in `~/.purple/recents.json` and lead the empty-state list. Comparable to Linear's Cmd+K or Raycast, but in the terminal
 - 11 built-in color themes (default: Purple) with custom theme support (~/.purple/themes/*.toml). Works in any terminal, respects NO_COLOR
+- XDG Base Directory support: with XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME or XDG_CACHE_HOME set (or the PURPLE_CONFIG_DIR, PURPLE_DATA_DIR, PURPLE_STATE_DIR and PURPLE_CACHE_DIR overrides) purple splits ~/.purple by category and copies existing files over on the first run. Without those variables everything stays in ~/.purple
 - What's new overlay aggregates release notes from skipped versions on first launch after upgrade. Sticky toast invites press n for the modal. Reopen anytime via n or Jump
 
 ## Install
@@ -504,6 +505,9 @@ A: Yes. purple uses the Bitwarden CLI (bw) for Bitwarden password sources. If yo
 Q: Can I change the color theme?
 A: Press m in the host list to open the theme picker with live preview. 11 built-in themes included. Custom themes from ~/.purple/themes/*.toml. CLI: purple theme set <name>.
 
+Q: Does purple follow the XDG Base Directory specification?
+A: Yes, once you set the variables. With XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME or XDG_CACHE_HOME set (or a PURPLE_CONFIG_DIR, PURPLE_DATA_DIR, PURPLE_STATE_DIR or PURPLE_CACHE_DIR override) purple keeps that category under $XDG_..._HOME/purple: preferences, snippets, providers and themes are config, certificates and the original SSH config backup are data, history, recents, logs and ledgers are state, the container cache and version check are cache. Existing files are copied over on the first run and ~/.purple is left untouched. Without those variables everything stays in ~/.purple, so existing setups do not change.
+
 ## Status
 
 - Current version: __VERSION__ (__DATE_HUMAN__)
@@ -519,6 +523,8 @@ purple writes structured logs to ~/.purple/purple.log. By default only warnings 
 ## Data storage
 
 purple does not use a proprietary database. All host configuration lives in ~/.ssh/config. Tags, provider tracking and metadata are stored as comments in the same file. Provider credentials are stored in ~/.purple/providers as plaintext TOML (protect the directory with filesystem permissions). Snippets are stored in ~/.purple/snippets. Connection history is stored in ~/.purple/history.tsv. Preferences (sort mode, view mode, theme, slow_threshold_ms, auto_ping, ssh_command) are stored in ~/.purple/preferences. Logs are stored in ~/.purple/purple.log. Nothing is transmitted to external servers.
+
+purple's own files fall into four categories, following the XDG Base Directory specification: config (preferences, snippets, providers, themes), data (certs/, config.original), state (history.tsv, recents.json, key_activity.json, snippet_runs.json, sync_history.tsv, purple.log, mcp-audit.log, askpass retry markers) and cache (container_cache.jsonl, last_version_check). By default all four live in ~/.purple. Each category resolves on its own: PURPLE_CONFIG_DIR, PURPLE_DATA_DIR, PURPLE_STATE_DIR or PURPLE_CACHE_DIR when set, else $XDG_CONFIG_HOME/purple, $XDG_DATA_HOME/purple, $XDG_STATE_HOME/purple or $XDG_CACHE_HOME/purple when that variable is set to an absolute path, else ~/.purple. Set XDG_CONFIG_HOME alone and only the config files move. On the first run with a category outside ~/.purple, purple copies that category's files into the new directory (directories mode 0700, file modes kept) when the new directory holds none of them yet (all or nothing per category, with a retry on the next start after a failure) and leaves ~/.purple in place so unsetting the variables rolls back. Hosts that already carry a CertificateFile pointing into ~/.purple/certs keep using that path. `purple logs` prints the resolved log path and the startup banner in the log lists all four directories.
 
 ## Limitations
 

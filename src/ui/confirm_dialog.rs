@@ -453,11 +453,29 @@ pub fn render_welcome(
         .max()
         .unwrap_or(0);
 
+    // Where the first-launch backup went, shown with `~` for the home dir.
+    let backup_location = app
+        .env()
+        .paths()
+        .map(|p| p.abbreviate_home(&p.config_original()))
+        .unwrap_or_default();
+    let backup_line = crate::messages::welcome_backup_location(&backup_location);
+
     // border(2) + blank(3) + logo(5) + blank(3) + subtitle(1) + hint(1) + blank(1) + footer(1) + blank(3) = 22 base
     let content_height = 22 + extra;
-    // Minimum width: fits longest text line ("Your original config has been backed up")
-    // with comfortable padding. Logo width + padding, or 56 chars minimum.
-    let dialog_width = ((logo_max_w as u16) + 24).max(56);
+    // Minimum width: fits the longest text line (the backup notice or the
+    // backup path) with comfortable padding. Logo width plus padding, at
+    // least 56 chars.
+    let longest_line = if has_backup {
+        UnicodeWidthStr::width(backup_line.as_str()).max(UnicodeWidthStr::width(
+            crate::messages::WELCOME_BACKUP_TAKEN,
+        ))
+    } else {
+        0
+    };
+    let dialog_width = ((logo_max_w as u16) + 24)
+        .max(56)
+        .max(u16::try_from(longest_line + 8).unwrap_or(u16::MAX));
     let area = super::centered_rect_fixed(dialog_width, content_height as u16, frame.area());
 
     frame.render_widget(Clear, area);
@@ -549,11 +567,11 @@ pub fn render_welcome(
     if has_backup {
         text.push(Line::from(""));
         let b1 = vec![Span::styled(
-            "Your original config has been backed up",
+            crate::messages::WELCOME_BACKUP_TAKEN,
             theme::muted(),
         )];
         text.push(Line::from(typewriter_spans(b1, &mut char_budget)).alignment(Alignment::Center));
-        let b2 = vec![Span::styled("to ~/.purple/config.original", theme::muted())];
+        let b2 = vec![Span::styled(backup_line, theme::muted())];
         text.push(Line::from(typewriter_spans(b2, &mut char_budget)).alignment(Alignment::Center));
     }
 

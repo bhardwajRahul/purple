@@ -627,14 +627,15 @@ fn is_recent_marker(path: &PathBuf) -> bool {
 
 /// Clean up retry markers after a successful connection. ProxyJump connections
 /// create one marker per hop and the parent process only knows the final
-/// target alias, so we clear every `~/.purple/.askpass_*` file on success.
+/// target alias, so we clear every `.askpass_*` marker in the state directory
+/// on success.
 /// Each marker has a 60s expiry; this just keeps rapid reconnects snappy and
 /// prevents a stranded bastion marker from blocking the next attempt.
 pub fn cleanup_marker(paths: Option<&crate::runtime::env::Paths>, _alias: &str) {
     let Some(paths) = paths else {
         return;
     };
-    let Ok(read) = std::fs::read_dir(paths.purple_dir()) else {
+    let Ok(read) = std::fs::read_dir(paths.state_dir()) else {
         return;
     };
     for entry in read.flatten() {

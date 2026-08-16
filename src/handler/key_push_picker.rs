@@ -19,11 +19,11 @@ pub(crate) fn pickable_hosts(app: &App) -> impl Iterator<Item = &HostEntry> {
 }
 
 /// True when a host is purple-Vault-managed: either a `# purple:vault-ssh`
-/// role comment is set, or `CertificateFile` points into `~/.purple/certs/`.
-/// Both flavours use signed certs rather than `authorized_keys` appends and
-/// must not be picked.
-pub(crate) fn is_vault_host(host: &HostEntry) -> bool {
-    crate::vault_ssh::has_purple_vault_context(host)
+/// role comment is set or a `CertificateFile` points into purple's certs
+/// directory. Both flavours use signed certs rather than `authorized_keys`
+/// appends and must not be picked.
+pub(crate) fn is_vault_host(host: &HostEntry, paths: Option<&crate::runtime::env::Paths>) -> bool {
+    crate::vault_ssh::has_purple_vault_context(host, paths)
 }
 
 /// The slice of App the key-push picker touches: the Keys-tab state (push
@@ -35,6 +35,7 @@ struct KeyPushCtx<'a> {
     hosts: &'a HostState,
     screen: &'a mut Screen,
     status: &'a mut StatusCenter,
+    paths: Option<&'a crate::runtime::env::Paths>,
 }
 
 impl Nav for KeyPushCtx<'_> {
@@ -63,6 +64,7 @@ pub(super) fn handle_key(app: &mut App, key: KeyEvent) {
         hosts: &app.hosts_state,
         screen: &mut app.screen,
         status: &mut app.status_center,
+        paths: app.env.paths(),
     };
     key_push_key(&mut ctx, key);
 }
@@ -134,7 +136,7 @@ fn toggle_at_cursor(ctx: &mut KeyPushCtx) {
         Some(h) => h,
         None => return,
     };
-    if is_vault_host(host) {
+    if is_vault_host(host, ctx.paths) {
         ctx.notify(crate::messages::KEY_PUSH_VAULT_SKIP);
         return;
     }
@@ -154,9 +156,10 @@ fn toggle_at_cursor(ctx: &mut KeyPushCtx) {
 /// `a` toggle: if every eligible host is already selected, clear them;
 /// otherwise select all eligible. Matches the host-list bulk-select rhythm.
 fn toggle_select_all_eligible(ctx: &mut KeyPushCtx) {
+    let paths = ctx.paths;
     let eligible: Vec<String> = ctx
         .pickable()
-        .filter(|h| !is_vault_host(h))
+        .filter(|h| !is_vault_host(h, paths))
         .map(|h| h.alias.clone())
         .collect();
     if eligible.is_empty() {

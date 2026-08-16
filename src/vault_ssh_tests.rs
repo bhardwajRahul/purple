@@ -1586,7 +1586,7 @@ fn host_with_vault(alias: &str, role: Option<&str>) -> crate::ssh_config::model:
 #[test]
 fn vault_ssh_in_use_false_when_no_roles() {
     let hosts = vec![host_with_vault("a", None), host_with_vault("b", None)];
-    assert!(!vault_ssh_in_use(&hosts));
+    assert!(!vault_ssh_in_use(&hosts, None));
 }
 
 #[test]
@@ -1595,7 +1595,7 @@ fn vault_ssh_in_use_true_when_any_role_present() {
         host_with_vault("a", None),
         host_with_vault("b", Some("ops/prod")),
     ];
-    assert!(vault_ssh_in_use(&hosts));
+    assert!(vault_ssh_in_use(&hosts, None));
 }
 
 #[test]
@@ -1635,7 +1635,7 @@ fn active_certs_for_strip_filters_to_valid_only() {
             None,
         ),
     );
-    let rows = active_certs_for_strip(&hosts, &cache);
+    let rows = active_certs_for_strip(&hosts, &cache, None);
     assert_eq!(rows.len(), 2);
     // Sorted longest-remaining first
     assert_eq!(rows[0].alias, "prod");
@@ -1658,7 +1658,7 @@ fn active_certs_for_strip_skips_hosts_without_role() {
             None,
         ),
     );
-    assert!(active_certs_for_strip(&hosts, &cache).is_empty());
+    assert!(active_certs_for_strip(&hosts, &cache, None).is_empty());
 }
 
 #[test]
@@ -1673,44 +1673,78 @@ fn cert_fill_ratio_clamps_edges() {
 #[test]
 fn cert_file_in_purple_dir_matches_purple_certs_path() {
     assert!(cert_file_in_purple_dir(
-        "/Users/eric/.purple/certs/web01-cert.pub"
+        "/Users/eric/.purple/certs/web01-cert.pub",
+        None
     ));
-    assert!(cert_file_in_purple_dir("~/.purple/certs/api-prod-cert.pub"));
+    assert!(cert_file_in_purple_dir(
+        "~/.purple/certs/api-prod-cert.pub",
+        None
+    ));
 }
 
 #[test]
 fn cert_file_in_purple_dir_rejects_other_paths() {
-    assert!(!cert_file_in_purple_dir(""));
-    assert!(!cert_file_in_purple_dir("~/.ssh/web01-cert.pub"));
-    assert!(!cert_file_in_purple_dir("/etc/ssh/cert.pub"));
+    assert!(!cert_file_in_purple_dir("", None));
+    assert!(!cert_file_in_purple_dir("~/.ssh/web01-cert.pub", None));
+    assert!(!cert_file_in_purple_dir("/etc/ssh/cert.pub", None));
+}
+
+#[test]
+fn cert_file_in_purple_dir_matches_the_resolved_data_dir() {
+    // With XDG_DATA_HOME set the certs live under `<data>/purple/certs`, so
+    // a CertificateFile pointing there (absolute or tilde-relative) is
+    // purple-managed while the legacy path keeps matching too.
+    let paths = crate::runtime::env::Paths::resolve("/Users/eric", |k| {
+        (k == "XDG_DATA_HOME").then(|| "/Users/eric/.local/share".to_string())
+    });
+    let p = Some(&paths);
+    assert!(cert_file_in_purple_dir(
+        "/Users/eric/.local/share/purple/certs/web01-cert.pub",
+        p
+    ));
+    assert!(cert_file_in_purple_dir(
+        "~/.local/share/purple/certs/web01-cert.pub",
+        p
+    ));
+    assert!(cert_file_in_purple_dir("~/.purple/certs/old-cert.pub", p));
+    assert!(!cert_file_in_purple_dir(
+        "~/.local/share/other/certs/web01-cert.pub",
+        p
+    ));
+    assert!(!cert_file_in_purple_dir("~/.ssh/web01-cert.pub", p));
+    // Without paths only the legacy substring can match.
+    assert!(!cert_file_in_purple_dir(
+        "/Users/eric/.local/share/purple/certs/web01-cert.pub",
+        None
+    ));
 }
 
 #[test]
 fn has_purple_vault_context_via_marker_only() {
     let mut h = host_with_vault("a", Some("ops/prod"));
     h.certificate_file = String::new();
-    assert!(has_purple_vault_context(&h));
+    assert!(has_purple_vault_context(&h, None));
 }
 
 #[test]
 fn has_purple_vault_context_via_cert_file_only() {
     let mut h = host_with_vault("a", None);
     h.certificate_file = "/Users/eric/.purple/certs/a-cert.pub".to_string();
-    assert!(has_purple_vault_context(&h));
+    assert!(has_purple_vault_context(&h, None));
 }
 
 #[test]
 fn has_purple_vault_context_negative_when_neither_present() {
     let mut h = host_with_vault("a", None);
     h.certificate_file = "~/.ssh/random-cert.pub".to_string();
-    assert!(!has_purple_vault_context(&h));
+    assert!(!has_purple_vault_context(&h, None));
 }
 
 #[test]
 fn vault_ssh_in_use_true_when_cert_file_points_at_purple_dir() {
     let mut h = host_with_vault("a", None);
     h.certificate_file = "/Users/eric/.purple/certs/a-cert.pub".to_string();
-    assert!(vault_ssh_in_use(&[h]));
+    assert!(vault_ssh_in_use(&[h], None));
 }
 
 #[test]
@@ -1731,7 +1765,7 @@ fn active_certs_for_strip_includes_hosts_without_role_when_cert_path_is_purple()
             None,
         ),
     );
-    let rows = active_certs_for_strip(&hosts, &cache);
+    let rows = active_certs_for_strip(&hosts, &cache, None);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].alias, "cli-signed");
     // Role is empty when the marker is absent. The strip renders the

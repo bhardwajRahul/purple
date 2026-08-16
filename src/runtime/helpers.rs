@@ -151,34 +151,43 @@ pub fn set_sync_summary(app: &mut App) {
     }
 }
 
-/// First-launch initialization: create ~/.purple/ and back up the original SSH config.
-/// Returns `Some(has_backup)` if this was a first launch, or `None` if already initialized.
-pub fn first_launch_init(purple_dir: &Path, config_path: &Path) -> Option<bool> {
+/// First-launch initialization: create the data directory and back up the
+/// original SSH config there. Returns `Some(has_backup)` on a first launch.
+/// Returns `None` once any purple file exists.
+pub fn first_launch_init(paths: &crate::runtime::env::Paths, config_path: &Path) -> Option<bool> {
     let markers = [
-        "config.original",
-        "preferences",
-        "history.tsv",
-        "container_cache.jsonl",
-        "last_version_check",
-        "providers",
-        "snippets.toml",
-        "themes",
+        paths.config_original(),
+        paths.preferences(),
+        paths.history(),
+        paths.container_cache(),
+        paths.last_version_check(),
+        paths.providers_config(),
+        paths.snippets_file(),
+        paths.themes_dir(),
     ];
-    if markers.iter().any(|m| purple_dir.join(m).exists()) {
+    if markers.iter().any(|m| m.exists()) {
         return None;
     }
-    if let Err(e) = std::fs::create_dir_all(purple_dir) {
-        warn!("[config] Failed to create ~/.purple directory: {e}");
+    // The directory may already exist (logging opened its file moments
+    // ago), so set the mode explicitly instead of only on creation.
+    let data_dir = paths.data_dir();
+    if let Err(e) = std::fs::create_dir_all(data_dir) {
+        warn!(
+            "[config] Failed to create data directory {}: {e}",
+            data_dir.display()
+        );
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = std::fs::set_permissions(purple_dir, std::fs::Permissions::from_mode(0o700))
-        {
-            warn!("[config] Failed to set ~/.purple directory permissions: {e}");
+        if let Err(e) = std::fs::set_permissions(data_dir, std::fs::Permissions::from_mode(0o700)) {
+            warn!(
+                "[config] Failed to set data directory permissions on {}: {e}",
+                data_dir.display()
+            );
         }
     }
-    let original_backup = purple_dir.join("config.original");
+    let original_backup = paths.config_original();
     if config_path.exists() {
         if let Err(e) = std::fs::copy(config_path, &original_backup) {
             warn!(

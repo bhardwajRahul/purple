@@ -124,6 +124,7 @@ Short-lived certificates from the HashiCorp Vault SSH secrets engine get a TTL s
 - Short-lived SSH certificates signed via the HashiCorp Vault SSH secrets engine.
 - MCP server for AI agents like Claude Code and Cursor, with a read-only mode and a JSON Lines audit log.
 - Your own ssh wrapper for interactive logins, such as kitty's `kitten ssh`, via one preference or `PURPLE_SSH_COMMAND`.
+- XDG Base Directory support: set `XDG_CONFIG_HOME` and friends (or `PURPLE_CONFIG_DIR` and friends) and purple splits its files into config, data, state and cache. Unset, everything stays in `~/.purple`.
 
 See the [wiki](https://github.com/erickochen/purple/wiki) for details.
 

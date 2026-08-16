@@ -49,8 +49,9 @@ pub struct Cli {
     #[arg(
         long,
         long_help = "Enable verbose logging (debug level).\n\n\
-                     Logs are written to ~/.purple/purple.log (rotates at 5MB).\n\
-                     Tail with `purple logs --tail` or open the file directly.\n\n\
+                     Logs are written to purple.log in the state directory,\n\
+                     ~/.purple by default (rotates at 5MB). `purple logs` prints\n\
+                     the path; tail with `purple logs --tail`.\n\n\
                      Set PURPLE_LOG=trace|debug|info|warn|error to override the\n\
                      level without --verbose. PURPLE_LOG takes precedence."
     )]
@@ -131,12 +132,12 @@ pub enum Commands {
         read_only: bool,
 
         /// Disable the MCP audit log. By default every tool call is appended to
-        /// ~/.purple/mcp-audit.log as JSON Lines.
+        /// mcp-audit.log in the state directory (~/.purple by default) as JSON Lines.
         #[arg(long)]
         no_audit: bool,
 
-        /// Custom path for the MCP audit log (default: ~/.purple/mcp-audit.log).
-        /// Ignored when --no-audit is set.
+        /// Custom path for the MCP audit log (default: mcp-audit.log in the state
+        /// directory, ~/.purple by default). Ignored when --no-audit is set.
         #[arg(long, value_name = "PATH")]
         audit_log: Option<String>,
     },
@@ -198,8 +199,9 @@ pub enum VaultCommands {
           on its provider (provider-level vault_role default)\n\
         - The SSH secrets engine is enabled on Vault and your token has `update` capability\n  \
           on the role path\n\n\
-        Signed certificates are cached under ~/.purple/certs/<alias>-cert.pub and\n\
-        `CertificateFile` is wired into the SSH config automatically.\n\n\
+        Signed certificates are stored as certs/<alias>-cert.pub in the data\n\
+        directory (~/.purple by default) and `CertificateFile` is wired into the\n\
+        SSH config automatically.\n\n\
         Distinct from the Vault KV secrets engine used as a password source (`vault:`\n\
         askpass prefix); see `purple password` for that."
     )]

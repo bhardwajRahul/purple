@@ -1580,26 +1580,30 @@ fn run_command_timeout_clamps_zero_to_one() {
 }
 
 // ── default_audit_log_path branches ──────────────────────────────────
-//
-// `dirs::home_dir()` is hard to force into None in production, but the
-// Some/None branch logic lives in a private helper that takes the value
-// directly. Test it.
 
 #[test]
-fn audit_log_path_from_home_some_returns_default_under_dot_purple() {
-    let home = std::path::PathBuf::from("/var/test/home/eric");
-    let result = super::audit_log_path_from_home(Some(home));
+fn default_audit_log_path_lives_in_the_state_directory() {
+    let legacy = crate::runtime::env::Paths::new("/var/test/home/eric");
     assert_eq!(
-        result,
+        super::default_audit_log_path(Some(&legacy)),
         Some(std::path::PathBuf::from(
             "/var/test/home/eric/.purple/mcp-audit.log"
+        ))
+    );
+    let split = crate::runtime::env::Paths::resolve("/var/test/home/eric", |k| {
+        (k == "XDG_STATE_HOME").then(|| "/var/test/state".to_string())
+    });
+    assert_eq!(
+        super::default_audit_log_path(Some(&split)),
+        Some(std::path::PathBuf::from(
+            "/var/test/state/purple/mcp-audit.log"
         ))
     );
 }
 
 #[test]
-fn audit_log_path_from_home_none_returns_none_silently() {
+fn default_audit_log_path_none_without_home_returns_none_silently() {
     // The warn! is fire-and-forget; we just verify the return value.
     // In production this disables auditing without crashing the server.
-    assert_eq!(super::audit_log_path_from_home(None), None);
+    assert_eq!(super::default_audit_log_path(None), None);
 }

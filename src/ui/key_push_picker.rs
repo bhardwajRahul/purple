@@ -26,7 +26,8 @@ pub fn render(frame: &mut Frame, app: &mut App, key_index: usize) {
     let hosts: Vec<&HostEntry> = pickable_hosts(app).collect();
     let selected_count = app.keys.push().selected.len();
     let total = hosts.len();
-    let eligible_total = hosts.iter().filter(|h| !is_vault_host(h)).count();
+    let paths = app.env().paths();
+    let eligible_total = hosts.iter().filter(|h| !is_vault_host(h, paths)).count();
 
     let key_label = app
         .keys
@@ -75,7 +76,7 @@ pub fn render(frame: &mut Frame, app: &mut App, key_index: usize) {
         let content_w = inner.width as usize;
         let items: Vec<ListItem> = hosts
             .iter()
-            .map(|h| build_row(h, &app.keys.push().selected, content_w))
+            .map(|h| build_row(h, &app.keys.push().selected, content_w, paths))
             .collect();
 
         let sel = app.keys.push().list_state.selected();
@@ -108,8 +109,9 @@ fn build_row_spans(
     host: &HostEntry,
     selected: &std::collections::HashSet<String>,
     content_w: usize,
+    paths: Option<&crate::runtime::env::Paths>,
 ) -> Vec<Span<'static>> {
-    let is_vault = is_vault_host(host);
+    let is_vault = is_vault_host(host, paths);
     let is_selected = selected.contains(&host.alias);
     let checkbox = if is_vault {
         "[-]"
@@ -167,8 +169,11 @@ fn build_row(
     host: &HostEntry,
     selected: &std::collections::HashSet<String>,
     content_w: usize,
+    paths: Option<&crate::runtime::env::Paths>,
 ) -> ListItem<'static> {
-    ListItem::new(Line::from(build_row_spans(host, selected, content_w)))
+    ListItem::new(Line::from(build_row_spans(
+        host, selected, content_w, paths,
+    )))
 }
 
 #[cfg(test)]
@@ -192,7 +197,7 @@ mod tests {
     fn build_row_marks_vault_with_dash() {
         let host = h("prod-vault", "10.0.0.1", Some("ops/prod"));
         let selected = std::collections::HashSet::new();
-        let text = flatten(&build_row_spans(&host, &selected, 80));
+        let text = flatten(&build_row_spans(&host, &selected, 80, None));
         assert!(text.contains("[-]"));
         assert!(text.contains("(vault)"));
     }
@@ -202,7 +207,7 @@ mod tests {
         let host = h("prod", "10.0.0.2", None);
         let mut selected = std::collections::HashSet::new();
         selected.insert("prod".to_string());
-        let text = flatten(&build_row_spans(&host, &selected, 80));
+        let text = flatten(&build_row_spans(&host, &selected, 80, None));
         assert!(text.contains("[x]"));
     }
 
@@ -210,7 +215,7 @@ mod tests {
     fn build_row_unselected_shows_empty_box() {
         let host = h("staging", "1.2.3.4", None);
         let selected = std::collections::HashSet::new();
-        let text = flatten(&build_row_spans(&host, &selected, 80));
+        let text = flatten(&build_row_spans(&host, &selected, 80, None));
         assert!(text.contains("[ ]"));
         assert!(!text.contains("[x]"));
     }

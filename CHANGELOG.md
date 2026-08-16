@@ -1,3 +1,10 @@
+## 3.26.0 - 2026-08-16
+
+- feat: Keep $HOME clean and your dotfiles in sync.
+- feat: Set `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` or `XDG_CACHE_HOME` (or the `PURPLE_CONFIG_DIR`, `PURPLE_DATA_DIR`, `PURPLE_STATE_DIR` and `PURPLE_CACHE_DIR` overrides) and purple splits `~/.purple` by category. Preferences, snippets, providers and themes go to config, ready for your dotfiles repo. Signed certificates and the original SSH config backup go to data, history, recents and logs to state, the container cache and version check to cache. On the first run purple copies what it has into place and leaves `~/.purple` alone, so nothing moves until you ask.
+- fix: The Teleport provider form opens on its User field and a canceled `tsh` sync takes everything `tsh` started down with it.
+- fix: A provider whose credentials come from a profile or the environment saves without a token, from the form and from the CLI.
+
 ## 3.25.0 - 2026-08-16
 
 - feat: Teleport nodes and kitty's ssh kitten join your host list.

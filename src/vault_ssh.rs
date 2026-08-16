@@ -867,27 +867,47 @@ pub struct ActiveCert {
 
 /// True iff a host has any purple-managed Vault context: either an
 /// explicit `# purple:vault-ssh` role marker, or a `CertificateFile`
-/// directive pointing into `~/.purple/certs/`. The second branch covers
-/// users who sign certs directly with the `vault` CLI and wire them in
-/// via `CertificateFile` without setting the role marker.
-pub fn has_purple_vault_context(host: &HostEntry) -> bool {
-    host.vault_ssh.is_some() || cert_file_in_purple_dir(&host.certificate_file)
+/// directive pointing into purple's certs directory. The second branch
+/// covers users who sign certs directly with the `vault` CLI and wire them
+/// in via `CertificateFile` without setting the role marker.
+pub fn has_purple_vault_context(
+    host: &HostEntry,
+    paths: Option<&crate::runtime::env::Paths>,
+) -> bool {
+    host.vault_ssh.is_some() || cert_file_in_purple_dir(&host.certificate_file, paths)
 }
 
-/// `CertificateFile` path looks like a purple-managed cert when it
-/// references the per-user `.purple/certs/` directory. We match on the
-/// substring so the check works regardless of whether the path is
-/// tilde-expanded or absolute.
-pub fn cert_file_in_purple_dir(cert_file: &str) -> bool {
-    !cert_file.is_empty() && cert_file.contains("/.purple/certs/")
+/// `CertificateFile` path looks like a purple-managed cert when it points
+/// into the resolved certs directory (`<data>/certs/`) or into the legacy
+/// `.purple/certs/`. The legacy match is a substring check so it works
+/// whether the path is tilde-expanded or absolute; the resolved match
+/// expands a leading `~/` against the home directory first.
+pub fn cert_file_in_purple_dir(
+    cert_file: &str,
+    paths: Option<&crate::runtime::env::Paths>,
+) -> bool {
+    if cert_file.is_empty() {
+        return false;
+    }
+    if cert_file.contains("/.purple/certs/") {
+        return true;
+    }
+    let Some(paths) = paths else {
+        return false;
+    };
+    let expanded = match cert_file.strip_prefix("~/") {
+        Some(rest) => paths.home().join(rest),
+        None => PathBuf::from(cert_file),
+    };
+    expanded.starts_with(paths.certs_dir())
 }
 
 /// True when any host has a purple-managed Vault context. The Keys-tab
 /// strip renders iff this returns true. Even hosts whose cert is not
 /// yet cached count, so the strip appears the moment the user
 /// configures their first Vault role or sets a cert path.
-pub fn vault_ssh_in_use(hosts: &[HostEntry]) -> bool {
-    hosts.iter().any(has_purple_vault_context)
+pub fn vault_ssh_in_use(hosts: &[HostEntry], paths: Option<&crate::runtime::env::Paths>) -> bool {
+    hosts.iter().any(|h| has_purple_vault_context(h, paths))
 }
 
 /// Build the strip's row list from the cert cache. Hosts that have a
@@ -899,6 +919,7 @@ pub fn vault_ssh_in_use(hosts: &[HostEntry]) -> bool {
 pub fn active_certs_for_strip(
     hosts: &[HostEntry],
     cache: &HashMap<String, (Instant, CertStatus, Option<SystemTime>)>,
+    paths: Option<&crate::runtime::env::Paths>,
 ) -> Vec<ActiveCert> {
     // Recompute `remaining_secs` against the current wall clock instead
     // of using the cached snapshot. The cached number was correct only
@@ -911,7 +932,7 @@ pub fn active_certs_for_strip(
         .unwrap_or(0);
     let mut rows: Vec<ActiveCert> = hosts
         .iter()
-        .filter(|h| has_purple_vault_context(h))
+        .filter(|h| has_purple_vault_context(h, paths))
         .filter_map(|h| {
             let role = h.vault_ssh.clone().unwrap_or_default();
             match cache.get(&h.alias) {

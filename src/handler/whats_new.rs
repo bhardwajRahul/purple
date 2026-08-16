@@ -119,7 +119,9 @@ mod tests {
 
     #[test]
     fn esc_closes_overlay_and_returns_to_host_list() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(0);
         handle_key(&mut app, k(KeyCode::Esc));
         assert!(matches!(app.screen, Screen::HostList));
@@ -127,7 +129,9 @@ mod tests {
 
     #[test]
     fn n_key_also_closes_overlay() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(0);
         handle_key(&mut app, k(KeyCode::Char('n')));
         assert!(matches!(app.screen, Screen::HostList));
@@ -135,7 +139,9 @@ mod tests {
 
     #[test]
     fn j_and_down_scroll_one_line() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(5);
         handle_key(&mut app, k(KeyCode::Char('j')));
         assert_eq!(current_scroll(&app), 6);
@@ -145,7 +151,9 @@ mod tests {
 
     #[test]
     fn k_and_up_scroll_back_and_saturate_at_zero() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(1);
         handle_key(&mut app, k(KeyCode::Char('k')));
         assert_eq!(current_scroll(&app), 0);
@@ -155,7 +163,9 @@ mod tests {
 
     #[test]
     fn page_down_jumps_ten_lines() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(0);
         handle_key(&mut app, k(KeyCode::PageDown));
         assert_eq!(current_scroll(&app), 10);
@@ -163,7 +173,9 @@ mod tests {
 
     #[test]
     fn home_and_g_reset_to_top() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(42);
         handle_key(&mut app, k(KeyCode::Home));
         assert_eq!(current_scroll(&app), 0);
@@ -174,7 +186,9 @@ mod tests {
 
     #[test]
     fn end_and_capital_g_jump_to_bottom() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_whats_new(0);
         handle_key(&mut app, k(KeyCode::End));
         assert_eq!(current_scroll(&app), u16::MAX);

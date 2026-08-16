@@ -168,7 +168,9 @@ mod tests {
 
     #[test]
     fn empty_picker_returns_to_host_list_immediately() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_picker(Vec::new(), Vec::new());
         handle_key(&mut app, k(KeyCode::Enter));
         assert!(matches!(app.screen, Screen::HostList));
@@ -176,7 +178,9 @@ mod tests {
 
     #[test]
     fn esc_returns_to_host_list_and_clears_picker() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_picker(vec![dummy_theme("a"), dummy_theme("b")], Vec::new());
         handle_key(&mut app, k(KeyCode::Esc));
         assert!(matches!(app.screen, Screen::HostList));
@@ -186,7 +190,9 @@ mod tests {
 
     #[test]
     fn enter_with_builtin_selection_sets_screen_and_clears_picker() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_picker(vec![dummy_theme("a"), dummy_theme("b")], Vec::new());
         app.ui.theme_picker_mut().list.select(Some(1));
         handle_key(&mut app, k(KeyCode::Enter));
@@ -215,7 +221,9 @@ mod tests {
 
     #[test]
     fn j_advances_selection_skipping_divider() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_picker(vec![dummy_theme("a")], vec![dummy_theme("c1")]);
         app.ui.theme_picker_mut().list.select(Some(0));
         handle_key(&mut app, k(KeyCode::Char('j')));

@@ -94,7 +94,9 @@ mod tests {
 
     #[test]
     fn question_key_opens_help() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_welcome(0);
         handle_key(&mut app, k(KeyCode::Char('?')));
         assert!(matches!(app.screen, Screen::Help { .. }));
@@ -102,7 +104,9 @@ mod tests {
 
     #[test]
     fn any_other_key_returns_to_host_list() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_welcome(0);
         handle_key(&mut app, k(KeyCode::Esc));
         assert!(matches!(app.screen, Screen::HostList));
@@ -110,7 +114,9 @@ mod tests {
 
     #[test]
     fn capital_i_with_zero_known_hosts_just_dismisses() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_welcome(0);
         handle_key(&mut app, k(KeyCode::Char('I')));
         assert!(matches!(app.screen, Screen::HostList));
@@ -118,7 +124,9 @@ mod tests {
 
     #[test]
     fn capital_i_with_known_hosts_triggers_import_path() {
-        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK.lock().unwrap();
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut app = make_app_on_welcome(1);
         // The import reads the App's sandboxed `~/.ssh/known_hosts`. Seed it
         // with a couple of parseable host entries so `execute_known_hosts_import`

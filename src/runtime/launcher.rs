@@ -27,11 +27,14 @@ use crate::{
 /// when the chosen mode exits (subcommand return, direct-connect exit,
 /// TUI quit).
 pub fn run(cli: Cli, env: std::sync::Arc<crate::runtime::env::Env>) -> Result<()> {
-    ui::theme::init(&env);
+    let migration = seed_layout_and_theme(&env);
 
     // Determine if this is a CLI subcommand (log to stderr too) or TUI (file only)
     let is_cli_subcommand = cli.command.is_some() || cli.list || cli.connect.is_some();
     logging::init(cli.verbose, is_cli_subcommand, &env);
+    if let Some(report) = migration {
+        log_migration(&report);
+    }
 
     if let Some(ref name) = cli.theme {
         if let Some(theme) = ui::theme::ThemeDef::find_builtin(name).or_else(|| {
@@ -213,6 +216,44 @@ pub fn run(cli: Cli, env: std::sync::Arc<crate::runtime::env::Env>) -> Result<()
         app.notify(messages::config_repaired(repaired_groups, orphaned_headers));
     }
     run_tui(app)
+}
+
+/// Seed split category directories from `~/.purple`, then load the theme.
+/// The order matters: the theme comes from the config directory, so the
+/// copy has to land first. Logging is not up yet, so the report is returned
+/// for the caller to log.
+fn seed_layout_and_theme(
+    env: &crate::runtime::env::Env,
+) -> Option<crate::runtime::layout::MigrationReport> {
+    let migration = env
+        .paths()
+        .map(crate::runtime::layout::migrate_legacy_layout);
+    ui::theme::init(env);
+    migration
+}
+
+/// Record what the startup layout migration copied. Every copy is a state
+/// change on disk; failures leave the legacy file as the only copy.
+fn log_migration(report: &crate::runtime::layout::MigrationReport) {
+    for (src, dst) in &report.copied {
+        log::debug!(
+            "[purple] Copied {} to {} (legacy copy left in place)",
+            src.display(),
+            dst.display()
+        );
+    }
+    for (src, err) in &report.failed {
+        log::warn!(
+            "[config] Could not copy {} to its new directory: {err}",
+            src.display()
+        );
+    }
+    if !report.copied.is_empty() {
+        log::info!(
+            "[purple] Seeded {} entries from ~/.purple into the split directories",
+            report.copied.len()
+        );
+    }
 }
 
 /// Collect environment + config metadata and write a startup banner to the
@@ -470,6 +511,37 @@ mod tests {
         // Empty value counts as unset.
         let empty_https = two.with_var("HTTPS_PROXY", "");
         assert_eq!(collect_proxy_env(&empty_https), "NO_PROXY");
+    }
+
+    // The theme lives in the config directory, so on the first start with a
+    // split layout the seed from ~/.purple must land before the theme loads.
+    #[test]
+    fn seed_layout_and_theme_loads_the_migrated_theme_on_the_first_run() {
+        use crate::runtime::env::{Env, Paths};
+
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("home");
+        let legacy = home.join(".purple");
+        std::fs::create_dir_all(&legacy).expect("legacy dir");
+        crate::fs_util::atomic_write(&legacy.join("preferences"), b"theme=Nord\n")
+            .expect("seed preferences");
+        let cfg = dir.path().join("cfg").to_string_lossy().to_string();
+        let paths = Paths::resolve(&home, move |k| {
+            (k == "XDG_CONFIG_HOME").then(|| cfg.clone())
+        });
+        let env = Env::for_test(&home).with_paths(paths.clone());
+
+        let report = seed_layout_and_theme(&env).expect("paths present");
+
+        assert_eq!(report.copied.len(), 1, "{report:?}");
+        assert!(paths.preferences().exists());
+        assert_eq!(ui::theme::current_theme().name, "Nord");
+
+        ui::theme::set_theme(ui::theme::ThemeDef::purple());
+        ui::theme::init_with_mode(1);
     }
 
     // The release imagery pipeline drives `purple gen-assets`. Exercise the

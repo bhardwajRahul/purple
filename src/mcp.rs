@@ -242,16 +242,12 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (y, m as u32, d as u32)
 }
 
-/// Resolve the default audit log path (`~/.purple/mcp-audit.log`).
+/// Resolve the default audit log path (`mcp-audit.log` in the state
+/// directory). `None` when the home directory is unknown, which disables
+/// auditing without stopping the server.
 pub fn default_audit_log_path(paths: Option<&crate::runtime::env::Paths>) -> Option<PathBuf> {
-    audit_log_path_from_home(paths.map(|p| p.home().to_path_buf()))
-}
-
-/// Helper extracted so the `home_dir = None` branch is unit-testable.
-/// Production callers use `default_audit_log_path()`.
-fn audit_log_path_from_home(home: Option<PathBuf>) -> Option<PathBuf> {
-    match home {
-        Some(h) => Some(h.join(".purple").join("mcp-audit.log")),
+    match paths {
+        Some(p) => Some(p.mcp_audit_log()),
         None => {
             warn!("[purple] {}", messages::MCP_AUDIT_HOME_DIR_UNAVAILABLE);
             None

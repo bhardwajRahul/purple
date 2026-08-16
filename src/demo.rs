@@ -2428,13 +2428,10 @@ mod tests {
     use super::*;
     use std::sync::MutexGuard;
 
-    /// Serialise all demo tests so the global `DEMO_MODE` AtomicBool never
-    /// leaks into a concurrent test that exercises disk-write paths.
-    static DEMO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// RAII guard that holds the serialisation lock and resets the global demo
-    /// flag on drop (including panics). The MutexGuard is held (not read) to
-    /// keep the lock alive for the duration of the test.
+    /// RAII guard that holds the shared test lock (`build_demo_app` flips the
+    /// global `DEMO_MODE` flag) and resets that flag on drop, panics included.
+    /// The MutexGuard is held (not read) to keep the lock alive for the
+    /// duration of the test.
     struct DemoGuard(#[allow(dead_code)] MutexGuard<'static, ()>);
 
     impl Drop for DemoGuard {
@@ -2443,9 +2440,12 @@ mod tests {
         }
     }
 
-    /// Build demo app with serialisation lock + RAII guard to reset global flag.
+    /// Build demo app under the shared test lock plus an RAII guard that
+    /// resets the global flag.
     fn demo_app() -> (App, DemoGuard) {
-        let lock = DEMO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let app = build_demo_app();
         (app, DemoGuard(lock))
     }

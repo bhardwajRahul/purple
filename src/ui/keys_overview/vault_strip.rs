@@ -16,7 +16,11 @@ use crate::vault_ssh::{self, ActiveCert};
 use super::card_title;
 
 pub(super) fn active_strip_rows(app: &App) -> Vec<ActiveCert> {
-    vault_ssh::active_certs_for_strip(app.hosts_state.list(), app.vault.cert_cache())
+    vault_ssh::active_certs_for_strip(
+        app.hosts_state.list(),
+        app.vault.cert_cache(),
+        app.env().paths(),
+    )
 }
 
 pub(super) fn render_vault_strip(frame: &mut Frame, area: Rect, rows: &[ActiveCert]) {

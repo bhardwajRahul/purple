@@ -34,7 +34,7 @@ pub struct SnippetStore {
 }
 
 fn config_path(paths: Option<&crate::runtime::env::Paths>) -> Option<PathBuf> {
-    paths.map(crate::runtime::env::Paths::snippets_dir)
+    paths.map(crate::runtime::env::Paths::snippets_file)
 }
 
 impl SnippetStore {
