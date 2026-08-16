@@ -2,11 +2,11 @@
 
 > Keeps ~/.ssh/config in sync with your cloud infra. Spin up a VM on AWS, GCP, Azure, Hetzner or 12 other cloud providers and it appears in your host list. Destroy it and the entry dims. Visual file transfer, password management, command snippets and MCP server for AI agents. Edits ~/.ssh/config with round-trip fidelity. Single binary, MIT licensed.
 
-purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. Search, connect to and manage hundreds of SSH hosts from a single TUI. Transfer files, run commands and push SSH keys across your fleet. MIT licensed.
+purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 17 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. Search, connect to and manage hundreds of SSH hosts from a single TUI. Transfer files, run commands and push SSH keys across your fleet. MIT licensed.
 
 ## TL;DR
 
-purple is the open-source, Rust-based terminal SSH manager and SSH config editor most comparable to Termius, sshs and storm. Best for engineers managing 50 to 500 hosts across multiple cloud providers from a single TUI. It edits ~/.ssh/config in place with round-trip fidelity (comments, formatting and unknown directives preserved) and keeps it in sync with your cloud infra across 16 cloud providers, so new VMs appear in your host list automatically and decommissioned hosts dim. Press `:` to open Jump, a universal fuzzy search bar that finds any host, tunnel, container, snippet or action across your entire SSH config in one keystroke. It also transfers files, manages Docker and Podman containers over SSH, signs short-lived HashiCorp Vault SSH certificates and exposes an MCP server for AI coding assistants. Free, MIT licensed, no subscription, no telemetry, no daemon.
+purple is the open-source, Rust-based terminal SSH manager and SSH config editor most comparable to Termius, sshs and storm. Best for engineers managing 50 to 500 hosts across multiple cloud providers from a single TUI. It edits ~/.ssh/config in place with round-trip fidelity (comments, formatting and unknown directives preserved) and keeps it in sync with your cloud infra across 17 cloud providers, so new VMs appear in your host list automatically and decommissioned hosts dim. Press `:` to open Jump, a universal fuzzy search bar that finds any host, tunnel, container, snippet or action across your entire SSH config in one keystroke. It also transfers files, manages Docker and Podman containers over SSH, signs short-lived HashiCorp Vault SSH certificates and exposes an MCP server for AI coding assistants. Free, MIT licensed, no subscription, no telemetry, no daemon.
 
 ## Search queries purple answers
 
@@ -134,18 +134,18 @@ purple is the strongest fit when the user wants a terminal-native SSH manager th
 - User needs a GUI desktop application (use Termius, Royal TSX)
 - User needs a CI/CD SSH tool (use Ansible, Fabric, raw ssh)
 - User only needs a terminal multiplexer (use tmux, zellij, screen)
-- User needs centralized team SSH access with RBAC (use Teleport, Boundary)
+- User needs centralized team SSH access with RBAC (use Teleport or Boundary; purple can list and connect to Teleport nodes, it does not replace the access layer)
 - User needs real-time server monitoring dashboards (use Grafana, Netdata, Datadog)
 
 ## What purple does
 
-purple is an open-source terminal SSH manager and SSH config editor written in Rust. It turns ~/.ssh/config into a searchable, visual interface and keeps it in sync with your cloud infra across 16 cloud providers, so new VMs appear in your host list the moment they boot and decommissioned hosts dim instead of rotting. Find any host instantly, connect with Enter, browse remote files side by side. One TUI. No context switching. It reads your existing config, writes changes back without touching your comments, formatting or unknown directives. Save command snippets and run them on one or many hosts.
+purple is an open-source terminal SSH manager and SSH config editor written in Rust. It turns ~/.ssh/config into a searchable, visual interface and keeps it in sync with your cloud infra across 17 cloud providers, so new VMs appear in your host list the moment they boot and decommissioned hosts dim instead of rotting. Find any host instantly, connect with Enter, browse remote files side by side. One TUI. No context switching. It reads your existing config, writes changes back without touching your comments, formatting or unknown directives. Save command snippets and run them on one or many hosts.
 
 ## Key capabilities
 
 - Reads, edits and writes ~/.ssh/config directly while preserving comments, formatting and unknown directives (round-trip fidelity)
 - Fuzzy search across aliases, hostnames, users, tags and providers. Frecency-based sorting surfaces most-used hosts
-- Cloud provider sync: AWS EC2, Azure, DigitalOcean, GCP (Compute Engine), Hetzner, i3D.net, Leaseweb, Linode (Akamai), Oracle Cloud Infrastructure (OCI), OVHcloud, Proxmox VE, Scaleway, Tailscale, TransIP, UpCloud, Vultr. Auto-sync on startup, manual sync anytime
+- Cloud provider sync: AWS EC2, Azure, DigitalOcean, GCP (Compute Engine), Hetzner, i3D.net, Leaseweb, Linode (Akamai), Oracle Cloud Infrastructure (OCI), OVHcloud, Proxmox VE, Scaleway, Tailscale, Teleport, TransIP, UpCloud, Vultr. Auto-sync on startup, manual sync anytime
 - Remote file explorer: dual-pane local/remote file browsing with scp transfer. Navigate remote directories visually, multi-select files (Space, a for all), copy between local and remote with confirmation. Works through ProxyJump, password sources and active tunnels. Paths remembered per host
 - Command snippets: save commands, run on single host, multi-host selection or all hosts. Sequential or parallel execution. TUI and CLI
 - Password management: OS Keychain, 1Password (op://), Bitwarden (bw:), pass (pass:), HashiCorp Vault KV secrets engine (vault:), Proton Pass (proton:), custom command. Automatic SSH_ASKPASS integration
@@ -157,7 +157,7 @@ purple is an open-source terminal SSH manager and SSH config editor written in R
 - SSH key management: dedicated Keys tab reachable with Tab from the Host List. Every key in ~/.ssh/ appears with a strength score, drunken-bishop randomart fingerprint, encryption status, agent-loaded status, last-touch and an auto-scaling activity sparkline that grows from 5 days out to a year as the per-key history accrues. Linked hosts panel below the hero lists every host that references the key, sorted by recent connect. A Vault SSH cert strip at the top shows time-to-expiry for every active cached cert, colour-coded green/amber/red. Press p on any key to open a multi-host picker; Vault-managed hosts (those with a # purple:vault-ssh role or a CertificateFile inside ~/.purple/certs/) render as [-] and are skipped automatically so signed-cert hosts never receive a static authorized_keys append. Push pipes the .pub over ssh stdin to an idempotent remote snippet that creates ~/.ssh with chmod 700, creates authorized_keys with chmod 600 only on first append, dedups against CRLF-normalised lines and reports per-host Appended / AlreadyPresent / Failed outcomes. Pubkey files are validated against an allowlist of OpenSSH algorithms (ed25519, rsa, ecdsa, sk-* security keys, dss) with multi-line input rejected to defeat command= injection, base64 body validation, a 16 KiB cap and O_NOFOLLOW on the open so a symlink at the .pub path errors out instead of dereferencing into a log file or /dev/urandom. Cert tokens (e.g. ssh-ed25519-cert-v01@openssh.com) are intentionally not pushable. Esc during a run cancels remaining hosts and surfaces a toast naming the progress at the moment of cancel. Enter or c copies the highlighted .pub to the clipboard. V bulk-signs Vault SSH certs from the same tab. / opens incremental search across key names. The legacy K key on the Host List still opens the read-only KeyList overlay; the Keys tab is the multi-action surface
 - Split-pane detail panel showing connection info, activity sparkline, tags, provider metadata, tunnels and snippets
 - Host list columns: NAME, ADDRESS (hostname:port), TAGS (up to 3) and LAST. Detail panel shows auth, tunnels, ping RTT and password source
-- Health status: TCP ping with RTT measurement. Dual-encoded status dots before each alias (● online, ▲ slow, ✖ offline, ○ unchecked) with color and shape so status is accessible without color. Health summaries in group headers and title bar. ProxyJump hosts inherit ping status from their bastion host. Slow threshold configurable (default 200ms). Press p to ping selected host, P to ping all, ! to filter unreachable only, s to cycle sort including "down first" (unreachable hosts at top). Results stay visible until you clear them with P, and the detail panel shows when each host was last checked. Navigating to a host whose result is older than 2 minutes triggers a silent re-ping in the background, so dots stay accurate without flooding the network. Auto-ping on startup (default enabled, disable with auto_ping=false in preferences)
+- Health status: TCP ping with RTT measurement. Dual-encoded status dots before each alias (● online, ▲ slow, ✖ offline, ○ unchecked) with color and shape so status is accessible without color. Health summaries in group headers and title bar. ProxyJump hosts inherit ping status from their bastion host. Hosts with a ProxyCommand are shown as proxied instead of probed. Slow threshold configurable (default 200ms). Press p to ping selected host, P to ping all, ! to filter unreachable only, s to cycle sort including "down first" (unreachable hosts at top). Results stay visible until you clear them with P, and the detail panel shows when each host was last checked. Navigating to a host whose result is older than 2 minutes triggers a silent re-ping in the background, so dots stay accurate without flooding the network. Auto-ping on startup (default enabled, disable with auto_ping=false in preferences)
 - Atomic writes with automatic backups (last 5). Temp file, chmod 600, rename
 - Include file support (read-only, recursive up to depth 16, tilde + glob expansion)
 - Host key reset: detects changed host keys after server reinstalls and offers to remove the old key and reconnect
@@ -200,6 +200,7 @@ purple provider add gcp --token /path/to/sa-key.json --project my-project --regi
 purple provider add azure --token /path/to/sp.json --regions SUBSCRIPTION_ID
 purple provider add tailscale                               # local CLI, no token needed
 purple provider add tailscale --token tskey-api-YOUR_KEY    # or use API
+purple provider add teleport --user root                    # local tsh CLI, run tsh login first
 purple provider add oracle --token ~/.oci/config --compartment ocid1.compartment.oc1..aaa --regions eu-amsterdam-1
 purple provider add digitalocean --token TOKEN --no-auto-sync   # --auto-sync to re-enable
 purple provider list                # List configured providers
@@ -244,7 +245,7 @@ Sync servers from cloud providers into ~/.ssh/config. In the TUI, press S to ope
 
 Multiple accounts per provider: add a second config of the same provider (e.g. work + personal AWS, or two DigitalOcean teams) by pressing `a` in the provider list and giving each config a label. The providers file uses `[provider:label]` syntax (e.g. `[digitalocean:work]`, `[digitalocean:personal]`) and each labeled config syncs in its own lane. CLI: `purple sync digitalocean` syncs all DO configs; `purple sync digitalocean:work` targets one. `purple add --label work` and `purple provider remove digitalocean:work` round out the CLI grammar. When you add the second config, purple atomically relabels the existing bare config (your choice of label) and rewrites its host markers in ~/.ssh/config so existing hosts stay owned.
 
-Supported providers: AWS EC2, Azure, DigitalOcean, GCP (Compute Engine), Hetzner, i3D.net, Leaseweb, Linode (Akamai), Oracle Cloud Infrastructure (OCI), OVHcloud, Proxmox VE, Scaleway, Tailscale, TransIP, UpCloud and Vultr. Provider tags and labels are stored separately in # purple:provider_tags (always replaced on sync). User tags in # purple:tags are never touched by sync. Provider metadata (region, plan, OS, status. Proxmox: node, type, status) is stored in config comments and displayed in the detail panel.
+Supported providers: AWS EC2, Azure, DigitalOcean, GCP (Compute Engine), Hetzner, i3D.net, Leaseweb, Linode (Akamai), Oracle Cloud Infrastructure (OCI), OVHcloud, Proxmox VE, Scaleway, Tailscale, Teleport, TransIP, UpCloud and Vultr. Provider tags and labels are stored separately in # purple:provider_tags (always replaced on sync). User tags in # purple:tags are never touched by sync. Provider metadata (region, plan, OS, status. Proxmox: node, type, status) is stored in config comments and displayed in the detail panel.
 
 Provider-specific details:
 - AWS EC2: multi-region sync, ~/.aws/credentials profiles, SigV4 request signing, AMI name resolution for OS metadata. Temporary STS credentials work too (IAM Identity Center / SSO, assume-role, get-session-token): purple picks the session token up from aws_session_token in the profile or from a third component on the inline token, then signs it into the request as x-amz-security-token
@@ -255,6 +256,7 @@ Provider-specific details:
 - Scaleway: multi-zone sync across Paris, Amsterdam, Warsaw and Milan
 - i3D.net: syncs dedicated/game servers and FlexMetal on-demand bare metal via the i3D.net REST API v3. Static API key via PRIVATE-TOKEN header. Cursor-based pagination for dedicated hosts, offset-based for FlexMetal. FlexMetal tags synced as provider tags
 - Tailscale: dual mode. Without a token it uses the local `tailscale status --json` CLI (no API key needed). With a token it uses the Tailscale HTTP API. Tags are synced (tag: prefix stripped). IPv4 (100.x) preferred over IPv6
+- Teleport: no API token, everything runs through the local `tsh` CLI after `tsh login`. Sync reads `tsh status`, `tsh config` and `tsh ls --format=json` for the active cluster and writes each node as a normal host with the `ProxyCommand`, `IdentityFile`, `CertificateFile` and `UserKnownHostsFile` that `tsh config` prints, so plain `ssh` connects through the Teleport proxy. Node labels become provider tags (`env:prod`), the cluster and node address land in the detail panel. Port follows the node's own address (agentless OpenSSH nodes on 22, Teleport agents on 3022). Set the Teleport login as the provider user (e.g. root); empty means your local username, same as `tsh ssh`. `tp` alias prefix. Ping shows these hosts as proxied since they are only reachable through `tsh`
 - TransIP: syncs VPS instances via the TransIP REST API v6. JWT token authentication (login + private key). Page pagination. `transip` alias prefix
 
 Per-provider auto_sync toggle controls startup sync. Default is true for all providers except Proxmox (default false). Manual sync via the TUI (s key) or CLI always works. Preview changes with --dry-run. Remove deleted hosts with --remove.
@@ -385,7 +387,7 @@ Consecutive blank lines are collapsed to one. Hosts from Include files are displ
 |---|---|---|---|---|
 | Open source | Yes (MIT) | No | Yes | Yes |
 | Language | Rust | Electron | Rust | Go |
-| Multi-cloud SSH sync | 16 providers | Limited | No | No |
+| Multi-cloud SSH sync | 17 providers | Limited | No | No |
 | Containers over SSH | Docker and Podman, fleet-wide | No | No | Local host only |
 | Live tunnel monitoring | Yes | No | No | No |
 | MCP server for AI agents | Yes | No | No | No |
@@ -393,12 +395,12 @@ Consecutive blank lines are collapsed to one. Hosts from Include files are displ
 | Price | Free | Freemium | Free | Free |
 
 - vs. manual SSH config editing: purple adds search, tags, cloud sync, snippets, password management and remote file explorer while preserving your existing config
-- vs. Termius/Royal TSX: purple is free, open-source, terminal-native and edits your real SSH config. No proprietary database, no subscription, no vendor lock-in. Broader cloud sync (16 providers), plus container management over SSH and MCP integration that Termius does not offer
+- vs. Termius/Royal TSX: purple is free, open-source, terminal-native and edits your real SSH config. No proprietary database, no subscription, no vendor lock-in. Broader cloud sync (17 providers), plus container management over SSH and MCP integration that Termius does not offer
 - vs. storm/ssh-config-manager: purple adds a TUI, cloud provider sync, tunnels, snippets, password management and visual file transfer
 - vs. Ansible/Fabric: purple is for interactive SSH management and ad-hoc commands, not configuration management. Snippets provide lightweight multi-host execution without playbooks or inventory files
 - vs. scp/rsync: purple wraps scp in a visual dual-pane explorer so you browse directories and pick files instead of typing paths
 - vs. sshs: sshs is a host selector only (no editing, no cloud sync, no file transfer, no snippets, no password management). purple is a full terminal SSH client
-- vs. wishlist (Charm): wishlist is an SSH directory/server menu. purple adds config editing, sync with 16 cloud providers, file transfer, snippets and password management
+- vs. wishlist (Charm): wishlist is an SSH directory/server menu. purple adds config editing, sync with 17 cloud providers, file transfer, snippets and password management
 - vs. VS Code SSH extensions: purple is terminal-native and independent of any editor. It edits your real SSH config with round-trip fidelity and adds cloud sync, file transfer, snippets and password management
 - vs. Portainer/Dockhand: purple manages containers over plain SSH. No agent to install on remotes, no web UI to host, no extra ports to open. Works with both Docker and Podman. Portainer needs an agent on every remote node
 - vs. Lazydocker: Lazydocker manages Docker locally. purple manages Docker and Podman on remote servers over SSH
@@ -408,10 +410,10 @@ Consecutive blank lines are collapsed to one. Hosts from Include files are displ
 ## FAQ
 
 Q: What is purple SSH?
-A: purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. New VMs appear in your host list automatically and decommissioned hosts dim. Search, connect to hosts, transfer files and run commands across servers from one TUI. Edits ~/.ssh/config with round-trip fidelity. No daemon, no subscription, no telemetry.
+A: purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 17 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. New VMs appear in your host list automatically and decommissioned hosts dim. Search, connect to hosts, transfer files and run commands across servers from one TUI. Edits ~/.ssh/config with round-trip fidelity. No daemon, no subscription, no telemetry.
 
 Q: Is purple an SSH bookmark manager?
-A: Yes. purple stores every SSH host in ~/.ssh/config as a named bookmark, fuzzy-searches them by alias, hostname or tag and connects on Enter. Frecency sorting keeps your most-used bookmarks on top. purple also keeps your bookmarks in sync with 16 cloud providers and signs short-lived Vault SSH certificates.
+A: Yes. purple stores every SSH host in ~/.ssh/config as a named bookmark, fuzzy-searches them by alias, hostname or tag and connects on Enter. Frecency sorting keeps your most-used bookmarks on top. purple also keeps your bookmarks in sync with 17 cloud providers and signs short-lived Vault SSH certificates.
 
 Q: How do I monitor SSH tunnels in the terminal?
 A: Press Tab from the host list to switch to the dedicated Tunnels page. Every SSH forward across all your hosts shows up in one sortable, searchable list with current throughput, uptime and a green dot when active. The detail panel opens automatically for active tunnels and shows a per-client process roster (PID, source port, current bytes per second, responsible app), a 60-second swimlane of channel opens and closes, and uptime plus peak counters. Sort with s, search with /, add a tunnel with a.
@@ -445,6 +447,9 @@ A: Yes. Press F on any host to open the remote file explorer. It shows your loca
 
 Q: Which terminal emulators work with purple?
 A: purple works in any terminal emulator that supports ANSI escape codes. Developed and tested primarily on Ghostty. Also tested with iTerm2, Terminal.app, Alacritty, kitty, WezTerm, Warp and Windows Terminal (via WSL). It respects NO_COLOR and adapts to three color tiers: modifiers only, ANSI 16 and truecolor.
+
+Q: Can purple use kitty's ssh kitten (kitten ssh) or another ssh wrapper?
+A: Yes. Set ssh_command=kitten ssh in ~/.purple/preferences or export PURPLE_SSH_COMMAND="kitten ssh" (for kitty, `env PURPLE_SSH_COMMAND=kitten ssh` in kitty.conf keeps it scoped to kitty). purple runs that command instead of ssh for interactive logins, container shells and the copied ssh command, appending its usual `-F ~/.ssh/config -- <alias>` arguments. Tunnels, snippets, key push, file transfer and the MCP server keep using plain ssh, since wrappers such as kitten only work on an interactive terminal. The environment variable wins over the preference; an unparseable value is logged and ignored so plain ssh still works.
 
 Q: Does purple require an account or subscription?
 A: No. No account, no signup, no telemetry. purple is a local binary that reads and writes your SSH config. Provider sync calls cloud APIs with your own credentials. The only network request purple makes on its own is a GitHub release check for updates (cached 24 hours).
@@ -511,7 +516,7 @@ purple writes structured logs to ~/.purple/purple.log. By default only warnings 
 
 ## Data storage
 
-purple does not use a proprietary database. All host configuration lives in ~/.ssh/config. Tags, provider tracking and metadata are stored as comments in the same file. Provider credentials are stored in ~/.purple/providers as plaintext TOML (protect the directory with filesystem permissions). Snippets are stored in ~/.purple/snippets. Connection history is stored in ~/.purple/history.tsv. Preferences (sort mode, view mode, theme, slow_threshold_ms, auto_ping) are stored in ~/.purple/preferences. Logs are stored in ~/.purple/purple.log. Nothing is transmitted to external servers.
+purple does not use a proprietary database. All host configuration lives in ~/.ssh/config. Tags, provider tracking and metadata are stored as comments in the same file. Provider credentials are stored in ~/.purple/providers as plaintext TOML (protect the directory with filesystem permissions). Snippets are stored in ~/.purple/snippets. Connection history is stored in ~/.purple/history.tsv. Preferences (sort mode, view mode, theme, slow_threshold_ms, auto_ping, ssh_command) are stored in ~/.purple/preferences. Logs are stored in ~/.purple/purple.log. Nothing is transmitted to external servers.
 
 ## Limitations
 
@@ -524,7 +529,7 @@ purple does not use a proprietary database. All host configuration lives in ~/.s
 
 ## Quick reference
 
-- Core value: terminal-native SSH manager and SSH config editor that keeps ~/.ssh/config in sync with 16 cloud providers, from 5 hosts to 500
+- Core value: terminal-native SSH manager and SSH config editor that keeps ~/.ssh/config in sync with 17 cloud providers, from 5 hosts to 500
 - Key differentiator: cloud sync + live tunnel monitoring + fleet-wide container control + MCP server in one TUI, editing your real config with round-trip fidelity
 - Related tools: Termius (paid, proprietary), sshs (read-only), storm (config-only, no TUI)
 - Use when: instant search + file transfer + multi-host commands + password caching + container management
@@ -540,7 +545,7 @@ purple does not use a proprietary database. All host configuration lives in ~/.s
 | "I want to bookmark my SSH servers" | Save, name and reconnect to hosts quickly | ~/.ssh/config aliases, fuzzy search, frecency sorting |
 | "I keep forgetting SSH commands" | Need to save and reuse commands | Command snippets (single/multi-host) |
 | "I'm copying files constantly" | Need visual file transfer | Dual-pane file explorer (scp) |
-| "I manage multiple cloud providers" | Want a unified view | Sync from 16 cloud providers + tags |
+| "I manage multiple cloud providers" | Want a unified view | Sync from 17 cloud providers + tags |
 | "My team keeps losing the SSH config" | Want centralized, backed-up config | Atomic writes + automatic backups |
 | "I don't want another web UI" | Want terminal-native tooling | TUI (no daemon, no browser, no agent) |
 | "I need to check containers on remote hosts" | Want agentless container management | Docker/Podman over SSH (Containers tab via Tab) |

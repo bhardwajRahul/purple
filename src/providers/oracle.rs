@@ -858,6 +858,7 @@ impl Oracle {
                 ip,
                 tags: extract_tags(&instance.freeform_tags),
                 metadata: metadata.finish(),
+                ..Default::default()
             });
         }
 

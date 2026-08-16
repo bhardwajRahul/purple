@@ -13,7 +13,7 @@
   <a href="https://getpurple.sh"><img src="https://img.shields.io/badge/website-getpurple.sh-00f0ff?labelColor=0a0a14" alt="Website"></a>
 </p>
 
-**purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps `~/.ssh/config` in sync with 16 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide.**
+**purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps `~/.ssh/config` in sync with 17 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide.**
 
 Spin up a VM on AWS, GCP, Azure, Hetzner, Proxmox or 11 other cloud providers and it's in your host list before the console catches up. Kill one and purple marks it stale, so your list never lies. No more hand-editing `~/.ssh/config` after every Terraform run, no more digging through cloud consoles for the right IP.
 
@@ -75,7 +75,7 @@ I wanted one place for all of that. So I built it.
 
 ### Your ssh config tracks your infra
 
-Drop in one API token per provider. New machines land in `~/.ssh/config` the moment they boot, IPs follow instances as they move and decommissioned hosts grey out instead of lingering. 16 providers including AWS, GCP, Azure, Hetzner, DigitalOcean and Proxmox, multiple accounts each. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
+Drop in one API token per provider. New machines land in `~/.ssh/config` the moment they boot, IPs follow instances as they move and decommissioned hosts grey out instead of lingering. 17 providers including AWS, GCP, Azure, Hetzner, DigitalOcean, Proxmox and Teleport, multiple accounts each. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
 
 ![purple cloud provider list close-up: per-provider sync status with host counts and stale markers](assets/png/zoom-providers.png)
 
@@ -123,6 +123,7 @@ Short-lived certificates from the HashiCorp Vault SSH secrets engine get a TTL s
 - Automatic password retrieval from OS Keychain, 1Password, Bitwarden, pass, the HashiCorp Vault KV secrets engine and Proton Pass.
 - Short-lived SSH certificates signed via the HashiCorp Vault SSH secrets engine.
 - MCP server for AI agents like Claude Code and Cursor, with a read-only mode and a JSON Lines audit log.
+- Your own ssh wrapper for interactive logins, such as kitty's `kitten ssh`, via one preference or `PURPLE_SSH_COMMAND`.
 
 See the [wiki](https://github.com/erickochen/purple/wiki) for details.
 
@@ -132,7 +133,7 @@ See the [wiki](https://github.com/erickochen/purple/wiki) for details.
 |---|---|---|---|---|
 | Open source | Yes (MIT) | No | Yes | Yes |
 | Language | Rust | Electron | Rust | Go |
-| Multi-cloud SSH sync | 16 providers | Limited | No | No |
+| Multi-cloud SSH sync | 17 providers | Limited | No | No |
 | Containers over SSH | Docker and Podman, fleet-wide | No | No | Local host only |
 | Live tunnel monitoring | Yes | No | No | No |
 | MCP server for AI agents | Yes | No | No | No |

@@ -216,6 +216,7 @@ impl TransIp {
                     ip,
                     tags: vps.tags.clone(),
                     metadata: metadata.finish(),
+                    ..Default::default()
                 });
             }
 

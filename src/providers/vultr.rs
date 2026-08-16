@@ -101,6 +101,7 @@ impl Vultr {
                     ip,
                     tags: instance.tags.clone(),
                     metadata: metadata.finish(),
+                    ..Default::default()
                 });
             }
 

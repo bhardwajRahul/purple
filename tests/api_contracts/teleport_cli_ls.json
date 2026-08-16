@@ -1,0 +1,51 @@
+[
+  {
+    "kind": "node",
+    "version": "v2",
+    "metadata": {
+      "name": "6a3d1f5e-1111-4a2b-9c3d-000000000001",
+      "labels": {
+        "env": "prod",
+        "role": "db"
+      },
+      "expires": "2026-08-15T12:00:00Z"
+    },
+    "spec": {
+      "addr": "10.0.0.5:3022",
+      "hostname": "db-1",
+      "cmd_labels": {
+        "arch": {
+          "period": "1h0m0s",
+          "command": ["uname", "-p"],
+          "result": "x86_64"
+        }
+      },
+      "rotation": {
+        "current_id": "",
+        "started": "0001-01-01T00:00:00Z",
+        "last_rotated": "0001-01-01T00:00:00Z",
+        "schedule": {
+          "update_clients": "0001-01-01T00:00:00Z",
+          "update_servers": "0001-01-01T00:00:00Z",
+          "standby": "0001-01-01T00:00:00Z"
+        }
+      },
+      "version": "16.0.0"
+    }
+  },
+  {
+    "kind": "node",
+    "sub_kind": "openssh",
+    "version": "v2",
+    "metadata": {
+      "name": "6a3d1f5e-1111-4a2b-9c3d-000000000002",
+      "labels": {
+        "env": "prod"
+      }
+    },
+    "spec": {
+      "addr": "10.0.0.6:22",
+      "hostname": "legacy-1"
+    }
+  }
+]

@@ -390,7 +390,7 @@ pub fn handle_provider_command(
                 Some(p) => p,
                 None => {
                     eprintln!(
-                        "Never heard of '{}'. Try: digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip.",
+                        "Never heard of '{}'. Try: digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport.",
                         provider
                     );
                     std::process::exit(1);
@@ -529,7 +529,9 @@ pub fn handle_provider_command(
                 }
             };
 
-            if token.trim().is_empty() && !aws_has_profile && kind != Some(ProviderKind::Tailscale)
+            if token.trim().is_empty()
+                && !aws_has_profile
+                && !matches!(kind, Some(ProviderKind::Tailscale | ProviderKind::Teleport))
             {
                 if kind == Some(ProviderKind::Gcp) {
                     eprintln!("{}", crate::messages::cli::PROVIDER_TOKEN_REQUIRED_GCP);

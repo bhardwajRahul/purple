@@ -630,6 +630,7 @@ impl Azure {
                     ip,
                     tags: build_tags(vm),
                     metadata: build_metadata(vm),
+                    ..Default::default()
                 });
             }
         }

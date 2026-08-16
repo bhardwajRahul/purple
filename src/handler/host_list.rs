@@ -225,7 +225,12 @@ pub(super) fn handle_main_key(app: &mut App, key: KeyEvent, events_tx: &mpsc::Se
                 return;
             }
             if let Some(host) = app.selected_host() {
-                let cmd = host.ssh_command(app.env.paths(), app.reload.config_path());
+                let launcher = crate::ssh_launcher::SshLauncher::resolve(&app.env);
+                let cmd = host.ssh_command_with(
+                    &launcher.shell_display(),
+                    app.env.paths(),
+                    app.reload.config_path(),
+                );
                 let alias = host.alias.clone();
                 match clipboard::copy_to_clipboard(&cmd) {
                     Ok(()) => {

@@ -712,6 +712,22 @@ Host myserver
     }
 
     #[test]
+    fn proxy_command_sets_has_proxy_command_unless_none() {
+        let content = "Host a\n  ProxyCommand tsh proxy ssh %r@%h:%p\n\n\
+                       Host b\n  proxycommand none\n\n\
+                       Host c\n  HostName 10.0.0.1\n\n\
+                       Host d\n  ProxyCommand none\n  ProxyCommand nc %h %p\n";
+        let config = parse_str(content);
+        let entries = config.host_entries();
+        let by_alias = |alias: &str| entries.iter().find(|e| e.alias == alias).unwrap();
+        assert!(by_alias("a").has_proxy_command);
+        assert!(!by_alias("b").has_proxy_command);
+        assert!(!by_alias("c").has_proxy_command);
+        // First value wins, as ssh_config(5) prescribes.
+        assert!(!by_alias("d").has_proxy_command);
+    }
+
+    #[test]
     fn test_identity_file_and_proxy_jump() {
         let content = "\
 Host bastion
@@ -794,6 +810,14 @@ Host myserver
         assert_eq!(
             entry.ssh_command(Some(&paths), &custom_path),
             "ssh -F '/tmp/my_config' -- 'myserver'"
+        );
+        assert_eq!(
+            entry.ssh_command_with("kitten ssh", Some(&paths), &default_path),
+            "kitten ssh -- 'myserver'"
+        );
+        assert_eq!(
+            entry.ssh_command_with("kitten ssh", Some(&paths), &custom_path),
+            "kitten ssh -F '/tmp/my_config' -- 'myserver'"
         );
     }
 

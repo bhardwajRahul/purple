@@ -614,6 +614,7 @@ impl Aws {
                     ip,
                     tags,
                     metadata: metadata.finish(),
+                    ..Default::default()
                 });
             }
         }

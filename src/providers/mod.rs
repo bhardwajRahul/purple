@@ -14,6 +14,7 @@ mod proxmox;
 pub mod scaleway;
 pub mod sync;
 mod tailscale;
+mod teleport;
 mod transip;
 mod upcloud;
 mod vultr;
@@ -26,18 +27,23 @@ use log::{debug, error, warn};
 use thiserror::Error;
 
 /// A host discovered from a cloud provider API.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProviderHost {
     /// Provider-assigned server ID.
     pub server_id: String,
     /// Server name/label.
     pub name: String,
-    /// Public IP address (IPv4 or IPv6).
+    /// Public IP address (IPv4 or IPv6) or a hostname the transport resolves.
     pub ip: String,
     /// Provider tags/labels.
     pub tags: Vec<String>,
     /// Provider metadata (region, plan, etc.) as key-value pairs.
     pub metadata: Vec<(String, String)>,
+    /// SSH port when the provider knows it differs from 22.
+    pub port: Option<u16>,
+    /// Extra ssh_config directives the provider manages on this host, such as
+    /// a `ProxyCommand`. Written on add and kept current on later syncs.
+    pub directives: Vec<(String, String)>,
 }
 
 impl ProviderHost {
@@ -49,7 +55,7 @@ impl ProviderHost {
             name,
             ip,
             tags,
-            metadata: Vec::new(),
+            ..Default::default()
         }
     }
 }
@@ -349,6 +355,16 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
         display: "TransIP",
         build: |_| Box::new(transip::TransIp),
     },
+    ProviderDescriptor {
+        name: "teleport",
+        display: "Teleport",
+        build: |section| {
+            let s = section.cloned().unwrap_or_default();
+            Box::new(teleport::Teleport {
+                identity_file: s.identity_file,
+            })
+        },
+    },
 ];
 
 /// Look up a descriptor by bare provider name. Internal helper; public wrappers
@@ -384,6 +400,7 @@ pub const PROVIDER_NAMES: &[&str] = &[
     "leaseweb",
     "i3d",
     "transip",
+    "teleport",
 ];
 
 // Compile-time guard: PROVIDER_NAMES and PROVIDERS must stay in lockstep.

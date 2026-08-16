@@ -555,6 +555,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
             Some(ProviderKind::Gcp) => hints::PROVIDER_TOKEN_GCP,
             Some(ProviderKind::Azure) => hints::PROVIDER_TOKEN_AZURE,
             Some(ProviderKind::Tailscale) => hints::PROVIDER_TOKEN_TAILSCALE,
+            Some(ProviderKind::Teleport) => hints::PROVIDER_TOKEN_TELEPORT,
             Some(ProviderKind::Oracle) => hints::PROVIDER_TOKEN_ORACLE,
             Some(ProviderKind::Ovh) => hints::PROVIDER_TOKEN_OVH,
             Some(
@@ -586,6 +587,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::Proxmox
                 | ProviderKind::Scaleway
                 | ProviderKind::Tailscale
+                | ProviderKind::Teleport
                 | ProviderKind::Transip
                 | ProviderKind::UpCloud
                 | ProviderKind::Vultr,
@@ -608,6 +610,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::Oracle
                 | ProviderKind::Proxmox
                 | ProviderKind::Tailscale
+                | ProviderKind::Teleport
                 | ProviderKind::Transip
                 | ProviderKind::UpCloud
                 | ProviderKind::Vultr,
@@ -624,6 +627,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
             Some(ProviderKind::Azure) => hints::PROVIDER_USER_AZURE,
             Some(ProviderKind::Oracle) => hints::PROVIDER_USER_ORACLE,
             Some(ProviderKind::Ovh) => hints::PROVIDER_USER_OVH,
+            Some(ProviderKind::Teleport) => hints::PROVIDER_USER_TELEPORT,
             Some(
                 ProviderKind::DigitalOcean
                 | ProviderKind::Hetzner

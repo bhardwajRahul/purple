@@ -4718,6 +4718,7 @@ fn test_sync_adds_host_with_metadata() {
             ("region".to_string(), "nyc3".to_string()),
             ("plan".to_string(), "s-1vcpu-1gb".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4751,6 +4752,7 @@ fn test_sync_updates_changed_metadata() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "nyc3".to_string())],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4772,6 +4774,7 @@ fn test_sync_updates_changed_metadata() {
             ("region".to_string(), "sfo3".to_string()),
             ("plan".to_string(), "s-2vcpu-2gb".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4799,6 +4802,7 @@ fn test_sync_metadata_unchanged_no_update() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "nyc3".to_string())],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4837,6 +4841,7 @@ fn test_sync_metadata_order_insensitive() {
             ("region".to_string(), "nyc3".to_string()),
             ("plan".to_string(), "s-1vcpu-1gb".to_string()),
         ],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4858,6 +4863,7 @@ fn test_sync_metadata_order_insensitive() {
             ("plan".to_string(), "s-1vcpu-1gb".to_string()),
             ("region".to_string(), "nyc3".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4882,6 +4888,7 @@ fn test_sync_metadata_with_rename() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "nyc3".to_string())],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4901,6 +4908,7 @@ fn test_sync_metadata_with_rename() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "sfo3".to_string())],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4928,6 +4936,7 @@ fn test_sync_metadata_dry_run_no_mutation() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "nyc3".to_string())],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4946,6 +4955,7 @@ fn test_sync_metadata_dry_run_no_mutation() {
         ip: "1.2.3.4".to_string(),
         tags: Vec::new(),
         metadata: vec![("region".to_string(), "sfo3".to_string())],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4971,6 +4981,7 @@ fn test_sync_metadata_only_change_triggers_update() {
         ip: "1.2.3.4".to_string(),
         tags: vec!["prod".to_string()],
         metadata: vec![("region".to_string(), "nyc3".to_string())],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4992,6 +5003,7 @@ fn test_sync_metadata_only_change_triggers_update() {
             ("region".to_string(), "nyc3".to_string()),
             ("plan".to_string(), "s-1vcpu-1gb".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -7035,4 +7047,155 @@ fn lazy_migration_without_rewrite_loses_ownership() {
         "without migration, host count grows: {}",
         entries.len()
     );
+}
+
+fn proxied_host(proxy_cmd: &str, port: u16) -> ProviderHost {
+    ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: "node1".to_string(),
+        tags: vec!["env:prod".to_string()],
+        metadata: Vec::new(),
+        port: Some(port),
+        directives: vec![
+            ("ProxyCommand".to_string(), proxy_cmd.to_string()),
+            (
+                "UserKnownHostsFile".to_string(),
+                "/home/alice/.tsh/known_hosts".to_string(),
+            ),
+        ],
+    }
+}
+
+#[test]
+fn test_sync_writes_port_and_provider_directives_on_add() {
+    let mut config = empty_config();
+    let section = make_section();
+    let cmd = "\"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=proxy.example.com:443 %r@%h:%p";
+    let remote = vec![proxied_host(cmd, 3022)];
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(result.added, 1);
+
+    let out = config.serialize();
+    assert!(out.contains("Host do-node1\n"), "got:\n{out}");
+    assert!(out.contains("  HostName node1\n"), "got:\n{out}");
+    assert!(out.contains("  Port 3022\n"), "got:\n{out}");
+    assert!(out.contains("  User root\n"), "got:\n{out}");
+    assert!(
+        out.contains(&format!("  ProxyCommand {cmd}\n")),
+        "got:\n{out}"
+    );
+    assert!(
+        out.contains("  UserKnownHostsFile /home/alice/.tsh/known_hosts\n"),
+        "got:\n{out}"
+    );
+    let entries = config.host_entries();
+    assert_eq!(entries[0].port, 3022);
+    assert!(entries[0].has_proxy_command);
+    assert_eq!(entries[0].provider_tags, vec!["env:prod".to_string()]);
+
+    // Same remote state again: nothing to do.
+    let again = sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(again.added, 0);
+    assert_eq!(again.updated, 0);
+    assert_eq!(again.unchanged, 1);
+    assert_eq!(config.serialize(), out);
+}
+
+#[test]
+fn test_sync_reconciles_changed_port_and_proxy_command() {
+    let mut config = empty_config();
+    let section = make_section();
+    let old_cmd = "\"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=old.example.com:443 %r@%h:%p";
+    let new_cmd = "\"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=new.example.com:443 %r@%h:%p";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(old_cmd, 3022)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    // Dry run reports the drift without touching the config.
+    let before = config.serialize();
+    let dry = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(new_cmd, 22)],
+        &section,
+        false,
+        false,
+        true,
+    );
+    assert_eq!(dry.updated, 1);
+    assert_eq!(config.serialize(), before);
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(new_cmd, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(result.updated, 1);
+    let out = config.serialize();
+    assert!(!out.contains("Port 3022"), "got:\n{out}");
+    assert_eq!(out.matches("ProxyCommand").count(), 1, "got:\n{out}");
+    assert!(
+        out.contains(&format!("  ProxyCommand {new_cmd}\n")),
+        "got:\n{out}"
+    );
+    assert!(!out.contains("old.example.com"), "got:\n{out}");
+    assert_eq!(config.host_entries()[0].port, 22);
+}
+
+#[test]
+fn test_sync_leaves_hosts_without_port_or_directives_alone() {
+    // A provider that reports neither keeps the user's own Port and ProxyCommand.
+    let mut config = SshConfigFile::from_content(
+        "Host do-web-1\n  HostName 1.2.3.4\n  Port 2222\n  ProxyCommand nc %h %p\n  # purple:provider digitalocean:123\n",
+        test_config_path(),
+    );
+    let section = make_section();
+    let remote = vec![ProviderHost::new(
+        "123".to_string(),
+        "web-1".to_string(),
+        "1.2.3.4".to_string(),
+        Vec::new(),
+    )];
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(result.updated, 0);
+    assert_eq!(result.unchanged, 1);
+    let out = config.serialize();
+    assert!(out.contains("Port 2222"), "got:\n{out}");
+    assert!(out.contains("ProxyCommand nc %h %p"), "got:\n{out}");
 }

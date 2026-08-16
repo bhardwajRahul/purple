@@ -51,6 +51,13 @@ fn refresh_stale(
     if !ctx.ping.is_stale(&alias) {
         return;
     }
+    if host.has_proxy_command {
+        // Reached through a helper process: nothing to probe directly.
+        log::debug!("[purple] stale-refresh: {alias} has a ProxyCommand, marked proxied");
+        ctx.ping
+            .insert_status(alias, crate::app::PingStatus::Skipped);
+        return;
+    }
     let (ping_alias, hostname, port) = if !host.proxy_jump.is_empty() {
         let bastion_alias = host.proxy_jump.clone();
         match ctx.hosts.list().iter().find(|h| h.alias == bastion_alias) {
@@ -109,6 +116,13 @@ fn ping_host_now(
     show_hint: bool,
 ) {
     let alias = host.alias.clone();
+    if host.has_proxy_command {
+        log::debug!("[purple] ping skipped for {alias}: ProxyCommand host");
+        ctx.ping
+            .insert_status(alias.clone(), crate::app::PingStatus::Skipped);
+        ctx.notify(crate::messages::ping_skipped_proxied(&alias));
+        return;
+    }
     // For ProxyJump hosts, ping the bastion instead and propagate the
     // result to all dependents (handled in main.rs PingResult handler).
     let (ping_alias, hostname, port) = if !host.proxy_jump.is_empty() {

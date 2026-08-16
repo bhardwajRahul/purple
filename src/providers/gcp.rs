@@ -542,6 +542,7 @@ impl Gcp {
                             ip,
                             tags: build_tags(instance),
                             metadata: build_metadata(instance),
+                            ..Default::default()
                         });
                     }
                 }

@@ -97,6 +97,7 @@ pub(crate) fn zone_data_for(provider: &str) -> (ZoneList, ZoneGroups) {
         | ProviderKind::Linode
         | ProviderKind::Proxmox
         | ProviderKind::Tailscale
+        | ProviderKind::Teleport
         | ProviderKind::Transip
         | ProviderKind::UpCloud
         | ProviderKind::Vultr => (&[], &[]),

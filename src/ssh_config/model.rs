@@ -71,6 +71,9 @@ pub struct HostEntry {
     pub port: u16,
     pub identity_file: String,
     pub proxy_jump: String,
+    /// True when a `ProxyCommand` other than `none` is set. Such a host is
+    /// reached through a helper process, so a direct TCP ping says nothing.
+    pub has_proxy_command: bool,
     /// If this host comes from an included file, the file path.
     pub source_file: Option<PathBuf>,
     /// User-added tags from purple:tags comment.
@@ -120,6 +123,7 @@ impl Default for HostEntry {
             port: 22,
             identity_file: String::new(),
             proxy_jump: String::new(),
+            has_proxy_command: false,
             source_file: None,
             tags: Vec::new(),
             provider_tags: Vec::new(),
@@ -149,15 +153,26 @@ impl HostEntry {
         paths: Option<&crate::runtime::env::Paths>,
         config_path: &std::path::Path,
     ) -> String {
+        self.ssh_command_with("ssh", paths, config_path)
+    }
+
+    /// Same as `ssh_command`, with `program` (already shell-safe, e.g. `kitten ssh`)
+    /// in place of the leading `ssh`.
+    pub fn ssh_command_with(
+        &self,
+        program: &str,
+        paths: Option<&crate::runtime::env::Paths>,
+        config_path: &std::path::Path,
+    ) -> String {
         let escaped = self.alias.replace('\'', "'\\''");
         let default = paths
             .map(|p| p.ssh_dir().join("config"))
             .unwrap_or_default();
         if config_path == default {
-            format!("ssh -- '{}'", escaped)
+            format!("{program} -- '{escaped}'")
         } else {
             let config_escaped = config_path.display().to_string().replace('\'', "'\\''");
-            format!("ssh -F '{}' -- '{}'", config_escaped, escaped)
+            format!("{program} -F '{config_escaped}' -- '{escaped}'")
         }
     }
 }
@@ -795,6 +810,17 @@ impl SshConfigFile {
     /// only-first behaviour keeps the per-form-field invariant intact:
     /// "what the user sees in the field is what the field controls".
     fn upsert_directive(block: &mut HostBlock, key: &str, value: &str) {
+        Self::upsert_directive_impl(block, key, value, true);
+    }
+
+    /// `upsert_directive` for directives that take the rest of the line as a
+    /// command (`ProxyCommand` and friends): the value is written verbatim,
+    /// since ssh hands it to the shell as-is and quoting it whole would break it.
+    fn upsert_directive_raw(block: &mut HostBlock, key: &str, value: &str) {
+        Self::upsert_directive_impl(block, key, value, false);
+    }
+
+    fn upsert_directive_impl(block: &mut HostBlock, key: &str, value: &str, quote: bool) {
         // Defence in depth: sanitise the value before interpolation. The
         // provider-sync update path passes `remote.ip` directly to
         // `update_host` -&gt; `upsert_directive`, so a self-hosted provider
@@ -837,7 +863,11 @@ impl SshConfigFile {
                     };
                     // Preserve inline comment from original raw_line (e.g. "# production")
                     let comment_suffix = Self::extract_inline_comment(&d.raw_line, &d.key);
-                    let rendered = HostBlock::render_value(value);
+                    let rendered = if quote {
+                        HostBlock::render_value(value)
+                    } else {
+                        std::borrow::Cow::Borrowed(value)
+                    };
                     d.raw_line =
                         format!("{}{}{}{}{}", indent, d.key, sep, rendered, comment_suffix);
                 }
@@ -846,15 +876,32 @@ impl SshConfigFile {
         }
         // Not found — insert before trailing blanks
         let pos = block.content_end();
+        let rendered = if quote {
+            HostBlock::render_value(value)
+        } else {
+            std::borrow::Cow::Borrowed(value)
+        };
         block.directives.insert(
             pos,
             Directive {
                 key: key.to_string(),
                 value: value.to_string(),
-                raw_line: format!("{}{} {}", indent, key, HostBlock::render_value(value)),
+                raw_line: format!("{}{} {}", indent, key, rendered),
                 is_non_directive: false,
             },
         );
+    }
+
+    /// Directives whose value is a command line ssh passes to the shell whole.
+    fn takes_command_line(key: &str) -> bool {
+        [
+            "ProxyCommand",
+            "LocalCommand",
+            "RemoteCommand",
+            "KnownHostsCommand",
+        ]
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(key))
     }
 
     /// Extract the inline comment suffix from a directive's raw line.
@@ -1454,6 +1501,48 @@ impl SshConfigFile {
             return false;
         }
         block.set_meta(meta);
+        true
+    }
+
+    /// First value of `key` on the host block for `alias`. None when the
+    /// host or the directive is missing. Top-level blocks only.
+    pub fn host_directive(&self, alias: &str, key: &str) -> Option<String> {
+        if alias.is_empty() {
+            return None;
+        }
+        self.elements.iter().find_map(|el| match el {
+            ConfigElement::HostBlock(b)
+                if b.host_pattern == alias || pattern_contains_token(&b.host_pattern, alias) =>
+            {
+                b.directives
+                    .iter()
+                    .find(|d| !d.is_non_directive && d.key.eq_ignore_ascii_case(key))
+                    .map(|d| d.value.clone())
+            }
+            _ => None,
+        })
+    }
+
+    /// Set the first `key` directive on the host block for `alias`, adding it
+    /// when missing and removing it when `value` is empty. Refuses pattern and
+    /// multi-alias blocks like the other provider-managed setters.
+    #[must_use = "check the return value to detect silently-skipped mutations (renamed, deleted or shared-block hosts)"]
+    pub fn set_host_directive(&mut self, alias: &str, key: &str, value: &str) -> bool {
+        if alias.is_empty() || is_host_pattern(alias) || key.trim().is_empty() {
+            return false;
+        }
+        let Some(block) = self.find_host_block_mut(alias) else {
+            return false;
+        };
+        if is_host_pattern(&block.host_pattern) {
+            return false;
+        }
+        let key = key.trim();
+        if Self::takes_command_line(key) {
+            Self::upsert_directive_raw(block, key, value);
+        } else {
+            Self::upsert_directive(block, key, value);
+        }
         true
     }
 

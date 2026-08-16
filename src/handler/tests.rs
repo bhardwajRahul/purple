@@ -546,6 +546,28 @@ fn test_submit_provider_form_rejects_empty_token() {
 }
 
 #[test]
+fn test_submit_provider_form_accepts_empty_token_for_local_cli_providers() {
+    // Teleport and Tailscale have no API token; the form must save without one.
+    for (provider, prefix) in [("teleport", "tp"), ("tailscale", "ts")] {
+        let mut app = make_form_app_focused_on(provider, ProviderFormField::User);
+        app.providers.form_mut().token = String::new();
+        app.providers.form_mut().alias_prefix = prefix.to_string();
+        submit_form(&mut app);
+        let section = app
+            .providers
+            .config()
+            .section(provider)
+            .unwrap_or_else(|| panic!("{provider} section must be saved without a token"));
+        assert_eq!(section.token, "");
+        assert_eq!(section.user, "root");
+        assert!(
+            !matches!(app.screen, Screen::ProviderForm { .. }),
+            "{provider} form must close after a successful submit"
+        );
+    }
+}
+
+#[test]
 fn test_submit_provider_form_rejects_whitespace_only_token() {
     let mut app = make_form_app_focused_on("digitalocean", ProviderFormField::Token);
     app.providers.form_mut().token = "   ".to_string();
@@ -6981,6 +7003,62 @@ fn refresh_selected_if_stale_marks_checking_for_stale_host() {
     app.ping.record_check("web1".to_string(), stale);
     let (tx, _rx) = std::sync::mpsc::channel();
     super::ping::refresh_selected_if_stale(&mut app, &tx);
+    assert!(matches!(
+        app.ping.status_of("web1"),
+        Some(crate::app::PingStatus::Checking)
+    ));
+}
+
+#[test]
+fn refresh_selected_if_stale_marks_proxycommand_host_skipped() {
+    // No TCP probe for a ProxyCommand host: it lands on Skipped ("proxied")
+    // and no ping event is spawned.
+    let mut app = make_app(
+        "Host tp-node1\n  HostName node1\n  Port 3022\n  ProxyCommand tsh proxy ssh %r@%h:%p\n",
+    );
+    app.ping.set_auto_ping(true);
+    let (tx, rx) = std::sync::mpsc::channel::<crate::event::AppEvent>();
+    super::ping::refresh_selected_if_stale(&mut app, &tx);
+    assert!(rx.try_recv().is_err());
+    assert!(matches!(
+        app.ping.status_of("tp-node1"),
+        Some(crate::app::PingStatus::Skipped)
+    ));
+}
+
+#[test]
+fn p_key_on_proxycommand_host_skips_and_explains() {
+    let mut app = make_app(
+        "Host tp-node1\n  HostName node1\n  Port 3022\n  ProxyCommand tsh proxy ssh %r@%h:%p\n",
+    );
+    let (tx, rx) = std::sync::mpsc::channel::<crate::event::AppEvent>();
+    handle_key_event(&mut app, key(KeyCode::Char('p')), &tx).unwrap();
+    assert!(rx.try_recv().is_err());
+    assert!(matches!(
+        app.ping.status_of("tp-node1"),
+        Some(crate::app::PingStatus::Skipped)
+    ));
+    assert!(
+        app.status_center
+            .toast()
+            .unwrap()
+            .text
+            .contains("ProxyCommand")
+    );
+}
+
+#[test]
+fn shift_p_marks_proxycommand_hosts_skipped_and_probes_the_rest() {
+    let mut app = make_app(
+        "Host tp-node1\n  HostName node1\n  ProxyCommand tsh proxy ssh %r@%h:%p\n\n\
+         Host web1\n  HostName 127.0.0.1\n  Port 59999\n",
+    );
+    let (tx, _rx) = std::sync::mpsc::channel::<crate::event::AppEvent>();
+    handle_key_event(&mut app, key(KeyCode::Char('P')), &tx).unwrap();
+    assert!(matches!(
+        app.ping.status_of("tp-node1"),
+        Some(crate::app::PingStatus::Skipped)
+    ));
     assert!(matches!(
         app.ping.status_of("web1"),
         Some(crate::app::PingStatus::Checking)

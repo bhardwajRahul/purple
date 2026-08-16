@@ -167,6 +167,12 @@ pub fn sync_provider(
                 let alias_changed = *existing_alias != expected_alias;
 
                 let ip_changed = entry.hostname != remote.ip;
+                // Port and provider-managed directives (ProxyCommand and the
+                // like) mirror the remote side, so a drift on either counts.
+                let port_changed = remote.port.is_some_and(|p| p != entry.port);
+                let directives_changed = remote.directives.iter().any(|(k, v)| {
+                    config.host_directive(existing_alias, k).as_deref() != Some(v.as_str())
+                });
                 let meta_changed = {
                     let mut local: Vec<(&str, &str)> = entry
                         .provider_meta
@@ -258,6 +264,8 @@ pub fn sync_provider(
 
                 if alias_changed
                     || ip_changed
+                    || port_changed
+                    || directives_changed
                     || tags_changed
                     || meta_changed
                     || user_tags_overlap
@@ -284,6 +292,8 @@ pub fn sync_provider(
 
                         if alias_changed
                             || ip_changed
+                            || port_changed
+                            || directives_changed
                             || tags_changed
                             || meta_changed
                             || user_tags_overlap
@@ -294,10 +304,16 @@ pub fn sync_provider(
                             || user_needs_baseline
                             || key_needs_baseline
                         {
-                            if alias_changed || ip_changed || user_changed || key_changed {
+                            if alias_changed
+                                || ip_changed
+                                || port_changed
+                                || user_changed
+                                || key_changed
+                            {
                                 let updated = HostEntry {
                                     alias: new_alias.clone(),
                                     hostname: remote.ip.clone(),
+                                    port: remote.port.unwrap_or(entry.port),
                                     user: if user_changed {
                                         section.user.clone()
                                     } else {
@@ -388,6 +404,11 @@ pub fn sync_provider(
                             if meta_changed {
                                 let _ = config.set_host_meta(tags_alias, &remote.metadata);
                             }
+                            if directives_changed {
+                                for (key, value) in &remote.directives {
+                                    let _ = config.set_host_directive(tags_alias, key, value);
+                                }
+                            }
                             result.updated += 1;
                         } else {
                             result.unchanged += 1;
@@ -401,106 +422,9 @@ pub fn sync_provider(
             }
         } else {
             // New host
-            let sanitized = sanitize_name(&remote.name);
-            let base_alias = build_alias(&section.alias_prefix, &sanitized);
-            let alias = if dry_run {
-                base_alias
-            } else {
-                config.deduplicate_alias(&base_alias)
-            };
-
             if !dry_run {
-                // Add group header before the very first host for this provider
-                let wrote_header = needs_header;
-                if needs_header {
-                    if !config.elements.is_empty() && !config.last_element_has_trailing_blank() {
-                        config
-                            .elements
-                            .push(ConfigElement::GlobalLine(String::new()));
-                    }
-                    config.elements.push(ConfigElement::GlobalLine(format!(
-                        "# purple:group {}",
-                        super::provider_display_name(provider.name())
-                    )));
-                    needs_header = false;
-                }
-
-                let entry = HostEntry {
-                    alias: alias.clone(),
-                    hostname: remote.ip.clone(),
-                    user: section.user.clone(),
-                    identity_file: section.identity_file.clone(),
-                    provider: Some(provider.name().to_string()),
-                    ..Default::default()
-                };
-
-                let block = SshConfigFile::entry_to_block(&entry);
-
-                // Insert adjacent to existing provider hosts (keeps groups together).
-                // For the very first host (wrote_header), fall through to push at end.
-                let insert_pos = if !wrote_header {
-                    config.find_provider_insert_position(provider.name())
-                } else {
-                    None
-                };
-
-                if let Some(pos) = insert_pos {
-                    // Mirror add_host: guarantee a blank line BEFORE the new
-                    // block (so consecutive synced hosts never glue together)
-                    // and AFTER it (so it never runs into the next group header
-                    // or host block).
-                    let mut idx = pos;
-                    let needs_blank_before = idx > 0
-                        && !matches!(
-                            config.elements.get(idx - 1),
-                            Some(ConfigElement::GlobalLine(line)) if line.trim().is_empty()
-                        );
-                    if needs_blank_before {
-                        config
-                            .elements
-                            .insert(idx, ConfigElement::GlobalLine(String::new()));
-                        idx += 1;
-                    }
-                    config.elements.insert(idx, ConfigElement::HostBlock(block));
-                    let after = idx + 1;
-                    let needs_trailing_blank = config.elements.get(after).is_some_and(
-                        |e| !matches!(e, ConfigElement::GlobalLine(line) if line.trim().is_empty()),
-                    );
-                    if needs_trailing_blank {
-                        config
-                            .elements
-                            .insert(after, ConfigElement::GlobalLine(String::new()));
-                    }
-                } else {
-                    // No existing group or first host: append at end with separator
-                    if !wrote_header
-                        && !config.elements.is_empty()
-                        && !config.last_element_has_trailing_blank()
-                    {
-                        config
-                            .elements
-                            .push(ConfigElement::GlobalLine(String::new()));
-                    }
-                    config.elements.push(ConfigElement::HostBlock(block));
-                }
-
-                let _ = config.set_host_provider_id(&alias, &section.id, &remote.server_id);
-                if !remote.tags.is_empty() {
-                    let _ = config.set_host_provider_tags(&alias, &remote.tags);
-                }
-                if !remote.metadata.is_empty() {
-                    let _ = config.set_host_meta(&alias, &remote.metadata);
-                }
-                // Baseline the last-synced provider connection values so a
-                // later manual override is detectable on the next sync.
-                if !section.user.is_empty() {
-                    let _ = config.set_host_provider_user(&alias, &section.user);
-                }
-                if !section.identity_file.is_empty() {
-                    let _ = config.set_host_provider_key(&alias, &section.identity_file);
-                }
+                add_remote_host(config, provider, section, remote, &mut needs_header);
             }
-
             result.added += 1;
         }
     }
@@ -575,6 +499,113 @@ pub fn sync_provider(
     }
 
     result
+}
+
+/// Write a brand-new host block for `remote`: alias from the section prefix,
+/// the group header on the very first host, then the provider markers,
+/// tags, metadata and managed directives.
+fn add_remote_host(
+    config: &mut SshConfigFile,
+    provider: &dyn Provider,
+    section: &ProviderSection,
+    remote: &ProviderHost,
+    needs_header: &mut bool,
+) {
+    let sanitized = sanitize_name(&remote.name);
+    let base_alias = build_alias(&section.alias_prefix, &sanitized);
+    let alias = config.deduplicate_alias(&base_alias);
+
+    // Add group header before the very first host for this provider
+    let wrote_header = *needs_header;
+    if *needs_header {
+        if !config.elements.is_empty() && !config.last_element_has_trailing_blank() {
+            config
+                .elements
+                .push(ConfigElement::GlobalLine(String::new()));
+        }
+        config.elements.push(ConfigElement::GlobalLine(format!(
+            "# purple:group {}",
+            super::provider_display_name(provider.name())
+        )));
+        *needs_header = false;
+    }
+
+    let entry = HostEntry {
+        alias: alias.clone(),
+        hostname: remote.ip.clone(),
+        port: remote.port.unwrap_or(22),
+        user: section.user.clone(),
+        identity_file: section.identity_file.clone(),
+        provider: Some(provider.name().to_string()),
+        ..Default::default()
+    };
+
+    let block = SshConfigFile::entry_to_block(&entry);
+
+    // Insert adjacent to existing provider hosts (keeps groups together).
+    // For the very first host (wrote_header), fall through to push at end.
+    let insert_pos = if !wrote_header {
+        config.find_provider_insert_position(provider.name())
+    } else {
+        None
+    };
+
+    if let Some(pos) = insert_pos {
+        // Mirror add_host: guarantee a blank line BEFORE the new
+        // block (so consecutive synced hosts never glue together)
+        // and AFTER it (so it never runs into the next group header
+        // or host block).
+        let mut idx = pos;
+        let needs_blank_before = idx > 0
+            && !matches!(
+                config.elements.get(idx - 1),
+                Some(ConfigElement::GlobalLine(line)) if line.trim().is_empty()
+            );
+        if needs_blank_before {
+            config
+                .elements
+                .insert(idx, ConfigElement::GlobalLine(String::new()));
+            idx += 1;
+        }
+        config.elements.insert(idx, ConfigElement::HostBlock(block));
+        let after = idx + 1;
+        let needs_trailing_blank = config.elements.get(after).is_some_and(
+            |e| !matches!(e, ConfigElement::GlobalLine(line) if line.trim().is_empty()),
+        );
+        if needs_trailing_blank {
+            config
+                .elements
+                .insert(after, ConfigElement::GlobalLine(String::new()));
+        }
+    } else {
+        // No existing group or first host: append at end with separator
+        if !wrote_header && !config.elements.is_empty() && !config.last_element_has_trailing_blank()
+        {
+            config
+                .elements
+                .push(ConfigElement::GlobalLine(String::new()));
+        }
+        config.elements.push(ConfigElement::HostBlock(block));
+    }
+
+    for (key, value) in &remote.directives {
+        let _ = config.set_host_directive(&alias, key, value);
+    }
+    let _ = config.set_host_provider_id(&alias, &section.id, &remote.server_id);
+    if !remote.tags.is_empty() {
+        let _ = config.set_host_provider_tags(&alias, &remote.tags);
+    }
+    if !remote.metadata.is_empty() {
+        let _ = config.set_host_meta(&alias, &remote.metadata);
+    }
+    // Baseline the last-synced provider connection values so a
+    // later manual override is detectable on the next sync.
+    if !section.user.is_empty() {
+        let _ = config.set_host_provider_user(&alias, &section.user);
+    }
+    if !section.identity_file.is_empty() {
+        let _ = config.set_host_provider_key(&alias, &section.identity_file);
+    }
 }
 
 #[cfg(test)]

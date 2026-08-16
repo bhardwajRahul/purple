@@ -310,6 +310,7 @@ fn fetch_zone(
                     ip,
                     tags: server.tags.clone(),
                     metadata: build_metadata(server, zone),
+                    ..Default::default()
                 });
             }
         }

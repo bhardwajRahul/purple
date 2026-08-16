@@ -27,7 +27,7 @@ fn load_json(name: &str) -> Value {
         .unwrap_or_else(|e| panic!("failed to parse fixture {}: {}", name, e))
 }
 
-/// Load an XML fixture and return the raw string.
+/// Load an XML or plain-text fixture and return the raw string.
 fn load_xml(name: &str) -> String {
     let path = fixture_path(name);
     std::fs::read_to_string(&path)
@@ -483,6 +483,56 @@ fn contract_tailscale_cli_status() {
     assert_has_key(peer, "Online");
 }
 
+// ── Teleport ─────────────────────────────────────────────────────────
+
+#[test]
+fn contract_teleport_cli_status() {
+    let v = load_json("teleport_cli_status.json");
+    assert_has_key(&v, "active");
+    assert_has_key(&v, "active.profile_url");
+    assert_has_key(&v, "active.username");
+    assert_has_key(&v, "active.cluster");
+    assert_has_key(&v, "active.logins");
+    assert_has_key(&v, "active.valid_until");
+    assert_has_key(&v, "profiles");
+}
+
+#[test]
+fn contract_teleport_cli_ls() {
+    let v = load_json("teleport_cli_ls.json");
+    let nodes = v
+        .as_array()
+        .unwrap_or_else(|| panic!("expected teleport_cli_ls to be an array of nodes"));
+    assert!(!nodes.is_empty());
+    let node = &nodes[0];
+    assert_has_key(node, "kind");
+    assert_has_key(node, "metadata.name");
+    assert_has_key(node, "metadata.labels");
+    assert_has_key(node, "spec.hostname");
+    assert_has_key(node, "spec.addr");
+    assert_has_key(node, "spec.cmd_labels");
+    // Agentless nodes carry a sub_kind.
+    assert_has_key(&nodes[1], "sub_kind");
+}
+
+#[test]
+fn contract_teleport_cli_config() {
+    let text = load_xml("teleport_cli_config.txt");
+    assert!(text.contains("# Begin generated Teleport configuration for "));
+    assert!(text.contains("\nHost *.example.com proxy.example.com\n"));
+    assert!(text.contains("\n    UserKnownHostsFile \""));
+    assert!(text.contains("\n    IdentityFile \""));
+    assert!(text.contains("\n    CertificateFile \""));
+    assert!(text.contains("\nHost *.example.com !proxy.example.com\n"));
+    assert!(text.contains("\n    Port 3022\n"));
+    assert!(text.contains("\n    ProxyCommand \"") && text.contains("proxy ssh --cluster="));
+    assert!(text.contains("%r@%h:%p"));
+    assert!(
+        text.trim_end()
+            .ends_with("# End generated Teleport configuration")
+    );
+}
+
 // ── TransIP ──────────────────────────────────────────────────────────
 
 #[test]
@@ -593,6 +643,10 @@ fn contract_all_fixtures_present() {
         // Tailscale
         "tailscale_api_devices.json",
         "tailscale_cli_status.json",
+        // Teleport
+        "teleport_cli_status.json",
+        "teleport_cli_ls.json",
+        "teleport_cli_config.txt",
         // TransIP
         "transip_token.json",
         "transip_vps.json",

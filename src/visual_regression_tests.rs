@@ -558,13 +558,13 @@ fn visual_keys_push_picker() {
 fn visual_keys_push_picker_selected() {
     let _g = setup();
     let mut app = demo::build_demo_app();
-    // Lock the demo host count so the picker title `2 selected of 31
+    // Lock the demo host count so the picker title `2 selected of 33
     // (N eligible)` is stable under demo-data drift. If a new host is
     // added or removed from the demo this assertion fails with a clear
     // message instead of an opaque golden diff.
     assert_eq!(
         app.hosts_state.list().len(),
-        31,
+        33,
         "demo host count drifted; update this assertion and regenerate the golden"
     );
     app.top_page = crate::app::TopPage::Keys;

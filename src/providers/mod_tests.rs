@@ -377,7 +377,7 @@ fn test_display_name_unknown_returns_input() {
 
 #[test]
 fn test_provider_names_count() {
-    assert_eq!(PROVIDER_NAMES.len(), 16);
+    assert_eq!(PROVIDER_NAMES.len(), 17);
 }
 
 #[test]
@@ -398,6 +398,7 @@ fn test_provider_names_contains_all() {
     assert!(PROVIDER_NAMES.contains(&"leaseweb"));
     assert!(PROVIDER_NAMES.contains(&"i3d"));
     assert!(PROVIDER_NAMES.contains(&"transip"));
+    assert!(PROVIDER_NAMES.contains(&"teleport"));
 }
 
 // =========================================================================
@@ -680,8 +681,8 @@ fn test_get_provider_case_sensitive_and_unknown() {
 // =========================================================================
 
 #[test]
-fn test_provider_names_has_all_sixteen() {
-    assert_eq!(PROVIDER_NAMES.len(), 16);
+fn test_provider_names_has_all_seventeen() {
+    assert_eq!(PROVIDER_NAMES.len(), 17);
     assert!(PROVIDER_NAMES.contains(&"digitalocean"));
     assert!(PROVIDER_NAMES.contains(&"proxmox"));
     assert!(PROVIDER_NAMES.contains(&"aws"));
@@ -693,6 +694,7 @@ fn test_provider_names_has_all_sixteen() {
     assert!(PROVIDER_NAMES.contains(&"leaseweb"));
     assert!(PROVIDER_NAMES.contains(&"i3d"));
     assert!(PROVIDER_NAMES.contains(&"transip"));
+    assert!(PROVIDER_NAMES.contains(&"teleport"));
 }
 
 // =========================================================================

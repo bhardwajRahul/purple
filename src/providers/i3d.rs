@@ -162,6 +162,7 @@ impl I3d {
                             ip,
                             tags: Vec::new(),
                             metadata: metadata.finish(),
+                            ..Default::default()
                         });
                     }
                 }
@@ -221,6 +222,7 @@ impl I3d {
                             ip,
                             tags: server.tags.clone(),
                             metadata: metadata.finish(),
+                            ..Default::default()
                         });
                     }
                 }

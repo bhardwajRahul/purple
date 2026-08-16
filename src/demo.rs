@@ -253,6 +253,32 @@ Host pve-backup
   # purple:meta node=pve2,type=lxc,specs=2c/8GiB,os=Debian 12,status=stopped
   # purple:stale 1743800000
 
+# Teleport
+
+Host tp-db-1
+  HostName db-1
+  Port 3022
+  User root
+  ProxyCommand \"/usr/local/bin/tsh\" proxy ssh --cluster=teleport.example.com --proxy=teleport.example.com:443 %r@%h:%p
+  UserKnownHostsFile ~/.tsh/known_hosts
+  IdentityFile ~/.tsh/keys/teleport.example.com/demo
+  CertificateFile ~/.tsh/keys/teleport.example.com/demo-ssh/teleport.example.com-cert.pub
+  # purple:tags database
+  # purple:provider teleport:6a3d1f5e-1111-4a2b-9c3d-000000000001
+  # purple:provider_tags env:prod,role:db
+  # purple:meta cluster=teleport.example.com,address=10.0.0.5:3022
+
+Host tp-legacy-1
+  HostName legacy-1
+  User root
+  ProxyCommand \"/usr/local/bin/tsh\" proxy ssh --cluster=teleport.example.com --proxy=teleport.example.com:443 %r@%h:%p
+  UserKnownHostsFile ~/.tsh/known_hosts
+  IdentityFile ~/.tsh/keys/teleport.example.com/demo
+  CertificateFile ~/.tsh/keys/teleport.example.com/demo-ssh/teleport.example.com-cert.pub
+  # purple:provider teleport:6a3d1f5e-1111-4a2b-9c3d-000000000002
+  # purple:provider_tags env:prod
+  # purple:meta cluster=teleport.example.com,address=10.0.0.6:22,type=openssh
+
 Host pve-*
   User ops
   AddKeysToAgent yes
@@ -343,6 +369,12 @@ user=root
 vault_role=ssh-client-signer/sign/ops
 vault_addr=http://localhost:8200
 auto_sync=true
+
+[teleport]
+token=
+alias_prefix=tp
+user=root
+auto_sync=false
 ";
 
 /// Generate demo history with timestamps relative to now.
@@ -445,7 +477,8 @@ fn build_demo_sync_history() -> String {
     format!(
         "aws\t{now}\t0\tSynced 6 hosts (2 regions)\n\
          digitalocean\t{now}\t0\tSynced 4 hosts\n\
-         proxmox\t{now}\t0\tSynced 8 VMs",
+         proxmox\t{now}\t0\tSynced 8 VMs\n\
+         teleport\t{now}\t0\tSynced 2 nodes",
     )
 }
 
@@ -1339,6 +1372,11 @@ pub fn build_demo_app() -> App {
     app.ping.insert_status("pve-monitor".into(), reachable(3));
     app.ping
         .insert_status("pve-backup".into(), PingStatus::Unreachable);
+    // Teleport nodes sit behind a ProxyCommand: no direct probe, shown as proxied.
+    app.ping
+        .insert_status("tp-db-1".into(), PingStatus::Skipped);
+    app.ping
+        .insert_status("tp-legacy-1".into(), PingStatus::Skipped);
 
     app.ping.set_has_pinged(true);
     let now = std::time::Instant::now();
@@ -2416,8 +2454,9 @@ mod tests {
     fn demo_app_has_expected_hosts() {
         let (app, _guard) = demo_app();
         // 22 original + 2 do-personal + 1 podman-edge + 1 db-proton
-        // + 5 (prod-eu1, prod-eu2, customer-jump, customer-db-1, legacy-prod) = 31
-        assert_eq!(app.hosts_state.list().len(), 31);
+        // + 5 (prod-eu1, prod-eu2, customer-jump, customer-db-1, legacy-prod)
+        // + 2 teleport = 33
+        assert_eq!(app.hosts_state.list().len(), 33);
     }
 
     #[test]
@@ -2446,8 +2485,8 @@ mod tests {
     #[test]
     fn demo_app_has_providers() {
         let (app, _guard) = demo_app();
-        // aws + digitalocean:work + digitalocean:personal + proxmox = 4
-        assert_eq!(app.providers.config().configured_providers().len(), 4);
+        // aws + digitalocean:work + digitalocean:personal + proxmox + teleport = 5
+        assert_eq!(app.providers.config().configured_providers().len(), 5);
     }
 
     #[test]
@@ -2553,7 +2592,7 @@ mod tests {
     #[test]
     fn demo_app_has_sync_history() {
         let (app, _guard) = demo_app();
-        assert_eq!(app.providers.sync_history().len(), 3);
+        assert_eq!(app.providers.sync_history().len(), 4);
     }
 
     #[test]
@@ -2619,25 +2658,30 @@ mod tests {
     fn demo_sorted_provider_names() {
         let (app, _guard) = demo_app();
         let names = app.sorted_provider_names();
-        // First 3 should be our configured providers (with sync history)
-        let configured: Vec<&str> = names.iter().take(3).map(|s| s.as_str()).collect();
+        // First 4 should be our configured providers (with sync history)
+        let configured: Vec<&str> = names.iter().take(4).map(|s| s.as_str()).collect();
         assert!(
             configured.contains(&"aws"),
-            "aws missing from top 3: {:?}",
+            "aws missing from top 4: {:?}",
             configured
         );
         assert!(
             configured.contains(&"digitalocean"),
-            "digitalocean missing from top 3: {:?}",
+            "digitalocean missing from top 4: {:?}",
             configured
         );
         assert!(
             configured.contains(&"proxmox"),
-            "proxmox missing from top 3: {:?}",
+            "proxmox missing from top 4: {:?}",
+            configured
+        );
+        assert!(
+            configured.contains(&"teleport"),
+            "teleport missing from top 4: {:?}",
             configured
         );
         // No other provider should have a checkmark (be configured)
-        for name in &names[3..] {
+        for name in &names[4..] {
             assert!(
                 app.providers.config().section(name).is_none(),
                 "unexpected configured provider: {}",

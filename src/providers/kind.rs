@@ -23,6 +23,7 @@ pub enum ProviderKind {
     Proxmox,
     Scaleway,
     Tailscale,
+    Teleport,
     Transip,
     UpCloud,
     Vultr,
@@ -44,6 +45,7 @@ impl ProviderKind {
             ProviderKind::Proxmox => "proxmox",
             ProviderKind::Scaleway => "scaleway",
             ProviderKind::Tailscale => "tailscale",
+            ProviderKind::Teleport => "teleport",
             ProviderKind::Transip => "transip",
             ProviderKind::UpCloud => "upcloud",
             ProviderKind::Vultr => "vultr",
@@ -67,6 +69,7 @@ impl ProviderKind {
             | ProviderKind::Ovh
             | ProviderKind::Scaleway
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => true,
@@ -90,6 +93,7 @@ impl ProviderKind {
             ProviderKind::Proxmox => "pve",
             ProviderKind::Scaleway => "scw",
             ProviderKind::Tailscale => "ts",
+            ProviderKind::Teleport => "tp",
             ProviderKind::Transip => "transip",
             ProviderKind::UpCloud => "uc",
             ProviderKind::Vultr => "vultr",
@@ -112,6 +116,7 @@ impl ProviderKind {
             | ProviderKind::Ovh
             | ProviderKind::Scaleway
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -135,6 +140,7 @@ impl ProviderKind {
             | ProviderKind::Ovh
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -157,6 +163,7 @@ impl ProviderKind {
             | ProviderKind::Linode
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -181,6 +188,7 @@ impl ProviderKind {
             | ProviderKind::Oracle
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -205,6 +213,7 @@ impl ProviderKind {
             | ProviderKind::Linode
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -226,6 +235,7 @@ impl ProviderKind {
             | ProviderKind::Proxmox
             | ProviderKind::Scaleway
             | ProviderKind::Tailscale
+            | ProviderKind::Teleport
             | ProviderKind::Transip
             | ProviderKind::UpCloud
             | ProviderKind::Vultr => false,
@@ -263,6 +273,7 @@ impl FromStr for ProviderKind {
             "proxmox" => Ok(ProviderKind::Proxmox),
             "scaleway" => Ok(ProviderKind::Scaleway),
             "tailscale" => Ok(ProviderKind::Tailscale),
+            "teleport" => Ok(ProviderKind::Teleport),
             "transip" => Ok(ProviderKind::Transip),
             "upcloud" => Ok(ProviderKind::UpCloud),
             "vultr" => Ok(ProviderKind::Vultr),
@@ -295,12 +306,13 @@ mod tests {
         ("proxmox", ProviderKind::Proxmox),
         ("scaleway", ProviderKind::Scaleway),
         ("tailscale", ProviderKind::Tailscale),
+        ("teleport", ProviderKind::Teleport),
         ("transip", ProviderKind::Transip),
         ("upcloud", ProviderKind::UpCloud),
         ("vultr", ProviderKind::Vultr),
     ];
 
-    /// Marketing copy hardcodes the provider count in prose ("16 cloud
+    /// Marketing copy hardcodes the provider count in prose ("17 cloud
     /// providers"). This guard fails when a provider is added to `ALL`
     /// without updating the headline count in `llms.txt` and
     /// `site/page.html`, so the marketing sweep cannot be silently skipped.

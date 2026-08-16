@@ -1,14 +1,14 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ 32 ── ●27 ✖3 ○1 ─────────────────────────────────────────╮╭─ bastion-ams ────────────────────────╮
+╭ 34 ── ●27 ✖3 ○1 ─────────────────────────────────────────╮╭─ bastion-ams ────────────────────────╮
 │     NAME                             TAGS          LAST▾ ││ ops@140.82.121.3:22                  │
 │──────────────────────────────────────────────────────────││ ● online (7ms)  checked just now     │
 │▌  ● bastion-ams ⇄                    production     <1m  │╰──────────────────────────────────────╯
 │   ● db-primary ↗ ⇄                   production      1h  │╭─ CONNECTION ─────────────────────────╮
 │   ● monitoring ↗ ⇄                   production      2h  ││ Host          140.82.121.3           │
 │   ● gateway-vpn                      infra           3h  ││ User          ops                    │
-│   ● podman-edge   ╭ Run deploy › Select Hosts (0 of 31 selected) ────────────╮d25519             │
+│   ● podman-edge   ╭ Run deploy › Select Hosts (0 of 33 selected) ────────────╮d25519             │
 │   ● prod-eu1      │ /  aws_                                                  │hain               │
 │   ● prod-eu2      │ [ ] aws-api-prod  52.47.100.23                           │                   │
 │   ● customer-jump │ [ ] aws-api-staging  52.47.100.24                        │───────────────────╯

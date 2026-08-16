@@ -147,11 +147,11 @@ fn spawn_startup_tasks(app: &mut App, events_tx: &std::sync::mpsc::Sender<AppEve
             .hosts_state
             .list()
             .iter()
-            .filter(|h| !h.hostname.is_empty() && h.proxy_jump.is_empty())
+            .filter(|h| !h.hostname.is_empty() && h.proxy_jump.is_empty() && !h.has_proxy_command)
             .map(|h| (h.alias.clone(), h.hostname.clone(), h.port))
             .collect();
         for h in app.hosts_state.list() {
-            if !h.proxy_jump.is_empty() {
+            if !h.proxy_jump.is_empty() || h.has_proxy_command {
                 app.ping
                     .insert_status(h.alias.clone(), app::PingStatus::Skipped);
             }
@@ -505,6 +505,7 @@ fn handle_pending_connect(
     let askpass = host_askpass.or_else(|| preferences::load_askpass_default(app.env().paths()));
     let has_active_tunnel = app.tunnels.active_contains(&alias);
     let use_tmux = connection::is_in_tmux(app.env()) && askpass.is_none();
+    let launcher = crate::ssh_launcher::SshLauncher::resolve(app.env());
 
     if use_tmux {
         // Tmux mode: open SSH in a new tmux window. TUI stays alive.
@@ -532,7 +533,12 @@ fn handle_pending_connect(
             None
         };
 
-        match connection::connect_tmux_window(&alias, app.reload.config_path(), has_active_tunnel) {
+        match connection::connect_tmux_window(
+            &alias,
+            app.reload.config_path(),
+            has_active_tunnel,
+            &launcher,
+        ) {
             Ok(()) => {
                 app.record_key_use(&alias, key_activity::now_secs());
                 if let Some((ref msg, is_error)) = vault_msg {
@@ -591,6 +597,7 @@ fn handle_pending_connect(
         askpass.as_deref(),
         app.bw_session.as_deref(),
         has_active_tunnel,
+        &launcher,
     );
     println!();
     match &result {
@@ -687,6 +694,7 @@ fn handle_pending_container_exec(
         .or_else(|| preferences::load_askpass_default(app.env().paths()));
     let has_active_tunnel = app.tunnels.active_contains(&req.alias);
     let use_tmux = connection::is_in_tmux(app.env()) && askpass.is_none();
+    let launcher = crate::ssh_launcher::SshLauncher::resolve(app.env());
 
     let remote_cmd = if let Some(ref user_cmd) = req.command {
         // User-typed exec command from the `e` prompt. The remote runs
@@ -717,6 +725,7 @@ fn handle_pending_container_exec(
             has_active_tunnel,
             &remote_cmd,
             &label,
+            &launcher,
         ) {
             Ok(()) => {
                 app.record_key_use(&req.alias, key_activity::now_secs());
@@ -743,6 +752,7 @@ fn handle_pending_container_exec(
         app.bw_session.as_deref(),
         has_active_tunnel,
         &remote_cmd,
+        &launcher,
     );
 
     match result {

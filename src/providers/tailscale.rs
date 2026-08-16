@@ -298,6 +298,7 @@ impl Tailscale {
                 ip,
                 tags,
                 metadata: metadata.finish(),
+                ..Default::default()
             });
         }
 
@@ -394,6 +395,7 @@ impl Tailscale {
                 ip,
                 tags,
                 metadata: metadata.finish(),
+                ..Default::default()
             });
         }
 

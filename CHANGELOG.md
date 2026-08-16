@@ -1,3 +1,10 @@
+## 3.25.0 - 2026-08-16
+
+- feat: Teleport nodes and kitty's ssh kitten join your host list.
+- feat: Sync your Teleport cluster with `purple provider add teleport`. Every node from `tsh ls` lands in `~/.ssh/config` with the ProxyCommand and key paths that `tsh config` prescribes, so Enter connects through the proxy, node labels become tags you can extend and the cluster and address show up in the detail panel.
+- feat: Pick the program that runs your logins. Set `ssh_command=kitten ssh` in `~/.purple/preferences` or export `PURPLE_SSH_COMMAND` and purple uses it for interactive connects, container shells and the copied ssh command, while tunnels, snippets and transfers stay on plain ssh.
+- feat: Hosts behind a ProxyCommand show as proxied instead of offline, so a Teleport node or an `ssh -W` helper never reads as a red cross.
+
 ## 3.24.0 - 2026-08-13
 
 - feat: AWS syncs with the credentials your company hands out.

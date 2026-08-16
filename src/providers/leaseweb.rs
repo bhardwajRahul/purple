@@ -250,6 +250,7 @@ impl Leaseweb {
                                 ip,
                                 tags: Vec::new(),
                                 metadata: metadata.finish(),
+                                ..Default::default()
                             });
                         }
                     }
@@ -309,6 +310,7 @@ impl Leaseweb {
                             ip,
                             tags: Vec::new(),
                             metadata: metadata.finish(),
+                            ..Default::default()
                         });
                     }
                 }

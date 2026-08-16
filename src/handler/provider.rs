@@ -976,9 +976,15 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         }
     }
 
-    // AWS allows empty token when profile is set (credentials from ~/.aws/credentials)
-    if app.providers.form_mut().token.trim().is_empty()
-        && kind != Some(ProviderKind::Tailscale)
+    // Token is required unless the form marks it optional for this provider
+    // (local-CLI providers such as Tailscale and Teleport). AWS also accepts
+    // an empty token when a profile is set (credentials from ~/.aws/credentials).
+    let token_required = crate::app::ProviderFormField::is_mandatory_field(
+        crate::app::ProviderFormField::Token,
+        provider_name.as_str(),
+    );
+    if token_required
+        && app.providers.form_mut().token.trim().is_empty()
         && (kind != Some(ProviderKind::Aws) || app.providers.form_mut().profile.trim().is_empty())
     {
         let hint = if kind == Some(ProviderKind::Gcp) {

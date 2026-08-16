@@ -175,6 +175,7 @@ impl Hetzner {
                         ip,
                         tags,
                         metadata: metadata.finish(),
+                        ..Default::default()
                     });
                 }
             }

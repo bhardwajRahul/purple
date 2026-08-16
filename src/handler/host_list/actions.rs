@@ -508,13 +508,17 @@ pub(super) fn ping_all_hosts(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) 
         .hosts_state
         .list()
         .iter()
-        .filter(|h| !h.hostname.is_empty() && h.proxy_jump.is_empty())
+        .filter(|h| !h.hostname.is_empty() && h.proxy_jump.is_empty() && !h.has_proxy_command)
         .map(|h| (h.alias.clone(), h.hostname.clone(), h.port))
         .collect();
     // Mark ProxyJump hosts as Checking (their status will be inherited from
-    // the bastion once it responds).
+    // the bastion once it responds). ProxyCommand hosts have no bastion to
+    // probe, so they show as proxied.
     for h in app.hosts_state.list() {
-        if !h.proxy_jump.is_empty() {
+        if h.has_proxy_command {
+            app.ping
+                .insert_status(h.alias.clone(), crate::app::PingStatus::Skipped);
+        } else if !h.proxy_jump.is_empty() {
             app.ping
                 .insert_status(h.alias.clone(), crate::app::PingStatus::Checking);
         }

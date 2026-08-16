@@ -123,6 +123,7 @@ impl Linode {
                             ip,
                             tags: instance.tags.clone(),
                             metadata: metadata.finish(),
+                            ..Default::default()
                         });
                     }
                 }

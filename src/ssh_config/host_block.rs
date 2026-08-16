@@ -657,6 +657,7 @@ impl HostBlock {
             ..Default::default()
         };
         let mut port_seen = false;
+        let mut proxy_command_seen = false;
         for d in &self.directives {
             if d.is_non_directive {
                 continue;
@@ -681,6 +682,11 @@ impl HostBlock {
             } else if d.key.eq_ignore_ascii_case("proxyjump") {
                 if entry.proxy_jump.is_empty() {
                     entry.proxy_jump = d.value.clone();
+                }
+            } else if d.key.eq_ignore_ascii_case("proxycommand") {
+                if !proxy_command_seen {
+                    entry.has_proxy_command = !d.value.trim().eq_ignore_ascii_case("none");
+                    proxy_command_seen = true;
                 }
             } else if d.key.eq_ignore_ascii_case("certificatefile")
                 && entry.certificate_file.is_empty()

@@ -207,6 +207,7 @@ impl Ovh {
                     ip,
                     tags: Vec::new(),
                     metadata: metadata.finish(),
+                    ..Default::default()
                 });
             }
         }

@@ -4,7 +4,10 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 
+use crate::ssh_launcher::SshLauncher;
+
 /// Result of an SSH connection attempt.
+#[derive(Debug)]
 pub struct ConnectResult {
     pub status: std::process::ExitStatus,
     pub stderr_output: String,
@@ -35,20 +38,19 @@ pub fn is_in_tmux(_env: &crate::runtime::env::Env) -> bool {
 /// parent) and that inheritance does not survive the `tmux new-window` fork.
 /// Hosts with a password source therefore keep using the suspend-TUI `connect()`
 /// flow instead.
-pub fn connect_tmux_window(alias: &str, config_path: &Path, has_active_tunnel: bool) -> Result<()> {
+pub fn connect_tmux_window(
+    alias: &str,
+    config_path: &Path,
+    has_active_tunnel: bool,
+    launcher: &SshLauncher,
+) -> Result<()> {
     info!("[external] SSH connection via tmux: {alias}");
 
     let config_str = config_path
         .to_str()
         .context("SSH config path is not valid UTF-8")?;
 
-    let mut args = vec!["new-window", "-n", alias, "--", "ssh", "-F", config_str];
-
-    if has_active_tunnel {
-        args.extend(["-o", "ClearAllForwardings=yes"]);
-    }
-
-    args.extend(["--", alias]);
+    let args = tmux_window_args(alias, launcher, config_str, has_active_tunnel, alias, None);
 
     debug!("[external] tmux args: {:?}", args);
 
@@ -65,6 +67,38 @@ pub fn connect_tmux_window(alias: &str, config_path: &Path, has_active_tunnel: b
         error!("[external] tmux new-window failed for {alias} (exit {code})");
         anyhow::bail!("tmux new-window exited with code {code}")
     }
+}
+
+/// Argument list for `tmux new-window` that runs the launcher inside a fresh
+/// window. `remote_command` adds `-t` plus the command, as the exec path needs.
+fn tmux_window_args(
+    window_label: &str,
+    launcher: &SshLauncher,
+    config_str: &str,
+    has_active_tunnel: bool,
+    alias: &str,
+    remote_command: Option<&str>,
+) -> Vec<String> {
+    let mut args: Vec<String> = ["new-window", "-n", window_label, "--"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    args.extend(launcher.words().iter().cloned());
+    args.push("-F".to_string());
+    args.push(config_str.to_string());
+    if remote_command.is_some() {
+        args.push("-t".to_string());
+    }
+    if has_active_tunnel {
+        args.push("-o".to_string());
+        args.push("ClearAllForwardings=yes".to_string());
+    }
+    args.push("--".to_string());
+    args.push(alias.to_string());
+    if let Some(cmd) = remote_command {
+        args.push(cmd.to_string());
+    }
+    args
 }
 
 /// RAII guard that restores the signal mask when dropped.
@@ -180,7 +214,12 @@ pub(crate) fn remote_exit_log_level(code: i32) -> log::Level {
     }
 }
 
-fn spawn_ssh_and_wait(mut cmd: Command, alias: &str, log_label: &str) -> Result<ConnectResult> {
+fn spawn_ssh_and_wait(
+    mut cmd: Command,
+    alias: &str,
+    log_label: &str,
+    program: &str,
+) -> Result<ConnectResult> {
     cmd.stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::piped());
@@ -201,7 +240,7 @@ fn spawn_ssh_and_wait(mut cmd: Command, alias: &str, log_label: &str) -> Result<
 
     let mut child = cmd
         .spawn()
-        .with_context(|| format!("Failed to launch ssh {} for '{}'", log_label, alias))?;
+        .with_context(|| format!("Failed to launch {program} {log_label} for '{alias}'"))?;
 
     // Mask SIGINT/SIGTSTP in purple AFTER spawn so SSH doesn't inherit
     // the blocked mask. The guard restores the mask on drop (even on
@@ -232,7 +271,7 @@ fn spawn_ssh_and_wait(mut cmd: Command, alias: &str, log_label: &str) -> Result<
 
     let status = child
         .wait()
-        .with_context(|| format!("Failed to wait for ssh {} for '{}'", log_label, alias))?;
+        .with_context(|| format!("Failed to wait for {program} {log_label} for '{alias}'"))?;
     let stderr_output = stderr_thread.join().unwrap_or_else(|_| {
         warn!("[purple] Stderr capture thread panicked for {alias}");
         String::new()
@@ -269,8 +308,9 @@ fn spawn_ssh_and_wait(mut cmd: Command, alias: &str, log_label: &str) -> Result<
 }
 
 /// Launch an SSH connection to the given host alias.
-/// Uses the system `ssh` binary with inherited stdin/stdout. Stderr is piped and
-/// forwarded to real stderr in real time so the output is captured for error detection.
+/// Runs the `launcher` program (plain `ssh` unless the user configured a
+/// wrapper) with inherited stdin/stdout. Stderr is piped and forwarded to real
+/// stderr in real time so the output is captured for error detection.
 /// Passes `-F <config_path>` so the alias resolves against the correct config file.
 /// When `askpass` is Some, delegates to `askpass_env::configure_ssh_command` to wire up
 /// SSH_ASKPASS, SSH_ASKPASS_REQUIRE=force and the PURPLE_* env vars.
@@ -280,14 +320,16 @@ pub fn connect(
     askpass: Option<&str>,
     bw_session: Option<&str>,
     has_active_tunnel: bool,
+    launcher: &SshLauncher,
 ) -> Result<ConnectResult> {
     info!("[external] SSH connection started: {alias}");
     debug!(
-        "[external] SSH command: ssh -F {} -- {alias}",
+        "[external] SSH command: {} -F {} -- {alias}",
+        launcher.display(),
         config_path.display()
     );
 
-    let mut cmd = Command::new("ssh");
+    let mut cmd = launcher.command();
     cmd.arg("-F").arg(config_path);
 
     // When a tunnel is already running for this host, disable forwards in the
@@ -306,7 +348,7 @@ pub fn connect(
         cmd.env("BW_SESSION", token);
     }
 
-    spawn_ssh_and_wait(cmd, alias, "connection")
+    spawn_ssh_and_wait(cmd, alias, "connection", launcher.program())
 }
 
 /// Launch an SSH connection that runs a single remote command in
@@ -321,6 +363,7 @@ pub fn connect(
 /// is built as `<runtime> exec -it <container_id> sh -c 'bash || sh'`
 /// where `container_id` has already been validated to alphanumeric +
 /// `-_.` so it cannot inject shell metacharacters.
+#[allow(clippy::too_many_arguments)]
 pub fn connect_with_remote_command(
     alias: &str,
     config_path: &Path,
@@ -329,10 +372,12 @@ pub fn connect_with_remote_command(
     bw_session: Option<&str>,
     has_active_tunnel: bool,
     remote_command: &str,
+    launcher: &SshLauncher,
 ) -> Result<ConnectResult> {
     info!("[external] SSH exec started: {alias}");
     debug!(
-        "[external] SSH command: ssh -F {} -t -- {alias} {}",
+        "[external] SSH command: {} -F {} -t -- {alias} {}",
+        launcher.display(),
         config_path.display(),
         remote_command
     );
@@ -342,7 +387,7 @@ pub fn connect_with_remote_command(
     // No-op for non-vault hosts.
     crate::runtime::helpers::ensure_vault_cert_for_alias(env, alias, config_path);
 
-    let mut cmd = Command::new("ssh");
+    let mut cmd = launcher.command();
     cmd.arg("-F").arg(config_path).arg("-t");
 
     if has_active_tunnel {
@@ -359,7 +404,7 @@ pub fn connect_with_remote_command(
         cmd.env("BW_SESSION", token);
     }
 
-    spawn_ssh_and_wait(cmd, alias, "exec")
+    spawn_ssh_and_wait(cmd, alias, "exec", launcher.program())
 }
 
 /// tmux variant of `connect_with_remote_command`. Opens a new tmux
@@ -373,6 +418,7 @@ pub fn connect_tmux_window_with_remote_command(
     has_active_tunnel: bool,
     remote_command: &str,
     window_label: &str,
+    launcher: &SshLauncher,
 ) -> Result<()> {
     info!("[external] SSH exec via tmux: {alias}");
 
@@ -385,22 +431,14 @@ pub fn connect_tmux_window_with_remote_command(
         .to_str()
         .context("SSH config path is not valid UTF-8")?;
 
-    let mut args = vec![
-        "new-window",
-        "-n",
+    let args = tmux_window_args(
         window_label,
-        "--",
-        "ssh",
-        "-F",
+        launcher,
         config_str,
-        "-t",
-    ];
-
-    if has_active_tunnel {
-        args.extend(["-o", "ClearAllForwardings=yes"]);
-    }
-
-    args.extend(["--", alias, remote_command]);
+        has_active_tunnel,
+        alias,
+        Some(remote_command),
+    );
 
     debug!("[external] tmux exec args: {:?}", args);
 
@@ -549,6 +587,7 @@ mod tests {
             None,
             None,
             false,
+            &SshLauncher::default(),
         );
         // SSH should exit with a non-zero status (config file not found)
         assert!(result.is_ok()); // spawn succeeds, SSH exits with error
@@ -565,9 +604,113 @@ mod tests {
             None,
             None,
             true,
+            &SshLauncher::default(),
         );
         assert!(result.is_ok());
         assert!(!result.unwrap().status.success());
+    }
+
+    #[test]
+    fn connect_runs_the_configured_launcher() {
+        // A launcher that echoes its argv proves purple's own arguments are
+        // appended after the configured words and the exit code flows back.
+        let launcher =
+            SshLauncher::parse("sh -c 'printf \"%s\\n\" \"$@\" >&2; exit 7' sh").unwrap();
+        let result = connect(
+            "launcher-host",
+            Path::new("/tmp/__purple_test_cfg__"),
+            None,
+            None,
+            true,
+            &launcher,
+        )
+        .unwrap();
+        assert_eq!(result.status.code(), Some(7));
+        let lines: Vec<&str> = result.stderr_output.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                "-F",
+                "/tmp/__purple_test_cfg__",
+                "-o",
+                "ClearAllForwardings=yes",
+                "--",
+                "launcher-host"
+            ]
+        );
+    }
+
+    #[test]
+    fn connect_reports_missing_launcher_program() {
+        let launcher = SshLauncher::parse("/nonexistent/purple-test-launcher ssh").unwrap();
+        let err = connect(
+            "launcher-host",
+            Path::new("/tmp/__purple_test_cfg__"),
+            None,
+            None,
+            false,
+            &launcher,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Failed to launch /nonexistent/purple-test-launcher connection"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn tmux_window_args_wrap_launcher_words() {
+        let launcher = SshLauncher::parse("kitten ssh").unwrap();
+        let args = tmux_window_args(
+            "web1",
+            &launcher,
+            "/home/u/.ssh/config",
+            false,
+            "web1",
+            None,
+        );
+        assert_eq!(
+            args,
+            [
+                "new-window",
+                "-n",
+                "web1",
+                "--",
+                "kitten",
+                "ssh",
+                "-F",
+                "/home/u/.ssh/config",
+                "--",
+                "web1"
+            ]
+        );
+        let args = tmux_window_args(
+            "web1/app",
+            &SshLauncher::default(),
+            "/home/u/.ssh/config",
+            true,
+            "web1",
+            Some("docker exec -it abc sh"),
+        );
+        assert_eq!(
+            args,
+            [
+                "new-window",
+                "-n",
+                "web1/app",
+                "--",
+                "ssh",
+                "-F",
+                "/home/u/.ssh/config",
+                "-t",
+                "-o",
+                "ClearAllForwardings=yes",
+                "--",
+                "web1",
+                "docker exec -it abc sh"
+            ]
+        );
     }
 
     #[test]
@@ -579,6 +722,7 @@ mod tests {
             None,
             None,
             false,
+            &SshLauncher::default(),
         );
         assert!(result.is_ok());
         // SSH writes errors to stderr; we should have captured something
@@ -682,6 +826,7 @@ Host key verification failed.
             "test-host",
             Path::new("/tmp/__purple_test_nonexistent_config__"),
             false,
+            &SshLauncher::default(),
         );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -704,6 +849,7 @@ Host key verification failed.
             "tunnel-host",
             Path::new("/tmp/__purple_test_nonexistent_config__"),
             true,
+            &SshLauncher::default(),
         );
         assert!(result.is_err());
     }

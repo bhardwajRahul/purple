@@ -377,6 +377,21 @@ pub fn save_auto_ping(paths: Option<&Paths>, enabled: bool) -> io::Result<()> {
     })
 }
 
+/// Load the interactive ssh command (`ssh_command`, e.g. `kitten ssh`).
+/// Returns None when missing or empty; the caller falls back to plain `ssh`.
+pub fn load_ssh_command(paths: Option<&Paths>) -> Option<String> {
+    load_value(paths, crate::ssh_launcher::PREF_KEY).filter(|v| !v.trim().is_empty())
+}
+
+/// Save the interactive ssh command preference.
+#[allow(dead_code)]
+pub fn save_ssh_command(paths: Option<&Paths>, command: &str) -> io::Result<()> {
+    log::debug!("[purple] saving ssh_command={}", command);
+    save_value(paths, crate::ssh_launcher::PREF_KEY, command).inspect_err(|e| {
+        log::warn!("[config] failed to save ssh_command={}: {}", command, e);
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,6 +659,23 @@ mod tests {
             save_group_by(Some(paths), &mode).unwrap();
             let loaded = load_group_by(Some(paths));
             assert_eq!(loaded, crate::app::GroupBy::Tag("production".to_string()));
+        });
+    }
+
+    #[test]
+    fn ssh_command_roundtrip_and_empty_means_unset() {
+        with_temp_prefs(|paths| {
+            assert_eq!(load_ssh_command(Some(paths)), None);
+            save_ssh_command(Some(paths), "kitten ssh").unwrap();
+            assert_eq!(
+                load_ssh_command(Some(paths)),
+                Some("kitten ssh".to_string())
+            );
+            // A blank value reads as unset so the default `ssh` applies.
+            save_ssh_command(Some(paths), "").unwrap();
+            assert_eq!(load_ssh_command(Some(paths)), None);
+            std::fs::write(paths.preferences(), "ssh_command=   \ntheme=purple\n").unwrap();
+            assert_eq!(load_ssh_command(Some(paths)), None);
         });
     }
 

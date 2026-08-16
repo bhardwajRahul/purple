@@ -73,6 +73,7 @@ declare -A SERVICE_KEYWORDS=(
     [proxmox]="qemu|lxc|cluster.resource|guest.agent|api2"
     [scaleway]="instance|/instance/v1|server"
     [tailscale]="device|/api/v2/device|tailnet"
+    [teleport]="\\btsh\\b|tsh ls|tsh config|tsh status|proxy ssh|openssh|ssh_config|--format=json"
     [transip]="vps|/v6/vps"
 )
 
@@ -131,6 +132,7 @@ FEEDS=(
     "proxmox|mwapi|https://pve.proxmox.com/mediawiki/api.php?action=parse&page=Roadmap&prop=wikitext&format=json"
     "scaleway|ghdir|https://api.github.com/repos/scaleway/docs-content/contents/changelog"
     "tailscale|rss|https://tailscale.com/changelog/index.xml"
+    "teleport|rss|https://github.com/gravitational/teleport/releases.atom"
     "transip|html|https://api.transip.nl/rest/docs.html"
 )
 

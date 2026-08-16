@@ -43,7 +43,7 @@ pub const NO_PROVIDERS: &str = "No providers configured. Run 'purple provider ad
 /// `unknown_provider` and `skipping_unknown_provider`. Kept as a single
 /// const so adding a new provider only updates one place.
 pub const PROVIDER_LIST: &str = "digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, \
-     scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip";
+     scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport";
 
 /// Stderr line when the user passed `--provider X` for an unknown slug.
 /// Different from `skipping_unknown_provider` so each call site can

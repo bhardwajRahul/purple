@@ -659,6 +659,15 @@ impl ProviderFormField {
         ProviderFormField::AutoSync,
     ];
 
+    /// Teleport has no token and issues its own certificates, so neither the
+    /// Token nor the Vault fields apply.
+    const TELEPORT_FIELDS: &[ProviderFormField] = &[
+        ProviderFormField::AliasPrefix,
+        ProviderFormField::User,
+        ProviderFormField::IdentityFile,
+        ProviderFormField::AutoSync,
+    ];
+
     const OVH_FIELDS: &[ProviderFormField] = &[
         ProviderFormField::Token,
         ProviderFormField::Project,
@@ -683,6 +692,7 @@ impl ProviderFormField {
             ProviderKind::Azure => Self::AZURE_FIELDS,
             ProviderKind::Oracle => Self::ORACLE_FIELDS,
             ProviderKind::Ovh => Self::OVH_FIELDS,
+            ProviderKind::Teleport => Self::TELEPORT_FIELDS,
             ProviderKind::DigitalOcean
             | ProviderKind::Hetzner
             | ProviderKind::I3d
@@ -732,7 +742,9 @@ impl ProviderFormField {
         match field {
             ProviderFormField::Label => true,
             ProviderFormField::Url => true,
-            ProviderFormField::Token => kind != Some(ProviderKind::Tailscale),
+            ProviderFormField::Token => {
+                !matches!(kind, Some(ProviderKind::Tailscale | ProviderKind::Teleport))
+            }
             ProviderFormField::Profile => kind == Some(ProviderKind::Aws),
             ProviderFormField::Project => kind.is_some_and(ProviderKind::has_project_field),
             ProviderFormField::Compartment => kind == Some(ProviderKind::Oracle),

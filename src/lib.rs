@@ -43,6 +43,7 @@ pub mod snippet_runs;
 pub mod ssh_config;
 pub mod ssh_context;
 pub mod ssh_keys;
+pub mod ssh_launcher;
 #[cfg(target_os = "linux")]
 pub(crate) mod tcp_diag;
 pub mod tui;

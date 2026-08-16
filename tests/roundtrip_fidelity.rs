@@ -4874,6 +4874,7 @@ fn sync_adds_metadata_to_config() {
             ("region".to_string(), "nyc3".to_string()),
             ("plan".to_string(), "s-1vcpu-1gb".to_string()),
         ],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,
@@ -4927,6 +4928,7 @@ fn sync_gcp_adds_host_with_metadata_and_tags() {
             ("os".to_string(), "debian-11".to_string()),
             ("status".to_string(), "RUNNING".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -4995,6 +4997,7 @@ Host gcp-web-1
             ("zone".to_string(), "us-central1-a".to_string()),
             ("machine".to_string(), "e2-micro".to_string()),
         ],
+        ..Default::default()
     }];
     let result = sync_provider(
         &mut config,
@@ -10929,6 +10932,7 @@ fn sync_stale_roundtrip() {
             ("region".to_string(), "ams3".to_string()),
             ("status".to_string(), "active".to_string()),
         ],
+        ..Default::default()
     }];
     sync_provider(
         &mut config,

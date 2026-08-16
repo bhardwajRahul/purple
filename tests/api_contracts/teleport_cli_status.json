@@ -1,0 +1,13 @@
+{
+  "active": {
+    "profile_url": "https://proxy.example.com:443",
+    "username": "bob",
+    "cluster": "example.com",
+    "roles": ["access", "editor"],
+    "logins": ["root", "ubuntu"],
+    "kubernetes_enabled": false,
+    "valid_until": "2026-08-16T08:00:00Z",
+    "extensions": ["permit-agent-forwarding", "permit-port-forwarding", "permit-pty"]
+  },
+  "profiles": []
+}

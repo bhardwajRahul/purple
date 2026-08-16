@@ -336,12 +336,14 @@ fn run_direct_connect(
     ensure_proton_login(env, askpass.as_deref());
     let bw_session = ensure_bw_session(env, None, askpass.as_deref());
     ensure_keychain_password(env, &alias, askpass.as_deref());
+    let launcher = crate::ssh_launcher::SshLauncher::resolve(env);
     let result = connection::connect(
         &alias,
         config_path,
         askpass.as_deref(),
         bw_session.as_deref(),
         false,
+        &launcher,
     )?;
     let code = result.status.code().unwrap_or(1);
     if code != 255 {
@@ -388,12 +390,14 @@ fn run_positional_alias(
         let bw_session = ensure_bw_session(&env, None, askpass.as_deref());
         ensure_keychain_password(&env, &alias, askpass.as_deref());
         print!("{}", messages::cli::beaming_up(&alias));
+        let launcher = crate::ssh_launcher::SshLauncher::resolve(&env);
         let result = connection::connect(
             &alias,
             config_path,
             askpass.as_deref(),
             bw_session.as_deref(),
             false,
+            &launcher,
         )?;
         let code = result.status.code().unwrap_or(1);
         if code != 255 {

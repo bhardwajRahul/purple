@@ -61,6 +61,10 @@ pub fn bastion_not_found(alias: &str) -> String {
     format!("Bastion {} not found in config.", alias)
 }
 
+pub fn ping_skipped_proxied(alias: &str) -> String {
+    format!("{} connects through a ProxyCommand. Ping skipped.", alias)
+}
+
 // ── Clipboard subprocess errors ─────────────────────────────────────
 //
 // Surfaced when `pbcopy`/`xclip`/`wl-copy` fails to spawn, write to its
@@ -506,6 +510,7 @@ pub mod hints {
     pub const PROVIDER_TOKEN_GCP: &str = "/path/to/service-account.json (or access token)";
     pub const PROVIDER_TOKEN_AZURE: &str = "/path/to/service-principal.json (or access token)";
     pub const PROVIDER_TOKEN_TAILSCALE: &str = "API key (leave empty for local CLI)";
+    pub const PROVIDER_TOKEN_TELEPORT: &str = "not used (tsh login holds the session)";
     pub const PROVIDER_TOKEN_ORACLE: &str = "~/.oci/config";
     pub const PROVIDER_TOKEN_OVH: &str = "app_key:app_secret:consumer_key";
     pub const PROVIDER_PROFILE: &str = "Name from ~/.aws/credentials (or use Token)";
@@ -523,6 +528,7 @@ pub mod hints {
     pub const PROVIDER_USER_AZURE: &str = "azureuser";
     pub const PROVIDER_USER_ORACLE: &str = "opc";
     pub const PROVIDER_USER_OVH: &str = "ubuntu";
+    pub const PROVIDER_USER_TELEPORT: &str = "Teleport login, e.g. root (empty = local user)";
     pub const PROVIDER_VAULT_ROLE: &str =
         "e.g. ssh-client-signer/sign/my-role (vault login; inherited)";
     pub const PROVIDER_VAULT_ADDR: &str = "e.g. http://127.0.0.1:8200 (inherited by all hosts)";

@@ -81,6 +81,7 @@ impl DigitalOcean {
                         ip,
                         tags: droplet.tags.clone(),
                         metadata: metadata.finish(),
+                        ..Default::default()
                     });
                 }
             }

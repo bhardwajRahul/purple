@@ -5176,3 +5176,128 @@ fn value_with_hash_but_no_space_stays_unquoted() {
     );
     assert_eq!(parse_str(&out).host_entries()[0].identity_file, "~/id#frag");
 }
+
+#[test]
+fn set_host_directive_adds_updates_and_removes_first_only() {
+    let mut config = parse_str(
+        "Host tp-node1\n  HostName node1\n  Port 3022\n\nHost other\n  HostName 10.0.0.2\n",
+    );
+    assert_eq!(config.host_directive("tp-node1", "ProxyCommand"), None);
+
+    assert!(config.set_host_directive(
+        "tp-node1",
+        "ProxyCommand",
+        "\"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=proxy.example.com:443 %r@%h:%p",
+    ));
+    let out = config.serialize();
+    assert!(
+        out.contains("  ProxyCommand \"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=proxy.example.com:443 %r@%h:%p\n"),
+        "got:\n{out}"
+    );
+    assert_eq!(
+        config.host_directive("tp-node1", "proxycommand").as_deref(),
+        Some(
+            "\"/usr/local/bin/tsh\" proxy ssh --cluster=example.com --proxy=proxy.example.com:443 %r@%h:%p"
+        )
+    );
+    // The other host is untouched.
+    assert_eq!(config.host_directive("other", "ProxyCommand"), None);
+
+    // Update in place keeps a single directive.
+    assert!(config.set_host_directive("tp-node1", "ProxyCommand", "nc %h %p"));
+    let out = config.serialize();
+    assert_eq!(out.matches("ProxyCommand").count(), 1, "got:\n{out}");
+    assert!(out.contains("  ProxyCommand nc %h %p\n"), "got:\n{out}");
+
+    // Empty value removes it.
+    assert!(config.set_host_directive("tp-node1", "ProxyCommand", ""));
+    assert_eq!(config.host_directive("tp-node1", "ProxyCommand"), None);
+    assert!(!config.serialize().contains("ProxyCommand"));
+
+    // Round trip keeps the rest intact.
+    let entries = parse_str(&config.serialize()).host_entries();
+    assert_eq!(entries[0].hostname, "node1");
+    assert_eq!(entries[0].port, 3022);
+}
+
+#[test]
+fn set_host_directive_refuses_patterns_shared_blocks_and_missing_hosts() {
+    let mut config = parse_str("Host web-*\n  User root\n\nHost a b\n  HostName 10.0.0.1\n");
+    assert!(!config.set_host_directive("web-*", "ProxyCommand", "nc %h %p"));
+    assert!(!config.set_host_directive("a", "ProxyCommand", "nc %h %p"));
+    assert!(!config.set_host_directive("missing", "ProxyCommand", "nc %h %p"));
+    assert!(!config.set_host_directive("a", "", "x"));
+    assert!(!config.serialize().contains("ProxyCommand"));
+    // Reads on a shared block still work, they are harmless.
+    assert_eq!(
+        config.host_directive("a", "HostName").as_deref(),
+        Some("10.0.0.1")
+    );
+    assert_eq!(config.host_directive("missing", "HostName"), None);
+}
+
+#[test]
+fn set_host_directive_quotes_single_token_values_and_round_trips() {
+    let mut config = parse_str("Host tp-node1\n  HostName node1\n");
+    assert!(config.set_host_directive(
+        "tp-node1",
+        "UserKnownHostsFile",
+        "/Users/alice/my dir/.tsh/known_hosts"
+    ));
+    assert!(config.set_host_directive(
+        "tp-node1",
+        "CertificateFile",
+        "/Users/alice/.tsh/keys/p/bob-ssh/c-cert.pub"
+    ));
+    let out = config.serialize();
+    assert!(
+        out.contains("  UserKnownHostsFile \"/Users/alice/my dir/.tsh/known_hosts\"\n"),
+        "got:\n{out}"
+    );
+    assert!(
+        out.contains("  CertificateFile /Users/alice/.tsh/keys/p/bob-ssh/c-cert.pub\n"),
+        "got:\n{out}"
+    );
+    // Re-parsed values are the logical ones, so a repeat set is a no-op.
+    let mut reparsed = parse_str(&out);
+    assert_eq!(
+        reparsed
+            .host_directive("tp-node1", "UserKnownHostsFile")
+            .as_deref(),
+        Some("/Users/alice/my dir/.tsh/known_hosts")
+    );
+    assert!(reparsed.set_host_directive(
+        "tp-node1",
+        "UserKnownHostsFile",
+        "/Users/alice/my dir/.tsh/known_hosts"
+    ));
+    assert_eq!(reparsed.serialize(), out);
+}
+
+#[test]
+fn set_host_directive_strips_newline_injection() {
+    // A provider-supplied value carrying line breaks must stay one directive.
+    let mut config = parse_str("Host victim\n  HostName 10.0.0.1\n");
+    assert!(config.set_host_directive(
+        "victim",
+        "ProxyCommand",
+        "nc %h %p\n  ProxyCommand nc evil 22\r\nHost injected\n  HostName 6.6.6.6"
+    ));
+    assert!(config.set_host_directive(
+        "victim",
+        "UserKnownHostsFile",
+        "/tmp/k\n  IdentityFile /tmp/evil"
+    ));
+    let out = config.serialize();
+    assert_no_directive_injection(&out, "IdentityFile");
+    let reparsed = parse_str(&out);
+    let entries = reparsed.host_entries();
+    assert_eq!(entries.len(), 1, "no extra Host block may appear:\n{out}");
+    assert_eq!(
+        out.matches("ProxyCommand").count(),
+        2,
+        "value stays on one line:\n{out}"
+    );
+    assert!(!out.contains("\nHost injected"), "got:\n{out}");
+    assert_eq!(reparsed.host_directive("victim", "IdentityFile"), None);
+}
