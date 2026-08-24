@@ -28,6 +28,7 @@ demo.mov
 
 # IDE
 .idea/
+.nova/
 .vscode/
 .zed/
 *.swp
