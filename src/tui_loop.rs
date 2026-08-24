@@ -565,7 +565,7 @@ fn handle_pending_connect(
     // terminal). Sign the entire ProxyJump chain so the proxy hop's cert is
     // in place before ssh tries to use it.
     events.pause();
-    terminal.exit()?;
+    terminal.suspend()?;
     let vault_msg = if vault_host.is_some() {
         let env = std::sync::Arc::clone(&app.env);
         let msg = ensure_vault_ssh_chain_if_needed(
@@ -743,7 +743,7 @@ fn handle_pending_container_exec(
     }
 
     events.pause();
-    terminal.exit()?;
+    terminal.suspend()?;
 
     let result = connection::connect_with_remote_command(
         &req.alias,
@@ -915,7 +915,7 @@ fn handle_pending_snippet(
         return Ok(());
     };
     events.pause();
-    terminal.exit()?;
+    terminal.suspend()?;
 
     let multi = aliases.len() > 1;
     let mut ok_count = 0usize;

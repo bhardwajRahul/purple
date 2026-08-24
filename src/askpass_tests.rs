@@ -2017,6 +2017,35 @@ Host UnrelatedServer
     );
 }
 
+/// Attempts before giving up on a script exec that keeps failing.
+#[cfg(unix)]
+const SCRIPT_PROBE_ATTEMPTS: usize = 50;
+/// Pause between attempts while a forked child still holds the fd.
+#[cfg(unix)]
+const SCRIPT_PROBE_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Run a freshly written script until one exec succeeds. A concurrent
+/// test's fork can briefly hold the script's write fd, which makes exec
+/// fail with ETXTBSY on Linux. The throwaway runs drain that window so
+/// the call under test cannot hit it.
+#[cfg(unix)]
+fn wait_until_executable(script: &std::path::Path) {
+    for _ in 0..SCRIPT_PROBE_ATTEMPTS {
+        match std::process::Command::new(script).output() {
+            Ok(_) => return,
+            Err(e) => {
+                eprintln!(
+                    "script probe retry on {}: kind={:?} errno={:?}",
+                    script.display(),
+                    e.kind(),
+                    e.raw_os_error()
+                );
+                std::thread::sleep(SCRIPT_PROBE_PAUSE);
+            }
+        }
+    }
+}
+
 /// Write a stub `pass-cli` into a tempdir and run `f` with an `Env` whose PATH
 /// resolves to it. No process-global PATH mutation, so the helper needs no lock
 /// and runs concurrently with other tests.
@@ -2046,6 +2075,7 @@ fn with_mock_passcli<F: FnOnce(&crate::runtime::env::Env)>(
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
+    wait_until_executable(&script);
 
     let env = crate::runtime::env::Env::for_test("/tmp/x").with_var(
         "PATH",
@@ -2132,6 +2162,7 @@ fn proton_login_pat_via_env_not_argv() {
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
+    wait_until_executable(&script);
 
     let env_di = crate::runtime::env::Env::for_test("/tmp/x").with_var(
         "PATH",
@@ -2194,6 +2225,7 @@ fn retrieve_from_proton_pass_constructs_uri() {
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
+    wait_until_executable(&script);
 
     let env = crate::runtime::env::Env::for_test("/tmp/x").with_var(
         "PATH",
@@ -2284,6 +2316,7 @@ fn retrieve_from_proton_pass_env_not_propagated() {
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
+    wait_until_executable(&script);
 
     let env_di = crate::runtime::env::Env::for_test("/tmp/x").with_var(
         "PATH",
@@ -2338,6 +2371,8 @@ fn proton_login_empty_pat_does_not_spawn() {
     std::fs::write(&script, body).unwrap();
     let mut perms = std::fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
+    // No wait_until_executable probe here: the test asserts the script
+    // is never run, so a throwaway run would create the spawn log.
     std::fs::set_permissions(&script, perms).unwrap();
 
     let env = crate::runtime::env::Env::for_test("/tmp/x").with_var(

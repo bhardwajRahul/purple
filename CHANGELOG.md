@@ -1,3 +1,8 @@
+## 3.26.1 - 2026-08-24
+
+- fix: Every ssh session starts on a clean screen.
+- fix: Connecting, opening a container shell and running a snippet clear the old frame before handing over your terminal, so remote output lands on a blank screen even when your terminal keeps the alternate screen disabled.
+
 ## 3.26.0 - 2026-08-16
 
 - feat: Keep $HOME clean and your dotfiles in sync.

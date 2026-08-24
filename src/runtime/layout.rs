@@ -414,10 +414,21 @@ mod tests {
         assert!(paths.history().exists());
     }
 
+    /// Tests that inject a copy failure through mode 0o000 skip under
+    /// root, because root reads files regardless of permission bits.
+    #[cfg(unix)]
+    fn is_root() -> bool {
+        // SAFETY: geteuid takes no arguments and cannot fail.
+        unsafe { libc::geteuid() == 0 }
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_failure_mid_category_rolls_back_and_the_next_run_retries() {
         use std::os::unix::fs::PermissionsExt;
+        if is_root() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         let legacy = seed_legacy(&home);
@@ -468,6 +479,9 @@ mod tests {
     #[test]
     fn a_directory_entry_that_fails_leaves_no_partial_copy() {
         use std::os::unix::fs::PermissionsExt;
+        if is_root() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         let legacy = seed_legacy(&home);
