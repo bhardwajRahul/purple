@@ -324,7 +324,7 @@
       "name": "Does purple send my SSH config anywhere?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 24 hours). No config data is transmitted."
+        "text": "No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 1 hour). No config data is transmitted."
       }
     },
     {
@@ -1135,7 +1135,7 @@ footer .sep { margin: 0 0.3em; }
   <p class="lead reveal"><b>purple</b> is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps <code>~/.ssh/config</code> in sync with 18 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide.</p>
 
   <div class="trust reveal">
-    <span><b>17</b> cloud providers</span>
+    <span><b>18</b> cloud providers</span>
     <span><b>7,300+</b> tests</span>
     <span>Single Rust binary</span>
     <span>MIT licensed</span>
@@ -1370,7 +1370,7 @@ footer .sep { margin: 0 0.3em; }
       </details>
       <details>
         <summary>Does purple send my SSH config anywhere?</summary>
-        <div class="answer">No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 24 hours). No config data is transmitted.</div>
+        <div class="answer">No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 1 hour). No config data is transmitted.</div>
       </details>
       <details>
         <summary>Can I use purple with SSH Include files?</summary>

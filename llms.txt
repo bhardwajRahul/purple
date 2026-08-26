@@ -1,6 +1,6 @@
 # purple
 
-> Keeps ~/.ssh/config in sync with your cloud infra. Spin up a VM on AWS, GCP, Azure, Hetzner or 12 other cloud providers and it appears in your host list. Destroy it and the entry dims. Visual file transfer, password management, command snippets and MCP server for AI agents. Edits ~/.ssh/config with round-trip fidelity. Single binary, MIT licensed.
+> Keeps ~/.ssh/config in sync with your cloud infra. Spin up a VM on AWS, GCP, Azure, Hetzner or 14 other cloud providers and it appears in your host list. Destroy it and the entry dims. Visual file transfer, password management, command snippets and MCP server for AI agents. Edits ~/.ssh/config with round-trip fidelity. Single binary, MIT licensed.
 
 purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps ~/.ssh/config in sync with 18 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide. Search, connect to and manage hundreds of SSH hosts from a single TUI. Transfer files, run commands and push SSH keys across your fleet. MIT licensed.
 
@@ -180,7 +180,7 @@ paru -S purple-bin                  # Arch Linux (AUR), or: yay -S purple-bin. A
 
 ## Usage
 
-The primary interface is the TUI. Run purple to launch it. Press ? for the full keybindings cheat sheet. Press : to open Jump, a universal fuzzy search bar that finds any host, tunnel, container, snippet or action across your SSH config. The TUI has four top-level pages: Hosts (default), Tunnels (live overview of every SSH forward across all hosts), Containers (every Docker or Podman container across every host, grouped per host) and Keys (every SSH key in ~/.ssh/ with strength, randomart, activity sparkline and multi-host push). Press Tab to cycle between them. Most actions are available from the TUI: S for provider management, r for snippets, T for the per-host tunnel overlay, C for the per-host container overlay, F for file browser. The CLI subcommands below are alternatives for scripting and automation.
+The primary interface is the TUI. Run purple to launch it. Press ? for the full keybindings cheat sheet. Press : to open Jump, a universal fuzzy search bar that finds any host, tunnel, container, snippet or action across your SSH config. The TUI has five top-level pages: Hosts (default), Tunnels (live overview of every SSH forward across all hosts), Containers (every Docker or Podman container across every host, grouped per host), Snippets (saved commands with multi-host runs and per-snippet run history) and Keys (every SSH key in ~/.ssh/ with strength, randomart, activity sparkline and multi-host push). Press Tab to cycle between them. Most actions are available from the TUI: S for provider management, r for snippets, T for the per-host tunnel overlay, C for the per-host container overlay, F for file browser. The CLI subcommands below are alternatives for scripting and automation.
 
 purple                              # Launch the TUI
 purple --config ~/other/ssh_config  # Use alternate config file
@@ -432,7 +432,7 @@ Q: Does purple need a daemon or background process?
 A: No. It is a single binary. Run it, use it, close it.
 
 Q: Does purple send my SSH config anywhere?
-A: No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 24 hours). No config data is transmitted.
+A: No. Your config never leaves your machine. Provider sync calls cloud APIs to fetch server lists. The TUI checks GitHub for new releases on startup (cached for 1 hour). No config data is transmitted.
 
 Q: How does password management work?
 A: In the TUI, edit a host (e key) and press Space on the Password Source field to pick a source from the overlay. Press Ctrl+D to set a global default. When you connect, purple acts as SSH_ASKPASS and retrieves the password automatically. Supported sources: OS Keychain, 1Password, Bitwarden, pass, HashiCorp Vault KV secrets engine, Proton Pass and custom commands. For SSH certificate signing, see the Vault SSH signed certificates section (a separate engine). The CLI alternative is purple password set myserver for keychain entries.
@@ -456,7 +456,7 @@ Q: Can purple use kitty's ssh kitten (kitten ssh) or another ssh wrapper?
 A: Yes. Set ssh_command=kitten ssh in ~/.purple/preferences or export PURPLE_SSH_COMMAND="kitten ssh" (for kitty, `env PURPLE_SSH_COMMAND=kitten ssh` in kitty.conf keeps it scoped to kitty). purple runs that command instead of ssh for interactive logins, container shells and the copied ssh command, appending its usual `-F ~/.ssh/config -- <alias>` arguments. Tunnels, snippets, key push, file transfer and the MCP server keep using plain ssh, since wrappers such as kitten only work on an interactive terminal. The environment variable wins over the preference; an unparseable value is logged and ignored so plain ssh still works.
 
 Q: Does purple require an account or subscription?
-A: No. No account, no signup, no telemetry. purple is a local binary that reads and writes your SSH config. Provider sync calls cloud APIs with your own credentials. The only network request purple makes on its own is a GitHub release check for updates (cached 24 hours).
+A: No. No account, no signup, no telemetry. purple is a local binary that reads and writes your SSH config. Provider sync calls cloud APIs with your own credentials. The only network request purple makes on its own is a GitHub release check for updates (cached 1 hour).
 
 Q: How do I manage Docker containers on remote servers with purple?
 A: Press Tab past Hosts and Tunnels to land on the Containers tab. Every Docker or Podman container across every host is listed grouped per host. The detail panel on the right summarises the host (engine version, runtime, sync age, running/exited counts) when the cursor sits on a divider, and the container (image digest, restart policy, user, privileged flag, mounts, network, healthcheck, recent logs) when it sits on a container row. Enter shells in. l streams the last 200 log lines. K restarts. S stops. e runs a one-off command. Ctrl-K cycles a whole compose stack member by member. K or S on a host divider sweeps every running container on that host. r refreshes one host. R refreshes all in parallel. a opens a host picker for the first cache fetch. Per-host C overlay is still available on the Hosts tab. Auto-detects Docker or Podman. No agent. No web UI. No extra ports.

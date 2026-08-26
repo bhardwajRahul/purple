@@ -15,7 +15,7 @@
 
 **purple is a free, open-source terminal SSH manager and SSH config editor in Rust for macOS and Linux that keeps `~/.ssh/config` in sync with 18 cloud providers, monitors live SSH tunnels and manages Docker and Podman containers fleet-wide.**
 
-Spin up a VM on AWS, GCP, Azure, Hetzner, Proxmox or 11 other cloud providers and it's in your host list before the console catches up. Kill one and purple marks it stale, so your list never lies. No more hand-editing `~/.ssh/config` after every Terraform run, no more digging through cloud consoles for the right IP.
+Spin up a VM on AWS, GCP, Azure, Hetzner, Proxmox or 13 other cloud providers and it's in your host list before the console catches up. Kill one and purple marks it stale, so your list never lies. No more hand-editing `~/.ssh/config` after every Terraform run, no more digging through cloud consoles for the right IP.
 
 Everything else you do over SSH lives in the same terminal: fuzzy search across hundreds of hosts, visual file transfer, multi-host SSH key push, short-lived HashiCorp Vault SSH certificates and an MCP server for AI agents. Keyboard-driven. Single binary. MIT licensed.
 
