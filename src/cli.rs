@@ -380,6 +380,7 @@ pub fn handle_provider_command(
             mut regions,
             mut project,
             mut compartment,
+            mut filter,
             no_verify_tls,
             verify_tls,
             auto_sync,
@@ -389,22 +390,20 @@ pub fn handle_provider_command(
             let p = match providers::get_provider(&provider) {
                 Some(p) => p,
                 None => {
-                    eprintln!(
-                        "Never heard of '{}'. Try: digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport.",
-                        provider
-                    );
+                    eprintln!("{}", crate::messages::cli::unknown_provider(&provider));
                     std::process::exit(1);
                 }
             };
             // provider is validated above, so from_str always returns Some here.
             let kind = provider.parse::<ProviderKind>().ok();
 
-            // --url, --no-verify-tls and --verify-tls are Proxmox-only; clear them for other providers
+            // --url, --no-verify-tls and --verify-tls only apply to providers
+            // with a self-hosted endpoint; clear them for the rest
             let mut token = token;
             let mut url = url;
             let mut no_verify_tls = no_verify_tls;
             let mut verify_tls = verify_tls;
-            if kind != Some(ProviderKind::Proxmox) {
+            if !kind.is_some_and(ProviderKind::requires_url) {
                 if url.is_some() {
                     eprintln!("{}", crate::messages::cli::WARN_URL_NOT_USED);
                     url = None;
@@ -435,6 +434,10 @@ pub fn handle_provider_command(
                 eprintln!("{}", crate::messages::cli::WARN_COMPARTMENT_NOT_USED);
                 compartment = None;
             }
+            if kind != Some(ProviderKind::NetBox) && filter.is_some() {
+                eprintln!("{}", crate::messages::cli::WARN_FILTER_NOT_USED);
+                filter = None;
+            }
 
             // When updating an existing section, fall back to stored values for
             // fields not supplied. Matched on the exact id being written: a
@@ -451,8 +454,10 @@ pub fn handle_provider_command(
                 .cloned();
 
             if let Some(ref existing) = existing_section {
-                // URL fallback only applies to Proxmox (only provider that uses the url field)
-                if kind == Some(ProviderKind::Proxmox) && url.is_none() && !existing.url.is_empty()
+                // URL fallback only applies to providers that use the url field
+                if kind.is_some_and(ProviderKind::requires_url)
+                    && url.is_none()
+                    && !existing.url.is_empty()
                 {
                     url = Some(existing.url.clone());
                 }
@@ -504,12 +509,24 @@ pub fn handle_provider_command(
                 {
                     compartment = Some(existing.compartment.clone());
                 }
+                // NetBox: fall back to stored filter
+                if kind == Some(ProviderKind::NetBox)
+                    && filter.is_none()
+                    && !existing.filter.is_empty()
+                {
+                    filter = Some(existing.filter.clone());
+                }
             }
 
-            // Proxmox requires --url
-            if kind == Some(ProviderKind::Proxmox) {
+            // Providers with a self-hosted endpoint require --url
+            if kind.is_some_and(ProviderKind::requires_url) {
                 if url.is_none() || url.as_deref().unwrap_or("").trim().is_empty() {
-                    eprintln!("{}", crate::messages::cli::PROXMOX_URL_REQUIRED);
+                    let msg = if kind == Some(ProviderKind::NetBox) {
+                        crate::messages::cli::NETBOX_URL_REQUIRED
+                    } else {
+                        crate::messages::cli::PROXMOX_URL_REQUIRED
+                    };
+                    eprintln!("{}", msg);
                     std::process::exit(1);
                 }
                 let u = url.as_deref().unwrap();
@@ -591,6 +608,7 @@ pub fn handle_provider_command(
             let regions_value = regions.clone().unwrap_or_default();
             let project_value = project.clone().unwrap_or_default();
             let compartment_value = compartment.clone().unwrap_or_default();
+            let filter_value = filter.clone().unwrap_or_default();
             for (value, name) in [
                 (&url_value, "URL"),
                 (&token, "Token"),
@@ -601,6 +619,7 @@ pub fn handle_provider_command(
                 (&project_value, "Project"),
                 (&regions_value, "Regions"),
                 (&compartment_value, "Compartment"),
+                (&filter_value, "Filter"),
             ] {
                 if value.chars().any(|c| c.is_control()) {
                     eprintln!("{}", crate::messages::cli::control_chars(name));
@@ -620,7 +639,7 @@ pub fn handle_provider_command(
             } else if let Some(ref existing) = existing_section {
                 existing.auto_sync
             } else {
-                kind != Some(ProviderKind::Proxmox)
+                kind.is_none_or(ProviderKind::default_auto_sync)
             };
 
             let resolved_profile = profile.unwrap_or_default();
@@ -715,6 +734,7 @@ pub fn handle_provider_command(
                 regions: resolved_regions,
                 project: resolved_project,
                 compartment: resolved_compartment,
+                filter: filter.unwrap_or_default(),
                 vault_role: String::new(),
                 vault_addr: String::new(),
             };

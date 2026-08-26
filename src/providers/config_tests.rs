@@ -36,6 +36,7 @@ fn vault_role_roundtrip_preserves_value() {
     let config = ProviderConfig {
         path_override: Some(tmp.clone()),
         sections: vec![ProviderSection {
+            filter: String::new(),
             id: crate::providers::config::ProviderConfigId::bare("aws"),
             token: "abc".to_string(),
             alias_prefix: "aws".to_string(),
@@ -146,6 +147,7 @@ token=mytoken
 fn test_set_section_add() {
     let mut config = ProviderConfig::default();
     config.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("vultr"),
         token: "abc".to_string(),
         alias_prefix: "vultr".to_string(),
@@ -168,6 +170,7 @@ fn test_set_section_add() {
 fn test_set_section_replace() {
     let mut config = ProviderConfig::parse("[vultr]\ntoken=old\n");
     config.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("vultr"),
         token: "new".to_string(),
         alias_prefix: "vultr".to_string(),
@@ -321,6 +324,7 @@ fn test_verify_tls_true_variants() {
 fn test_non_proxmox_url_not_written() {
     // url and verify_tls=false must not appear for non-Proxmox providers in saved config
     let section = ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
         token: "tok".to_string(),
         alias_prefix: "do".to_string(),
@@ -358,6 +362,7 @@ fn test_proxmox_url_fallback_in_section() {
 
     let mut config = existing;
     config.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("proxmox"),
         token: "new".to_string(),
         alias_prefix: "pve".to_string(),
@@ -407,6 +412,7 @@ fn test_auto_sync_not_written_when_default() {
     // non-proxmox with auto_sync=true (default) -> not written
     let mut config = ProviderConfig::default();
     config.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
         token: "tok".to_string(),
         alias_prefix: "do".to_string(),
@@ -428,6 +434,7 @@ fn test_auto_sync_not_written_when_default() {
     // proxmox with auto_sync=false (default) -> not written
     let mut config2 = ProviderConfig::default();
     config2.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("proxmox"),
         token: "tok".to_string(),
         alias_prefix: "pve".to_string(),
@@ -489,6 +496,7 @@ fn test_auto_sync_written_only_when_non_default() {
     // proxmox defaults to false — setting it to true is non-default, so it IS written
     let mut config = ProviderConfig::default();
     config.set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("proxmox"),
         token: "tok".to_string(),
         alias_prefix: "pve".to_string(),
@@ -737,6 +745,7 @@ fn test_auto_sync_override_do_to_false() {
 fn test_set_section_adds_new() {
     let mut config = ProviderConfig::default();
     let section = ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("vultr"),
         token: "tok".to_string(),
         alias_prefix: "vultr".to_string(),
@@ -762,6 +771,7 @@ fn test_set_section_replaces_existing() {
     let mut config = ProviderConfig::parse("[vultr]\ntoken=old\n");
     assert_eq!(config.sections[0].token, "old");
     let section = ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("vultr"),
         token: "new".to_string(),
         alias_prefix: "vultr".to_string(),
@@ -1079,6 +1089,7 @@ fn test_set_section_multiple_adds() {
     let mut config = ProviderConfig::default();
     for name in ["digitalocean", "vultr", "hetzner"] {
         config.set_section(ProviderSection {
+            filter: String::new(),
             id: crate::providers::config::ProviderConfigId::bare(name),
             token: format!("{}-tok", name),
             alias_prefix: name.to_string(),
@@ -1162,6 +1173,7 @@ fn test_save_sanitizes_token_with_newline() {
     ));
     let config = ProviderConfig {
         sections: vec![ProviderSection {
+            filter: String::new(),
             id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
             token: "abc\ndef".to_string(),
             alias_prefix: "do".to_string(),
@@ -1687,4 +1699,48 @@ fn provider_section_log_record_leaves_vault_addr_out() {
         record.contains("vault_role='ssh/sign/admin'"),
         "vault_role missing: {record}"
     );
+}
+
+// --- filter key (NetBox) ---
+
+#[test]
+fn parse_reads_filter_key() {
+    let config = ProviderConfig::parse("[netbox]\ntoken=tk\nfilter=status=active&tag=ssh\n");
+    assert_eq!(config.sections[0].filter, "status=active&tag=ssh");
+}
+
+#[test]
+fn filter_defaults_to_empty() {
+    let config = ProviderConfig::parse("[netbox]\ntoken=tk\n");
+    assert_eq!(config.sections[0].filter, "");
+}
+
+#[test]
+fn save_round_trips_filter() {
+    let path = unique_tmp_path("filter_roundtrip");
+    let mut config = ProviderConfig::parse("[netbox]\ntoken=tk\nfilter=tag=ssh\n");
+    config.path_override = Some(path.clone());
+    config.save().unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let reread = ProviderConfig::parse(&content);
+    assert_eq!(reread.sections[0].filter, "tag=ssh");
+}
+
+#[test]
+fn save_omits_empty_filter() {
+    let path = unique_tmp_path("filter_empty");
+    let mut config = ProviderConfig::parse("[netbox]\ntoken=tk\n");
+    config.path_override = Some(path.clone());
+    config.save().unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert!(!content.contains("filter="));
+}
+
+#[test]
+fn filter_appears_in_log_record_when_set() {
+    let config = ProviderConfig::parse("[netbox]\ntoken=tk\nfilter=tag=ssh\n");
+    let record = config.sections[0].log_record();
+    assert!(record.contains("filter='tag=ssh'"), "got: {record}");
 }

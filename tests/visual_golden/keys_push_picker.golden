@@ -4,7 +4,7 @@
 ╭ VAULT SSH ─ 4 active ────────────────────────────────────────────────────────────────────────────╮
 │  gateway-vpn   ssh-client-signer/sign/infra  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  7h 0m   │
 │  aws-api-prod  ssh-client-signer/sign/admin  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  6h 0m   │
-│  prod-eu1      ssh╭ Push id_ed25519.pub › Select Hosts (29 eligible of 33) ──╮▄▄▄▄▄▄▄▄▄  5h 0m   │
+│  prod-eu1      ssh╭ Push id_ed25519.pub › Select Hosts (31 eligible of 35) ──╮▄▄▄▄▄▄▄▄▄  5h 0m   │
 │  prod-eu2      ssh│ [ ] bastion-ams  140.82.121.3                            │▄▄▄▄▄▄▄▄▄   1:30   │
 ╰───────────────────│ [ ] db-primary  10.30.1.5                                │───────────────────╯
 ╭ KEYS ─ 1/5 ───────│ [ ] db-proton  db1.example.com                           │───────────────────╮

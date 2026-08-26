@@ -62,6 +62,7 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// Quick-add a host: purple add user@host:port --alias myserver
     Add {
@@ -89,7 +90,7 @@ pub enum Commands {
         #[arg(short, long)]
         group: Option<String>,
     },
-    /// Sync hosts from cloud providers (DigitalOcean, Vultr, Linode, Hetzner, UpCloud, Proxmox VE, AWS EC2, Scaleway, GCP, Azure, Tailscale, Oracle Cloud, OVHcloud, Leaseweb, i3D.net, TransIP, Teleport)
+    /// Sync hosts from cloud providers (DigitalOcean, Vultr, Linode, Hetzner, UpCloud, Proxmox VE, AWS EC2, Scaleway, GCP, Azure, Tailscale, Oracle Cloud, OVHcloud, Leaseweb, i3D.net, TransIP, Teleport, NetBox)
     Sync {
         /// Sync a specific provider (default: all configured)
         provider: Option<String>,
@@ -234,7 +235,7 @@ pub enum ThemeCommands {
 pub enum ProviderCommands {
     /// Add or update a provider configuration
     Add {
-        /// Provider name (digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport)
+        /// Provider name (digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport, netbox)
         provider: String,
 
         /// API token (or set PURPLE_TOKEN env var, or use --token-stdin)
@@ -257,7 +258,7 @@ pub enum ProviderCommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// Base URL for self-hosted providers (required for Proxmox)
+        /// Base URL for self-hosted providers (required for Proxmox and NetBox)
         #[arg(long)]
         url: Option<String>,
 
@@ -276,6 +277,10 @@ pub enum ProviderCommands {
         /// OCI compartment OCID (Oracle)
         #[arg(long)]
         compartment: Option<String>,
+
+        /// NetBox filter query string (e.g. "status=active&tag=ssh")
+        #[arg(long)]
+        filter: Option<String>,
 
         /// Skip TLS certificate verification (for self-signed certs)
         #[arg(long, conflicts_with = "verify_tls")]

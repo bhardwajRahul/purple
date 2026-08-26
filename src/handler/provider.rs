@@ -953,6 +953,7 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
             (&pf.profile, "Profile"),
             (&pf.project, "Project ID"),
             (&pf.regions, "Regions"),
+            (&pf.filter, "Filter"),
         ]
         .into_iter()
         .find(|(value, _)| value.chars().any(|c| c.is_control()))
@@ -963,11 +964,16 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         return;
     }
 
-    // Proxmox requires a URL
-    if kind == Some(ProviderKind::Proxmox) {
+    // Providers with a self-hosted endpoint require a URL
+    if kind.is_some_and(ProviderKind::requires_url) {
         let url = app.providers.form_mut().url.trim();
         if url.is_empty() {
-            app.notify_warning(crate::messages::URL_REQUIRED_PROXMOX);
+            let msg = if kind == Some(ProviderKind::NetBox) {
+                crate::messages::URL_REQUIRED_NETBOX
+            } else {
+                crate::messages::URL_REQUIRED_PROXMOX
+            };
+            app.notify_warning(msg);
             return;
         }
         if !url.to_ascii_lowercase().starts_with("https://") {
@@ -1069,6 +1075,7 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         regions: app.providers.form_mut().regions.trim().to_string(),
         project: app.providers.form_mut().project.trim().to_string(),
         compartment: app.providers.form_mut().compartment.trim().to_string(),
+        filter: app.providers.form_mut().filter.trim().to_string(),
         vault_role: app.providers.form_mut().vault_role.trim().to_string(),
         vault_addr: app.providers.form_mut().vault_addr.trim().to_string(),
     };
@@ -1301,6 +1308,7 @@ mod labeled_add_tests {
 
     fn proxmox_section(label: Option<&str>) -> ProviderSection {
         ProviderSection {
+            filter: String::new(),
             id: match label {
                 Some(l) => ProviderConfigId::labeled("proxmox", l),
                 None => ProviderConfigId::bare("proxmox"),

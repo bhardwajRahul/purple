@@ -569,6 +569,7 @@ pub enum ProviderFormField {
     Project,
     Compartment,
     Regions,
+    Filter,
     AliasPrefix,
     User,
     IdentityFile,
@@ -592,6 +593,19 @@ impl ProviderFormField {
     const PROXMOX_FIELDS: &[ProviderFormField] = &[
         ProviderFormField::Url,
         ProviderFormField::Token,
+        ProviderFormField::AliasPrefix,
+        ProviderFormField::User,
+        ProviderFormField::IdentityFile,
+        ProviderFormField::VerifyTls,
+        ProviderFormField::VaultRole,
+        ProviderFormField::VaultAddr,
+        ProviderFormField::AutoSync,
+    ];
+
+    const NETBOX_FIELDS: &[ProviderFormField] = &[
+        ProviderFormField::Url,
+        ProviderFormField::Token,
+        ProviderFormField::Filter,
         ProviderFormField::AliasPrefix,
         ProviderFormField::User,
         ProviderFormField::IdentityFile,
@@ -687,6 +701,7 @@ impl ProviderFormField {
         };
         match kind {
             ProviderKind::Proxmox => Self::PROXMOX_FIELDS,
+            ProviderKind::NetBox => Self::NETBOX_FIELDS,
             ProviderKind::Aws => Self::AWS_FIELDS,
             ProviderKind::Scaleway => Self::SCALEWAY_FIELDS,
             ProviderKind::Gcp => Self::GCP_FIELDS,
@@ -804,6 +819,7 @@ impl ProviderFormField {
             ProviderFormField::Project => "Project ID",
             ProviderFormField::Compartment => "Compartment",
             ProviderFormField::Regions => "Regions",
+            ProviderFormField::Filter => "Filter",
             ProviderFormField::AliasPrefix => "Alias Prefix",
             ProviderFormField::User => "User",
             ProviderFormField::IdentityFile => "Identity File",
@@ -870,6 +886,8 @@ pub struct ProviderFormFields {
     pub project: String,
     pub compartment: String,
     pub regions: String,
+    /// Raw NetBox query parameters scoping which objects sync.
+    pub filter: String,
     pub alias_prefix: String,
     pub user: String,
     pub identity_file: String,
@@ -898,6 +916,7 @@ impl ProviderFormFields {
             project: String::new(),
             compartment: String::new(),
             regions: String::new(),
+            filter: String::new(),
             alias_prefix: String::new(),
             user: "root".to_string(),
             identity_file: String::new(),
@@ -920,6 +939,7 @@ impl ProviderFormFields {
             ProviderFormField::Project => &self.project,
             ProviderFormField::Compartment => &self.compartment,
             ProviderFormField::Regions => &self.regions,
+            ProviderFormField::Filter => &self.filter,
             ProviderFormField::AliasPrefix => &self.alias_prefix,
             ProviderFormField::User => &self.user,
             ProviderFormField::IdentityFile => &self.identity_file,
@@ -938,6 +958,7 @@ impl ProviderFormFields {
             ProviderFormField::Project => Some(&mut self.project),
             ProviderFormField::Compartment => Some(&mut self.compartment),
             ProviderFormField::Regions => Some(&mut self.regions),
+            ProviderFormField::Filter => Some(&mut self.filter),
             ProviderFormField::AliasPrefix => Some(&mut self.alias_prefix),
             ProviderFormField::User => Some(&mut self.user),
             ProviderFormField::IdentityFile => Some(&mut self.identity_file),

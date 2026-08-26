@@ -1,0 +1,24 @@
+{
+    "_meta": {
+        "provider": "netbox",
+        "endpoint": "GET /api/dcim/devices/",
+        "spec_url": "https://netboxlabs.com/docs/netbox/integrations/rest-api/",
+        "spec_version": "4.6",
+        "last_verified": "2026-08-26"
+    },
+    "fixture": "netbox_devices.json",
+    "required_paths": [
+        "count",
+        "next",
+        "results",
+        "results[0].id",
+        "results[0].name",
+        "results[0].status.value",
+        "results[0].primary_ip4.address",
+        "results[0].tags",
+        "results[0].site.name",
+        "results[0].role.name",
+        "results[0].platform.name",
+        "results[0].device_type.model"
+    ]
+}

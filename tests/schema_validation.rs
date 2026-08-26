@@ -130,6 +130,18 @@ fn schema_linode_instances() {
     validate_schema("linode_instances.json");
 }
 
+// ── NetBox ───────────────────────────────────────────────────────────
+
+#[test]
+fn schema_netbox_devices() {
+    validate_schema("netbox_devices.json");
+}
+
+#[test]
+fn schema_netbox_virtual_machines() {
+    validate_schema("netbox_virtual_machines.json");
+}
+
 // ── Oracle Cloud ─────────────────────────────────────────────────────
 
 #[test]
@@ -222,6 +234,9 @@ fn schema_all_fragments_present() {
         "leaseweb_cloud.json",
         // Linode
         "linode_instances.json",
+        // NetBox
+        "netbox_devices.json",
+        "netbox_virtual_machines.json",
         // Oracle
         "oracle_compartments.json",
         "oracle_instances.json",

@@ -512,8 +512,10 @@ pub mod hints {
 
     // ── Provider form ───────────────────────────────────────────────
     pub const PROVIDER_URL: &str = "https://pve.example.com:8006";
+    pub const PROVIDER_URL_NETBOX: &str = "https://netbox.example.com";
     pub const PROVIDER_TOKEN_DEFAULT: &str = "your-api-token";
     pub const PROVIDER_TOKEN_PROXMOX: &str = "user@pam!token=secret";
+    pub const PROVIDER_TOKEN_NETBOX: &str = "nbt_... (v2) or classic API token";
     pub const PROVIDER_TOKEN_AWS: &str = "AccessKeyId:Secret[:SessionToken] (or Profile or env)";
     pub const PROVIDER_TOKEN_GCP: &str = "/path/to/service-account.json (or access token)";
     pub const PROVIDER_TOKEN_AZURE: &str = "/path/to/service-principal.json (or access token)";
@@ -531,6 +533,7 @@ pub mod hints {
     // Azure regions is a text input (not a picker), so no key is mentioned.
     pub const PROVIDER_REGIONS_AZURE: &str = "comma-separated subscription IDs";
     pub const PROVIDER_REGIONS_OVH: &str = "Space to select endpoint (default: EU)";
+    pub const PROVIDER_FILTER_NETBOX: &str = "status=active&tag=ssh (NetBox query params)";
     pub const PROVIDER_USER_AWS: &str = "ec2-user";
     pub const PROVIDER_USER_GCP: &str = "ubuntu";
     pub const PROVIDER_USER_AZURE: &str = "azureuser";

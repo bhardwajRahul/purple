@@ -8,6 +8,7 @@ mod i3d;
 pub mod kind;
 mod leaseweb;
 mod linode;
+mod netbox;
 pub mod oracle;
 pub mod ovh;
 mod proxmox;
@@ -365,6 +366,18 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
             })
         },
     },
+    ProviderDescriptor {
+        name: "netbox",
+        display: "NetBox",
+        build: |section| {
+            let s = section.cloned().unwrap_or_default();
+            Box::new(netbox::NetBox {
+                base_url: s.url,
+                verify_tls: s.verify_tls,
+                filter: s.filter,
+            })
+        },
+    },
 ];
 
 /// Look up a descriptor by bare provider name. Internal helper; public wrappers
@@ -401,6 +414,7 @@ pub const PROVIDER_NAMES: &[&str] = &[
     "i3d",
     "transip",
     "teleport",
+    "netbox",
 ];
 
 // Compile-time guard: PROVIDER_NAMES and PROVIDERS must stay in lockstep.

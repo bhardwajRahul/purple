@@ -48,6 +48,7 @@ fn make_providers_app_with_do() -> App {
     app.screen = Screen::Providers;
     *app.providers.config_mut() = test_provider_config();
     app.providers.config_mut().set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
         token: "tok".to_string(),
         alias_prefix: "do".to_string(),
@@ -71,6 +72,7 @@ fn make_providers_app_with_proxmox() -> App {
     app.screen = Screen::Providers;
     *app.providers.config_mut() = test_provider_config();
     app.providers.config_mut().set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("proxmox"),
         token: "user@pam!t=secret".to_string(),
         alias_prefix: "pve".to_string(),
@@ -127,6 +129,7 @@ fn test_provider_form_init_existing_do_explicit_false_preserved() {
     *app.providers.config_mut() = test_provider_config();
     // DO met auto_sync=false (gebruiker heeft het handmatig uitgezet)
     app.providers.config_mut().set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
         token: "tok".to_string(),
         alias_prefix: "do".to_string(),
@@ -182,6 +185,7 @@ fn make_form_app_focused_on(provider: &str, field: ProviderFormField) -> App {
         id: crate::providers::config::ProviderConfigId::bare(provider),
     };
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -317,6 +321,7 @@ fn test_submit_provider_form_persists_auto_sync_false() {
     };
     *app.providers.config_mut() = test_provider_config();
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -361,6 +366,7 @@ fn test_submit_provider_form_persists_auto_sync_true() {
     };
     *app.providers.config_mut() = test_provider_config();
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -404,6 +410,7 @@ fn test_submit_provider_form_persists_vault_role() {
     };
     *app.providers.config_mut() = test_provider_config();
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -667,6 +674,7 @@ fn make_gcp_form_app() -> App {
         id: crate::providers::config::ProviderConfigId::bare("gcp"),
     };
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -768,6 +776,7 @@ fn make_azure_form_app() -> App {
     };
     *app.providers.config_mut() = test_provider_config();
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -851,6 +860,7 @@ fn make_ovh_form_app() -> App {
         id: crate::providers::config::ProviderConfigId::bare("ovh"),
     };
     *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: false,
         url: String::new(),
@@ -4923,6 +4933,7 @@ fn test_provider_x_key_opens_scoped_purge() {
     app.screen = Screen::Providers;
     *app.providers.config_mut() = test_provider_config();
     app.providers.config_mut().set_section(ProviderSection {
+        filter: String::new(),
         id: crate::providers::config::ProviderConfigId::bare("digitalocean"),
         token: "tok".to_string(),
         alias_prefix: "do".to_string(),
@@ -7396,6 +7407,32 @@ fn provider_required_fields_proxmox() {
 }
 
 #[test]
+fn provider_required_fields_netbox() {
+    // NetBox leads with Url and Token like Proxmox; Filter stays optional.
+    let fields = crate::app::ProviderFormField::fields_for("netbox");
+    assert_eq!(fields[0], crate::app::ProviderFormField::Url);
+    assert_eq!(fields[1], crate::app::ProviderFormField::Token);
+    assert!(fields.contains(&crate::app::ProviderFormField::Filter));
+    assert!(fields.contains(&crate::app::ProviderFormField::VerifyTls));
+    let required = crate::app::ProviderFormField::required_fields_for("netbox");
+    assert!(required.contains(&crate::app::ProviderFormField::Url));
+    assert!(required.contains(&crate::app::ProviderFormField::Token));
+    assert!(!required.contains(&crate::app::ProviderFormField::Filter));
+}
+
+#[test]
+fn provider_netbox_filter_is_optional_not_mandatory() {
+    assert!(!crate::app::ProviderFormField::is_mandatory_field(
+        crate::app::ProviderFormField::Filter,
+        "netbox"
+    ));
+    assert!(!crate::app::ProviderFormField::is_required_field(
+        crate::app::ProviderFormField::Filter,
+        "netbox"
+    ));
+}
+
+#[test]
 fn provider_required_fields_teleport_lead_with_user() {
     // No Token for Teleport: User is the collapsed-mode field and comes first,
     // so the form opens on a visible field instead of an empty box.
@@ -7421,6 +7458,7 @@ fn provider_optional_fields_are_complement() {
         "aws",
         "digitalocean",
         "proxmox",
+        "netbox",
         "gcp",
         "azure",
         "oracle",
@@ -7491,6 +7529,7 @@ fn provider_required_fields_prefix_of_all_fields() {
         "aws",
         "digitalocean",
         "proxmox",
+        "netbox",
         "gcp",
         "azure",
         "oracle",

@@ -43,7 +43,7 @@ pub const NO_PROVIDERS: &str = "No providers configured. Run 'purple provider ad
 /// `unknown_provider` and `skipping_unknown_provider`. Kept as a single
 /// const so adding a new provider only updates one place.
 pub const PROVIDER_LIST: &str = "digitalocean, vultr, linode, hetzner, upcloud, proxmox, aws, \
-     scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport";
+     scaleway, gcp, azure, tailscale, oracle, ovh, leaseweb, i3d, transip, teleport, netbox";
 
 /// Stderr line when the user passed `--provider X` for an unknown slug.
 /// Different from `skipping_unknown_provider` so each call site can
@@ -340,6 +340,8 @@ pub const SYNC_SKIP_WRITE: &str =
 
 pub const PROXMOX_URL_REQUIRED: &str =
     "Proxmox requires --url (e.g. --url https://pve.example.com:8006).";
+pub const NETBOX_URL_REQUIRED: &str =
+    "NetBox requires --url (e.g. --url https://netbox.example.com).";
 pub const AWS_REGIONS_REQUIRED: &str =
     "AWS requires --regions (e.g. --regions us-east-1,eu-west-1).";
 pub const AZURE_REGIONS_REQUIRED: &str =
@@ -348,7 +350,7 @@ pub const GCP_PROJECT_REQUIRED: &str = "GCP requires --project (e.g. --project m
 pub use super::ALIAS_PREFIX_INVALID;
 
 pub const WARN_URL_NOT_USED: &str =
-    "Warning: --url is only used by the Proxmox provider. Ignoring.";
+    "Warning: --url is only used by self-hosted providers (Proxmox, NetBox). Ignoring.";
 pub const WARN_PROFILE_NOT_USED: &str =
     "Warning: --profile is only used by the AWS provider. Ignoring.";
 pub const WARN_PROJECT_NOT_USED: &str =
@@ -356,9 +358,11 @@ pub const WARN_PROJECT_NOT_USED: &str =
 pub const WARN_COMPARTMENT_NOT_USED: &str =
     "Warning: --compartment is only used by the Oracle provider. Ignoring.";
 pub const WARN_NO_VERIFY_TLS_NOT_USED: &str =
-    "Warning: --no-verify-tls is only used by the Proxmox provider. Ignoring.";
+    "Warning: --no-verify-tls is only used by self-hosted providers (Proxmox, NetBox). Ignoring.";
 pub const WARN_VERIFY_TLS_NOT_USED: &str =
-    "Warning: --verify-tls is only used by the Proxmox provider. Ignoring.";
+    "Warning: --verify-tls is only used by self-hosted providers (Proxmox, NetBox). Ignoring.";
+pub const WARN_FILTER_NOT_USED: &str =
+    "Warning: --filter is only used by the NetBox provider. Ignoring.";
 pub const WARN_REGIONS_NOT_USED: &str = "Warning: --regions is only used by the AWS, Scaleway, GCP, Azure and Oracle providers. \
      Ignoring.";
 

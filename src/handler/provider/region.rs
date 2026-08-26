@@ -95,6 +95,7 @@ pub(crate) fn zone_data_for(provider: &str) -> (ZoneList, ZoneGroups) {
         | ProviderKind::I3d
         | ProviderKind::Leaseweb
         | ProviderKind::Linode
+        | ProviderKind::NetBox
         | ProviderKind::Proxmox
         | ProviderKind::Tailscale
         | ProviderKind::Teleport

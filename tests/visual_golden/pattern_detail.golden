@@ -1,27 +1,27 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ 34 ── ●27 ✖3 ○1 ─────────────────────────────────────────╮╭─ PATTERN MATCH ──────────────────────╮
+╭ 36 ── ●27 ✖3 ○3 ─────────────────────────────────────────╮╭─ PATTERN MATCH ──────────────────────╮
 │     NAME                             TAGS          LAST▾ ││ pve-*                                │
 │──────────────────────────────────────────────────────────│╰──────────────────────────────────────╯
-│   ● aws-batch-us                     production     13h  │╭─ CONNECTION ─────────────────────────╮
-│   ● aws-ml-eu                        ml             14h  ││ User          ops                    │
-│   ● do-work-web-ams                  production     16h  │╰──────────────────────────────────────╯
-│   ● do-work-staging-ams ⇄            staging        17h  │╭─ AUTHENTICATION ─────────────────────╮
-│   ● do-work-worker-ams               worker         18h  ││ AddKeysToAgent yes                   │
-│   ● do-work-ci-runner ↗              ci             19h  ││ IdentitiesOnly yes                   │
-│   ● do-personal-blog                 personal       20h  ││ PubkeyAcceptedAlgorithms ssh-ed2551… │
-│   ● do-personal-mail                 personal       21h  │╰──────────────────────────────────────╯
-│   ● pve-web-01                       web            22h  │╭─ FORWARDING ─────────────────────────╮
-│   ● pve-web-02                       web            23h  ││ ForwardAgent  no                     │
-│   ● pve-db-01 ⇄                      database        1d  │╰──────────────────────────────────────╯
-│   ● pve-db-02                        database        1d  │╭─ HOST KEYS ──────────────────────────╮
-│   ● pve-redis ⇄                      cache           1d  ││ StrictHostKeyChecking accept-new     │
-│   ● pve-mail                         mail            1d  ││ HashKnownHosts yes                   │
-│   ● pve-monitor ⇄                    monitoring      1d  │╰──────────────────────────────────────╯
-│   ○ db-proton ↗                      production       -  │╭─ CRYPTO ─────────────────────────────╮
-│     tp-db-1                          database         -  ││ Ciphers       aes256-gcm@openssh.co… │
-│     tp-legacy-1                      env:prod         -  │╰──────────────────────────────────────╯
+│   ● do-work-web-ams                  production     16h  │╭─ CONNECTION ─────────────────────────╮
+│   ● do-work-staging-ams ⇄            staging        17h  ││ User          ops                    │
+│   ● do-work-worker-ams               worker         18h  │╰──────────────────────────────────────╯
+│   ● do-work-ci-runner ↗              ci             19h  │╭─ AUTHENTICATION ─────────────────────╮
+│   ● do-personal-blog                 personal       20h  ││ AddKeysToAgent yes                   │
+│   ● do-personal-mail                 personal       21h  ││ IdentitiesOnly yes                   │
+│   ● pve-web-01                       web            22h  ││ PubkeyAcceptedAlgorithms ssh-ed2551… │
+│   ● pve-web-02                       web            23h  │╰──────────────────────────────────────╯
+│   ● pve-db-01 ⇄                      database        1d  │╭─ FORWARDING ─────────────────────────╮
+│   ● pve-db-02                        database        1d  ││ ForwardAgent  no                     │
+│   ● pve-redis ⇄                      cache           1d  │╰──────────────────────────────────────╯
+│   ● pve-mail                         mail            1d  │╭─ HOST KEYS ──────────────────────────╮
+│   ● pve-monitor ⇄                    monitoring      1d  ││ StrictHostKeyChecking accept-new     │
+│   ○ db-proton ↗                      production       -  ││ HashKnownHosts yes                   │
+│     tp-db-1                          database         -  │╰──────────────────────────────────────╯
+│     tp-legacy-1                      env:prod         -  │╭─ CRYPTO ─────────────────────────────╮
+│   ○ nb-core-sw01                     prod             -  ││ Ciphers       aes256-gcm@openssh.co… │
+│   ○ nb-app-01                        prod             -  │╰──────────────────────────────────────╯
 │   ✖ aws-cache-eu                     cache          15h  │╭─ KEEPALIVE ──────────────────────────╮
 │   ✖ pve-backup                       backup          1d  ││ ServerAliveInterval 60               │
 │ ── PATTERNS (1) ───────────────────────────────────────  ││ ServerAliveCountMax 3                │
@@ -543,6 +543,9 @@
 (15,6) fg=Reset bg=Reset mod=BOLD
 (16,6) fg=Reset bg=Reset mod=BOLD
 (17,6) fg=Reset bg=Reset mod=BOLD
+(18,6) fg=Reset bg=Reset mod=BOLD
+(19,6) fg=Reset bg=Reset mod=BOLD
+(20,6) fg=Reset bg=Reset mod=BOLD
 (39,6) fg=Magenta bg=Reset mod=-
 (40,6) fg=Magenta bg=Reset mod=-
 (41,6) fg=Magenta bg=Reset mod=-
@@ -612,8 +615,25 @@
 (12,7) fg=Reset bg=Reset mod=BOLD
 (13,7) fg=Reset bg=Reset mod=BOLD
 (14,7) fg=Reset bg=Reset mod=BOLD
+(15,7) fg=Reset bg=Reset mod=BOLD
+(16,7) fg=Reset bg=Reset mod=BOLD
+(17,7) fg=Reset bg=Reset mod=BOLD
+(18,7) fg=Reset bg=Reset mod=BOLD
+(19,7) fg=Reset bg=Reset mod=BOLD
+(20,7) fg=Reset bg=Reset mod=BOLD
+(21,7) fg=Reset bg=Reset mod=BOLD
+(22,7) fg=Reset bg=Reset mod=BOLD
+(23,7) fg=Reset bg=Reset mod=BOLD
+(24,7) fg=Reset bg=Reset mod=BOLD
+(25,7) fg=Reset bg=Reset mod=DIM
+(26,7) fg=Reset bg=Reset mod=DIM
 (39,7) fg=Magenta bg=Reset mod=-
 (40,7) fg=Magenta bg=Reset mod=-
+(41,7) fg=Magenta bg=Reset mod=-
+(42,7) fg=Magenta bg=Reset mod=-
+(43,7) fg=Magenta bg=Reset mod=-
+(44,7) fg=Magenta bg=Reset mod=-
+(45,7) fg=Magenta bg=Reset mod=-
 (53,7) fg=Reset bg=Reset mod=DIM
 (54,7) fg=Reset bg=Reset mod=DIM
 (55,7) fg=Reset bg=Reset mod=DIM
@@ -659,16 +679,15 @@
 (18,8) fg=Reset bg=Reset mod=BOLD
 (19,8) fg=Reset bg=Reset mod=BOLD
 (20,8) fg=Reset bg=Reset mod=BOLD
+(21,8) fg=Reset bg=Reset mod=BOLD
+(22,8) fg=Reset bg=Reset mod=BOLD
+(23,8) fg=Reset bg=Reset mod=BOLD
 (39,8) fg=Magenta bg=Reset mod=-
 (40,8) fg=Magenta bg=Reset mod=-
 (41,8) fg=Magenta bg=Reset mod=-
 (42,8) fg=Magenta bg=Reset mod=-
 (43,8) fg=Magenta bg=Reset mod=-
 (44,8) fg=Magenta bg=Reset mod=-
-(45,8) fg=Magenta bg=Reset mod=-
-(46,8) fg=Magenta bg=Reset mod=-
-(47,8) fg=Magenta bg=Reset mod=-
-(48,8) fg=Magenta bg=Reset mod=-
 (53,8) fg=Reset bg=Reset mod=DIM
 (54,8) fg=Reset bg=Reset mod=DIM
 (55,8) fg=Reset bg=Reset mod=DIM
@@ -736,17 +755,10 @@
 (20,9) fg=Reset bg=Reset mod=BOLD
 (21,9) fg=Reset bg=Reset mod=BOLD
 (22,9) fg=Reset bg=Reset mod=BOLD
-(23,9) fg=Reset bg=Reset mod=BOLD
-(24,9) fg=Reset bg=Reset mod=BOLD
-(25,9) fg=Reset bg=Reset mod=DIM
-(26,9) fg=Reset bg=Reset mod=DIM
+(23,9) fg=Reset bg=Reset mod=DIM
+(24,9) fg=Reset bg=Reset mod=DIM
 (39,9) fg=Magenta bg=Reset mod=-
 (40,9) fg=Magenta bg=Reset mod=-
-(41,9) fg=Magenta bg=Reset mod=-
-(42,9) fg=Magenta bg=Reset mod=-
-(43,9) fg=Magenta bg=Reset mod=-
-(44,9) fg=Magenta bg=Reset mod=-
-(45,9) fg=Magenta bg=Reset mod=-
 (53,9) fg=Reset bg=Reset mod=DIM
 (54,9) fg=Reset bg=Reset mod=DIM
 (55,9) fg=Reset bg=Reset mod=DIM
@@ -813,14 +825,14 @@
 (19,10) fg=Reset bg=Reset mod=BOLD
 (20,10) fg=Reset bg=Reset mod=BOLD
 (21,10) fg=Reset bg=Reset mod=BOLD
-(22,10) fg=Reset bg=Reset mod=BOLD
-(23,10) fg=Reset bg=Reset mod=BOLD
 (39,10) fg=Magenta bg=Reset mod=-
 (40,10) fg=Magenta bg=Reset mod=-
 (41,10) fg=Magenta bg=Reset mod=-
 (42,10) fg=Magenta bg=Reset mod=-
 (43,10) fg=Magenta bg=Reset mod=-
 (44,10) fg=Magenta bg=Reset mod=-
+(45,10) fg=Magenta bg=Reset mod=-
+(46,10) fg=Magenta bg=Reset mod=-
 (53,10) fg=Reset bg=Reset mod=DIM
 (54,10) fg=Reset bg=Reset mod=DIM
 (55,10) fg=Reset bg=Reset mod=DIM
@@ -868,11 +880,14 @@
 (19,11) fg=Reset bg=Reset mod=BOLD
 (20,11) fg=Reset bg=Reset mod=BOLD
 (21,11) fg=Reset bg=Reset mod=BOLD
-(22,11) fg=Reset bg=Reset mod=BOLD
-(23,11) fg=Reset bg=Reset mod=DIM
-(24,11) fg=Reset bg=Reset mod=DIM
 (39,11) fg=Magenta bg=Reset mod=-
 (40,11) fg=Magenta bg=Reset mod=-
+(41,11) fg=Magenta bg=Reset mod=-
+(42,11) fg=Magenta bg=Reset mod=-
+(43,11) fg=Magenta bg=Reset mod=-
+(44,11) fg=Magenta bg=Reset mod=-
+(45,11) fg=Magenta bg=Reset mod=-
+(46,11) fg=Magenta bg=Reset mod=-
 (53,11) fg=Reset bg=Reset mod=DIM
 (54,11) fg=Reset bg=Reset mod=DIM
 (55,11) fg=Reset bg=Reset mod=DIM
@@ -914,20 +929,9 @@
 (13,12) fg=Reset bg=Reset mod=BOLD
 (14,12) fg=Reset bg=Reset mod=BOLD
 (15,12) fg=Reset bg=Reset mod=BOLD
-(16,12) fg=Reset bg=Reset mod=BOLD
-(17,12) fg=Reset bg=Reset mod=BOLD
-(18,12) fg=Reset bg=Reset mod=BOLD
-(19,12) fg=Reset bg=Reset mod=BOLD
-(20,12) fg=Reset bg=Reset mod=BOLD
-(21,12) fg=Reset bg=Reset mod=BOLD
 (39,12) fg=Magenta bg=Reset mod=-
 (40,12) fg=Magenta bg=Reset mod=-
 (41,12) fg=Magenta bg=Reset mod=-
-(42,12) fg=Magenta bg=Reset mod=-
-(43,12) fg=Magenta bg=Reset mod=-
-(44,12) fg=Magenta bg=Reset mod=-
-(45,12) fg=Magenta bg=Reset mod=-
-(46,12) fg=Magenta bg=Reset mod=-
 (53,12) fg=Reset bg=Reset mod=DIM
 (54,12) fg=Reset bg=Reset mod=DIM
 (55,12) fg=Reset bg=Reset mod=DIM
@@ -987,20 +991,9 @@
 (13,13) fg=Reset bg=Reset mod=BOLD
 (14,13) fg=Reset bg=Reset mod=BOLD
 (15,13) fg=Reset bg=Reset mod=BOLD
-(16,13) fg=Reset bg=Reset mod=BOLD
-(17,13) fg=Reset bg=Reset mod=BOLD
-(18,13) fg=Reset bg=Reset mod=BOLD
-(19,13) fg=Reset bg=Reset mod=BOLD
-(20,13) fg=Reset bg=Reset mod=BOLD
-(21,13) fg=Reset bg=Reset mod=BOLD
 (39,13) fg=Magenta bg=Reset mod=-
 (40,13) fg=Magenta bg=Reset mod=-
 (41,13) fg=Magenta bg=Reset mod=-
-(42,13) fg=Magenta bg=Reset mod=-
-(43,13) fg=Magenta bg=Reset mod=-
-(44,13) fg=Magenta bg=Reset mod=-
-(45,13) fg=Magenta bg=Reset mod=-
-(46,13) fg=Magenta bg=Reset mod=-
 (53,13) fg=Reset bg=Reset mod=DIM
 (54,13) fg=Reset bg=Reset mod=DIM
 (55,13) fg=Reset bg=Reset mod=DIM
@@ -1060,10 +1053,16 @@
 (12,14) fg=Reset bg=Reset mod=BOLD
 (13,14) fg=Reset bg=Reset mod=BOLD
 (14,14) fg=Reset bg=Reset mod=BOLD
-(15,14) fg=Reset bg=Reset mod=BOLD
+(15,14) fg=Reset bg=Reset mod=DIM
+(16,14) fg=Reset bg=Reset mod=DIM
 (39,14) fg=Magenta bg=Reset mod=-
 (40,14) fg=Magenta bg=Reset mod=-
 (41,14) fg=Magenta bg=Reset mod=-
+(42,14) fg=Magenta bg=Reset mod=-
+(43,14) fg=Magenta bg=Reset mod=-
+(44,14) fg=Magenta bg=Reset mod=-
+(45,14) fg=Magenta bg=Reset mod=-
+(46,14) fg=Magenta bg=Reset mod=-
 (53,14) fg=Reset bg=Reset mod=DIM
 (54,14) fg=Reset bg=Reset mod=DIM
 (55,14) fg=Reset bg=Reset mod=DIM
@@ -1123,10 +1122,14 @@
 (12,15) fg=Reset bg=Reset mod=BOLD
 (13,15) fg=Reset bg=Reset mod=BOLD
 (14,15) fg=Reset bg=Reset mod=BOLD
-(15,15) fg=Reset bg=Reset mod=BOLD
 (39,15) fg=Magenta bg=Reset mod=-
 (40,15) fg=Magenta bg=Reset mod=-
 (41,15) fg=Magenta bg=Reset mod=-
+(42,15) fg=Magenta bg=Reset mod=-
+(43,15) fg=Magenta bg=Reset mod=-
+(44,15) fg=Magenta bg=Reset mod=-
+(45,15) fg=Magenta bg=Reset mod=-
+(46,15) fg=Magenta bg=Reset mod=-
 (53,15) fg=Reset bg=Reset mod=DIM
 (54,15) fg=Reset bg=Reset mod=DIM
 (55,15) fg=Reset bg=Reset mod=DIM
@@ -1172,9 +1175,6 @@
 (41,16) fg=Magenta bg=Reset mod=-
 (42,16) fg=Magenta bg=Reset mod=-
 (43,16) fg=Magenta bg=Reset mod=-
-(44,16) fg=Magenta bg=Reset mod=-
-(45,16) fg=Magenta bg=Reset mod=-
-(46,16) fg=Magenta bg=Reset mod=-
 (53,16) fg=Reset bg=Reset mod=DIM
 (54,16) fg=Reset bg=Reset mod=DIM
 (55,16) fg=Reset bg=Reset mod=DIM
@@ -1233,15 +1233,10 @@
 (11,17) fg=Reset bg=Reset mod=BOLD
 (12,17) fg=Reset bg=Reset mod=BOLD
 (13,17) fg=Reset bg=Reset mod=BOLD
-(14,17) fg=Reset bg=Reset mod=BOLD
 (39,17) fg=Magenta bg=Reset mod=-
 (40,17) fg=Magenta bg=Reset mod=-
 (41,17) fg=Magenta bg=Reset mod=-
 (42,17) fg=Magenta bg=Reset mod=-
-(43,17) fg=Magenta bg=Reset mod=-
-(44,17) fg=Magenta bg=Reset mod=-
-(45,17) fg=Magenta bg=Reset mod=-
-(46,17) fg=Magenta bg=Reset mod=-
 (53,17) fg=Reset bg=Reset mod=DIM
 (54,17) fg=Reset bg=Reset mod=DIM
 (55,17) fg=Reset bg=Reset mod=DIM
@@ -1301,13 +1296,20 @@
 (12,18) fg=Reset bg=Reset mod=BOLD
 (13,18) fg=Reset bg=Reset mod=BOLD
 (14,18) fg=Reset bg=Reset mod=BOLD
-(15,18) fg=Reset bg=Reset mod=DIM
-(16,18) fg=Reset bg=Reset mod=DIM
+(15,18) fg=Reset bg=Reset mod=BOLD
+(16,18) fg=Reset bg=Reset mod=BOLD
+(17,18) fg=Reset bg=Reset mod=DIM
+(18,18) fg=Reset bg=Reset mod=DIM
 (39,18) fg=Magenta bg=Reset mod=-
 (40,18) fg=Magenta bg=Reset mod=-
 (41,18) fg=Magenta bg=Reset mod=-
 (42,18) fg=Magenta bg=Reset mod=-
 (43,18) fg=Magenta bg=Reset mod=-
+(44,18) fg=Magenta bg=Reset mod=-
+(45,18) fg=Magenta bg=Reset mod=-
+(46,18) fg=Magenta bg=Reset mod=-
+(47,18) fg=Magenta bg=Reset mod=-
+(48,18) fg=Magenta bg=Reset mod=-
 (53,18) fg=Reset bg=Reset mod=DIM
 (54,18) fg=Reset bg=Reset mod=DIM
 (55,18) fg=Reset bg=Reset mod=DIM
@@ -1351,8 +1353,8 @@
 (0,19) fg=Reset bg=Reset mod=DIM
 (2,19) fg=Reset bg=Reset mod=BOLD
 (3,19) fg=Reset bg=Reset mod=BOLD
-(4,19) fg=Green bg=Reset mod=-
-(5,19) fg=Green bg=Reset mod=-
+(4,19) fg=Reset bg=Reset mod=DIM
+(5,19) fg=Reset bg=Reset mod=DIM
 (6,19) fg=Reset bg=Reset mod=BOLD
 (7,19) fg=Reset bg=Reset mod=BOLD
 (8,19) fg=Reset bg=Reset mod=BOLD
@@ -1361,10 +1363,19 @@
 (11,19) fg=Reset bg=Reset mod=BOLD
 (12,19) fg=Reset bg=Reset mod=BOLD
 (13,19) fg=Reset bg=Reset mod=BOLD
+(14,19) fg=Reset bg=Reset mod=BOLD
+(15,19) fg=Reset bg=Reset mod=DIM
+(16,19) fg=Reset bg=Reset mod=DIM
 (39,19) fg=Magenta bg=Reset mod=-
 (40,19) fg=Magenta bg=Reset mod=-
 (41,19) fg=Magenta bg=Reset mod=-
 (42,19) fg=Magenta bg=Reset mod=-
+(43,19) fg=Magenta bg=Reset mod=-
+(44,19) fg=Magenta bg=Reset mod=-
+(45,19) fg=Magenta bg=Reset mod=-
+(46,19) fg=Magenta bg=Reset mod=-
+(47,19) fg=Magenta bg=Reset mod=-
+(48,19) fg=Magenta bg=Reset mod=-
 (53,19) fg=Reset bg=Reset mod=DIM
 (54,19) fg=Reset bg=Reset mod=DIM
 (55,19) fg=Reset bg=Reset mod=DIM
@@ -1394,8 +1405,6 @@
 (0,20) fg=Reset bg=Reset mod=DIM
 (2,20) fg=Reset bg=Reset mod=BOLD
 (3,20) fg=Reset bg=Reset mod=BOLD
-(4,20) fg=Green bg=Reset mod=-
-(5,20) fg=Green bg=Reset mod=-
 (6,20) fg=Reset bg=Reset mod=BOLD
 (7,20) fg=Reset bg=Reset mod=BOLD
 (8,20) fg=Reset bg=Reset mod=BOLD
@@ -1403,12 +1412,6 @@
 (10,20) fg=Reset bg=Reset mod=BOLD
 (11,20) fg=Reset bg=Reset mod=BOLD
 (12,20) fg=Reset bg=Reset mod=BOLD
-(13,20) fg=Reset bg=Reset mod=BOLD
-(14,20) fg=Reset bg=Reset mod=BOLD
-(15,20) fg=Reset bg=Reset mod=BOLD
-(16,20) fg=Reset bg=Reset mod=BOLD
-(17,20) fg=Reset bg=Reset mod=DIM
-(18,20) fg=Reset bg=Reset mod=DIM
 (39,20) fg=Magenta bg=Reset mod=-
 (40,20) fg=Magenta bg=Reset mod=-
 (41,20) fg=Magenta bg=Reset mod=-
@@ -1417,8 +1420,6 @@
 (44,20) fg=Magenta bg=Reset mod=-
 (45,20) fg=Magenta bg=Reset mod=-
 (46,20) fg=Magenta bg=Reset mod=-
-(47,20) fg=Magenta bg=Reset mod=-
-(48,20) fg=Magenta bg=Reset mod=-
 (53,20) fg=Reset bg=Reset mod=DIM
 (54,20) fg=Reset bg=Reset mod=DIM
 (55,20) fg=Reset bg=Reset mod=DIM
@@ -1467,8 +1468,6 @@
 (0,21) fg=Reset bg=Reset mod=DIM
 (2,21) fg=Reset bg=Reset mod=BOLD
 (3,21) fg=Reset bg=Reset mod=BOLD
-(4,21) fg=Reset bg=Reset mod=DIM
-(5,21) fg=Reset bg=Reset mod=DIM
 (6,21) fg=Reset bg=Reset mod=BOLD
 (7,21) fg=Reset bg=Reset mod=BOLD
 (8,21) fg=Reset bg=Reset mod=BOLD
@@ -1478,18 +1477,16 @@
 (12,21) fg=Reset bg=Reset mod=BOLD
 (13,21) fg=Reset bg=Reset mod=BOLD
 (14,21) fg=Reset bg=Reset mod=BOLD
-(15,21) fg=Reset bg=Reset mod=DIM
-(16,21) fg=Reset bg=Reset mod=DIM
-(39,21) fg=Magenta bg=Reset mod=-
-(40,21) fg=Magenta bg=Reset mod=-
-(41,21) fg=Magenta bg=Reset mod=-
-(42,21) fg=Magenta bg=Reset mod=-
-(43,21) fg=Magenta bg=Reset mod=-
-(44,21) fg=Magenta bg=Reset mod=-
-(45,21) fg=Magenta bg=Reset mod=-
-(46,21) fg=Magenta bg=Reset mod=-
-(47,21) fg=Magenta bg=Reset mod=-
-(48,21) fg=Magenta bg=Reset mod=-
+(15,21) fg=Reset bg=Reset mod=BOLD
+(16,21) fg=Reset bg=Reset mod=BOLD
+(39,21) fg=Reset bg=Reset mod=DIM
+(40,21) fg=Reset bg=Reset mod=DIM
+(41,21) fg=Reset bg=Reset mod=DIM
+(42,21) fg=Reset bg=Reset mod=DIM
+(43,21) fg=Reset bg=Reset mod=DIM
+(44,21) fg=Reset bg=Reset mod=DIM
+(45,21) fg=Reset bg=Reset mod=DIM
+(46,21) fg=Reset bg=Reset mod=DIM
 (53,21) fg=Reset bg=Reset mod=DIM
 (54,21) fg=Reset bg=Reset mod=DIM
 (55,21) fg=Reset bg=Reset mod=DIM
@@ -1538,6 +1535,8 @@
 (0,22) fg=Reset bg=Reset mod=DIM
 (2,22) fg=Reset bg=Reset mod=BOLD
 (3,22) fg=Reset bg=Reset mod=BOLD
+(4,22) fg=Reset bg=Reset mod=DIM
+(5,22) fg=Reset bg=Reset mod=DIM
 (6,22) fg=Reset bg=Reset mod=BOLD
 (7,22) fg=Reset bg=Reset mod=BOLD
 (8,22) fg=Reset bg=Reset mod=BOLD
@@ -1545,14 +1544,15 @@
 (10,22) fg=Reset bg=Reset mod=BOLD
 (11,22) fg=Reset bg=Reset mod=BOLD
 (12,22) fg=Reset bg=Reset mod=BOLD
-(39,22) fg=Magenta bg=Reset mod=-
-(40,22) fg=Magenta bg=Reset mod=-
-(41,22) fg=Magenta bg=Reset mod=-
-(42,22) fg=Magenta bg=Reset mod=-
-(43,22) fg=Magenta bg=Reset mod=-
-(44,22) fg=Magenta bg=Reset mod=-
-(45,22) fg=Magenta bg=Reset mod=-
-(46,22) fg=Magenta bg=Reset mod=-
+(13,22) fg=Reset bg=Reset mod=BOLD
+(14,22) fg=Reset bg=Reset mod=BOLD
+(15,22) fg=Reset bg=Reset mod=BOLD
+(16,22) fg=Reset bg=Reset mod=BOLD
+(17,22) fg=Reset bg=Reset mod=BOLD
+(39,22) fg=Reset bg=Reset mod=DIM
+(40,22) fg=Reset bg=Reset mod=DIM
+(41,22) fg=Reset bg=Reset mod=DIM
+(42,22) fg=Reset bg=Reset mod=DIM
 (53,22) fg=Reset bg=Reset mod=DIM
 (54,22) fg=Reset bg=Reset mod=DIM
 (55,22) fg=Reset bg=Reset mod=DIM
@@ -1600,6 +1600,8 @@
 (0,23) fg=Reset bg=Reset mod=DIM
 (2,23) fg=Reset bg=Reset mod=BOLD
 (3,23) fg=Reset bg=Reset mod=BOLD
+(4,23) fg=Reset bg=Reset mod=DIM
+(5,23) fg=Reset bg=Reset mod=DIM
 (6,23) fg=Reset bg=Reset mod=BOLD
 (7,23) fg=Reset bg=Reset mod=BOLD
 (8,23) fg=Reset bg=Reset mod=BOLD
@@ -1609,16 +1611,10 @@
 (12,23) fg=Reset bg=Reset mod=BOLD
 (13,23) fg=Reset bg=Reset mod=BOLD
 (14,23) fg=Reset bg=Reset mod=BOLD
-(15,23) fg=Reset bg=Reset mod=BOLD
-(16,23) fg=Reset bg=Reset mod=BOLD
 (39,23) fg=Reset bg=Reset mod=DIM
 (40,23) fg=Reset bg=Reset mod=DIM
 (41,23) fg=Reset bg=Reset mod=DIM
 (42,23) fg=Reset bg=Reset mod=DIM
-(43,23) fg=Reset bg=Reset mod=DIM
-(44,23) fg=Reset bg=Reset mod=DIM
-(45,23) fg=Reset bg=Reset mod=DIM
-(46,23) fg=Reset bg=Reset mod=DIM
 (53,23) fg=Reset bg=Reset mod=DIM
 (54,23) fg=Reset bg=Reset mod=DIM
 (55,23) fg=Reset bg=Reset mod=DIM

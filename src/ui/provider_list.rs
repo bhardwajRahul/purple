@@ -547,10 +547,14 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
     let kind = provider_name.parse::<ProviderKind>().ok();
     match field {
         ProviderFormField::Label => hints::PROVIDER_LABEL,
-        ProviderFormField::Url => hints::PROVIDER_URL,
+        ProviderFormField::Url => match kind {
+            Some(ProviderKind::NetBox) => hints::PROVIDER_URL_NETBOX,
+            _ => hints::PROVIDER_URL,
+        },
         ProviderFormField::Token => match kind {
             None => hints::PROVIDER_TOKEN_DEFAULT,
             Some(ProviderKind::Proxmox) => hints::PROVIDER_TOKEN_PROXMOX,
+            Some(ProviderKind::NetBox) => hints::PROVIDER_TOKEN_NETBOX,
             Some(ProviderKind::Aws) => hints::PROVIDER_TOKEN_AWS,
             Some(ProviderKind::Gcp) => hints::PROVIDER_TOKEN_GCP,
             Some(ProviderKind::Azure) => hints::PROVIDER_TOKEN_AZURE,
@@ -583,6 +587,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::I3d
                 | ProviderKind::Leaseweb
                 | ProviderKind::Linode
+                | ProviderKind::NetBox
                 | ProviderKind::Oracle
                 | ProviderKind::Proxmox
                 | ProviderKind::Scaleway
@@ -607,6 +612,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::I3d
                 | ProviderKind::Leaseweb
                 | ProviderKind::Linode
+                | ProviderKind::NetBox
                 | ProviderKind::Oracle
                 | ProviderKind::Proxmox
                 | ProviderKind::Tailscale
@@ -634,6 +640,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::I3d
                 | ProviderKind::Leaseweb
                 | ProviderKind::Linode
+                | ProviderKind::NetBox
                 | ProviderKind::Proxmox
                 | ProviderKind::Scaleway
                 | ProviderKind::Tailscale
@@ -642,6 +649,7 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
                 | ProviderKind::Vultr,
             ) => hints::DEFAULT_SSH_USER,
         },
+        ProviderFormField::Filter => hints::PROVIDER_FILTER_NETBOX,
         ProviderFormField::IdentityFile => hints::IDENTITY_FILE_PICK,
         ProviderFormField::VaultRole => hints::PROVIDER_VAULT_ROLE,
         ProviderFormField::VaultAddr => hints::PROVIDER_VAULT_ADDR,
@@ -686,6 +694,7 @@ fn render_field_content(
         ProviderFormField::Project => &form.project,
         ProviderFormField::Compartment => &form.compartment,
         ProviderFormField::Regions => &form.regions,
+        ProviderFormField::Filter => &form.filter,
         ProviderFormField::AliasPrefix => &form.alias_prefix,
         ProviderFormField::User => &form.user,
         ProviderFormField::IdentityFile => &form.identity_file,
@@ -940,6 +949,7 @@ mod tests {
             ProviderFormField::Project,
             ProviderFormField::Compartment,
             ProviderFormField::Regions,
+            ProviderFormField::Filter,
             ProviderFormField::AliasPrefix,
             ProviderFormField::User,
             ProviderFormField::IdentityFile,
@@ -961,6 +971,7 @@ mod tests {
                 | ProviderFormField::Project
                 | ProviderFormField::Compartment
                 | ProviderFormField::Regions
+                | ProviderFormField::Filter
                 | ProviderFormField::AliasPrefix
                 | ProviderFormField::User
                 | ProviderFormField::IdentityFile

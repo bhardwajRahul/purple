@@ -7,7 +7,7 @@
 │ ▌ ○ bastion-ams            1080 → any                                      —                <1m  │
 │   ○ bastion-ams            8443 → internal.corp:443                        —                <1m  │
 │   ○ db-primary             5432 → localhost:5432                           —                 1h  │
-│   ○ db-primary    ╭ Add Tunnel › Select Host (8 of 33) ──────────────────────╮               1h  │
+│   ○ db-primary    ╭ Add Tunnel › Select Host (8 of 35) ──────────────────────╮               1h  │
 │   ○ monitoring    │ /  db_                                                   │               2h  │
 │   ○ do-work-stagin│ ─────────────────────────────────────────────────────────│              17h  │
 │   ○ pve-db-01     │  db-primary  10.30.1.5                                   │               1d  │

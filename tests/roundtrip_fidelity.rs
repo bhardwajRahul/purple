@@ -3996,6 +3996,7 @@ impl Provider for TestProvider {
 
 fn test_section(provider: &str, prefix: &str) -> ProviderSection {
     ProviderSection {
+        filter: String::new(),
         id: ProviderConfigId::bare(provider),
         token: "test".to_string(),
         alias_prefix: prefix.to_string(),

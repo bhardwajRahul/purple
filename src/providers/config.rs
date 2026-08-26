@@ -118,6 +118,8 @@ pub struct ProviderSection {
     pub regions: String,
     pub project: String,
     pub compartment: String,
+    /// Raw NetBox query parameters scoping which objects sync. NetBox only.
+    pub filter: String,
     pub vault_role: String,
     /// Optional `VAULT_ADDR` override passed to the `vault` CLI when signing
     /// SSH certs. Empty = inherit parent env. Stored as a plain string so an
@@ -158,6 +160,7 @@ impl ProviderSection {
             ("regions", &self.regions),
             ("project", &self.project),
             ("compartment", &self.compartment),
+            ("filter", &self.filter),
             ("identity_file", &self.identity_file),
             ("vault_role", &self.vault_role),
         ] {
@@ -189,6 +192,7 @@ impl std::fmt::Debug for ProviderSection {
             .field("regions", &self.regions)
             .field("project", &self.project)
             .field("compartment", &self.compartment)
+            .field("filter", &self.filter)
             .field("vault_role", &self.vault_role)
             .field("vault_addr", &redacted(&self.vault_addr))
             .finish()
@@ -220,6 +224,7 @@ impl Default for ProviderSection {
             regions: String::new(),
             project: String::new(),
             compartment: String::new(),
+            filter: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
         }
@@ -353,6 +358,7 @@ impl ProviderConfig {
                     regions: String::new(),
                     project: String::new(),
                     compartment: String::new(),
+                    filter: String::new(),
                     vault_role: String::new(),
                     vault_addr: String::new(),
                 });
@@ -378,6 +384,7 @@ impl ProviderConfig {
                         "regions" => section.regions = value,
                         "project" => section.project = value,
                         "compartment" => section.compartment = value,
+                        "filter" => section.filter = value,
                         "vault_role" => {
                             // Silently drop invalid roles so parsing stays infallible.
                             section.vault_role = if crate::vault_ssh::is_valid_role(&value) {
@@ -491,6 +498,12 @@ impl ProviderConfig {
                 content.push_str(&format!(
                     "compartment={}\n",
                     Self::sanitize_value(&section.compartment)
+                ));
+            }
+            if !section.filter.is_empty() {
+                content.push_str(&format!(
+                    "filter={}\n",
+                    Self::sanitize_value(&section.filter)
                 ));
             }
             if !section.vault_role.is_empty()

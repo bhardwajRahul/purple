@@ -279,6 +279,22 @@ Host tp-legacy-1
   # purple:provider_tags env:prod
   # purple:meta cluster=teleport.example.com,address=10.0.0.6:22,type=openssh
 
+# NetBox
+
+Host nb-core-sw01
+  HostName 10.40.0.11
+  User root
+  # purple:provider netbox:device-101
+  # purple:provider_tags prod,ssh
+  # purple:meta location=ams1,role=server,os=ubuntu-24.04,type=PowerEdge R650,status=active
+
+Host nb-app-01
+  HostName 10.40.0.21
+  User root
+  # purple:provider netbox:vm-2044
+  # purple:provider_tags prod,ssh
+  # purple:meta location=ams1,role=server,os=debian-13,cluster=prod-vmw,status=active
+
 Host pve-*
   User ops
   AddKeysToAgent yes
@@ -374,6 +390,13 @@ auto_sync=true
 token=
 alias_prefix=tp
 user=root
+auto_sync=false
+
+[netbox]
+url=https://netbox.example.com
+token=xxx
+alias_prefix=nb
+filter=status=active&tag=ssh
 auto_sync=false
 ";
 
@@ -478,7 +501,8 @@ fn build_demo_sync_history() -> String {
         "aws\t{now}\t0\tSynced 6 hosts (2 regions)\n\
          digitalocean\t{now}\t0\tSynced 4 hosts\n\
          proxmox\t{now}\t0\tSynced 8 VMs\n\
-         teleport\t{now}\t0\tSynced 2 nodes",
+         teleport\t{now}\t0\tSynced 2 nodes\n\
+         netbox\t{now}\t0\tSynced 2 devices and VMs",
     )
 }
 
@@ -2455,8 +2479,8 @@ mod tests {
         let (app, _guard) = demo_app();
         // 22 original + 2 do-personal + 1 podman-edge + 1 db-proton
         // + 5 (prod-eu1, prod-eu2, customer-jump, customer-db-1, legacy-prod)
-        // + 2 teleport = 33
-        assert_eq!(app.hosts_state.list().len(), 33);
+        // + 2 teleport + 2 netbox = 35
+        assert_eq!(app.hosts_state.list().len(), 35);
     }
 
     #[test]
@@ -2485,8 +2509,9 @@ mod tests {
     #[test]
     fn demo_app_has_providers() {
         let (app, _guard) = demo_app();
-        // aws + digitalocean:work + digitalocean:personal + proxmox + teleport = 5
-        assert_eq!(app.providers.config().configured_providers().len(), 5);
+        // aws + digitalocean:work + digitalocean:personal + proxmox + teleport
+        // + netbox = 6
+        assert_eq!(app.providers.config().configured_providers().len(), 6);
     }
 
     #[test]
@@ -2592,7 +2617,7 @@ mod tests {
     #[test]
     fn demo_app_has_sync_history() {
         let (app, _guard) = demo_app();
-        assert_eq!(app.providers.sync_history().len(), 4);
+        assert_eq!(app.providers.sync_history().len(), 5);
     }
 
     #[test]
@@ -2658,30 +2683,35 @@ mod tests {
     fn demo_sorted_provider_names() {
         let (app, _guard) = demo_app();
         let names = app.sorted_provider_names();
-        // First 4 should be our configured providers (with sync history)
-        let configured: Vec<&str> = names.iter().take(4).map(|s| s.as_str()).collect();
+        // First 5 should be our configured providers (with sync history)
+        let configured: Vec<&str> = names.iter().take(5).map(|s| s.as_str()).collect();
         assert!(
             configured.contains(&"aws"),
-            "aws missing from top 4: {:?}",
+            "aws missing from top 5: {:?}",
             configured
         );
         assert!(
             configured.contains(&"digitalocean"),
-            "digitalocean missing from top 4: {:?}",
+            "digitalocean missing from top 5: {:?}",
             configured
         );
         assert!(
             configured.contains(&"proxmox"),
-            "proxmox missing from top 4: {:?}",
+            "proxmox missing from top 5: {:?}",
             configured
         );
         assert!(
             configured.contains(&"teleport"),
-            "teleport missing from top 4: {:?}",
+            "teleport missing from top 5: {:?}",
+            configured
+        );
+        assert!(
+            configured.contains(&"netbox"),
+            "netbox missing from top 5: {:?}",
             configured
         );
         // No other provider should have a checkmark (be configured)
-        for name in &names[4..] {
+        for name in &names[5..] {
             assert!(
                 app.providers.config().section(name).is_none(),
                 "unexpected configured provider: {}",

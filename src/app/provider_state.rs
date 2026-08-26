@@ -409,6 +409,7 @@ impl ProviderState {
                     || self.form.project != b.project
                     || self.form.compartment != b.compartment
                     || self.form.regions != b.regions
+                    || self.form.filter != b.filter
                     || self.form.alias_prefix != b.alias_prefix
                     || self.form.user != b.user
                     || self.form.identity_file != b.identity_file
@@ -788,6 +789,7 @@ mod tests {
             project: "proj".into(),
             compartment: "comp".into(),
             regions: "eu-west".into(),
+            filter: "status=active".into(),
             alias_prefix: "ap".into(),
             user: "ec2-user".into(),
             identity_file: "~/.ssh/id".into(),
@@ -803,6 +805,7 @@ mod tests {
         s.form.project = b.project.clone();
         s.form.compartment = b.compartment.clone();
         s.form.regions = b.regions.clone();
+        s.form.filter = b.filter.clone();
         s.form.alias_prefix = b.alias_prefix.clone();
         s.form.user = b.user.clone();
         s.form.identity_file = b.identity_file.clone();
@@ -847,5 +850,6 @@ mod tests {
         assert_field_change_is_dirty("auto_sync", |f| f.auto_sync = !f.auto_sync);
         assert_field_change_is_dirty("vault_role", |f| f.vault_role.push('x'));
         assert_field_change_is_dirty("vault_addr", |f| f.vault_addr.push('x'));
+        assert_field_change_is_dirty("filter", |f| f.filter.push('x'));
     }
 }

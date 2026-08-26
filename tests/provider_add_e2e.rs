@@ -319,6 +319,128 @@ fn e2e_provider_add_keeps_labeled_configs_apart() {
 }
 
 #[test]
+fn e2e_provider_add_netbox_saves_url_token_and_filter() {
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &[
+            "netbox",
+            "--url",
+            "https://netbox.example.com",
+            "--token",
+            "tk-netbox",
+            "--filter",
+            "tag=ssh",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "provider add netbox should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let saved = saved_config(&fixture);
+    assert!(
+        saved.contains("[netbox]"),
+        "netbox section missing: {saved:?}"
+    );
+    assert!(
+        saved.contains("url=https://netbox.example.com"),
+        "url not saved: {saved:?}"
+    );
+    assert!(
+        saved.contains("token=tk-netbox"),
+        "token not saved: {saved:?}"
+    );
+    assert!(
+        saved.contains("filter=tag=ssh"),
+        "filter not saved: {saved:?}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_netbox_requires_url() {
+    let fixture = setup();
+    let output = provider_add(&fixture, &["netbox", "--token", "tk"]);
+    assert!(
+        !output.status.success(),
+        "provider add netbox must fail without --url. stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--url"),
+        "error must name the missing flag. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        saved_config(&fixture).is_empty(),
+        "a rejected add must not write a provider config"
+    );
+}
+
+#[test]
+fn e2e_provider_add_netbox_keeps_stored_url_and_filter_on_update() {
+    // An update that only touches the token must carry the stored url and
+    // filter forward, mirroring the Proxmox url fallback.
+    let fixture = setup();
+    let first = provider_add(
+        &fixture,
+        &[
+            "netbox",
+            "--url",
+            "https://netbox.example.com",
+            "--token",
+            "tk-old",
+            "--filter",
+            "tag=ssh",
+        ],
+    );
+    assert!(first.status.success(), "setup add failed");
+
+    let second = provider_add(&fixture, &["netbox", "--token", "tk-new"]);
+    assert!(
+        second.status.success(),
+        "token-only update failed. stderr: {}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let saved = saved_config(&fixture);
+    assert!(
+        saved.contains("token=tk-new"),
+        "token not updated: {saved:?}"
+    );
+    assert!(
+        saved.contains("url=https://netbox.example.com"),
+        "stored url lost on update: {saved:?}"
+    );
+    assert!(
+        saved.contains("filter=tag=ssh"),
+        "stored filter lost on update: {saved:?}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_filter_ignored_for_other_providers() {
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &["hetzner", "--token", "tk", "--filter", "tag=ssh"],
+    );
+    assert!(
+        output.status.success(),
+        "provider add hetzner should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--filter"),
+        "the ignored flag must be named on stderr. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !saved_config(&fixture).contains("filter="),
+        "filter must not be saved for a non-NetBox provider"
+    );
+}
+
+#[test]
 fn e2e_provider_add_still_requires_a_token_elsewhere() {
     // Negative control: optionality is per provider, not global.
     let fixture = setup();

@@ -82,6 +82,7 @@ pub fn aws_profile_without_keys(profile: &str, path: &str) -> String {
     )
 }
 pub const URL_REQUIRED_PROXMOX: &str = "URL is required for Proxmox VE.";
+pub const URL_REQUIRED_NETBOX: &str = "URL is required for NetBox.";
 pub const PROJECT_REQUIRED_GCP: &str = "Project ID can't be empty. Set your GCP project ID.";
 pub const COMPARTMENT_REQUIRED_OCI: &str =
     "Compartment can't be empty. Set your OCI compartment OCID.";

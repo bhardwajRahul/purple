@@ -18,6 +18,7 @@ pub enum ProviderKind {
     I3d,
     Leaseweb,
     Linode,
+    NetBox,
     Oracle,
     Ovh,
     Proxmox,
@@ -40,6 +41,7 @@ impl ProviderKind {
             ProviderKind::I3d => "i3d",
             ProviderKind::Leaseweb => "leaseweb",
             ProviderKind::Linode => "linode",
+            ProviderKind::NetBox => "netbox",
             ProviderKind::Oracle => "oracle",
             ProviderKind::Ovh => "ovh",
             ProviderKind::Proxmox => "proxmox",
@@ -53,10 +55,12 @@ impl ProviderKind {
     }
 
     /// Default `auto_sync` value for a new section of this provider.
-    /// Proxmox opts out by default because its API is N+1 per VM.
+    /// Proxmox opts out by default because its API is N+1 per VM. NetBox
+    /// opts out because the endpoint is self-hosted and often only
+    /// reachable over VPN, so startup sync stays opt-in.
     pub fn default_auto_sync(self) -> bool {
         match self {
-            ProviderKind::Proxmox => false,
+            ProviderKind::NetBox | ProviderKind::Proxmox => false,
             ProviderKind::Aws
             | ProviderKind::Azure
             | ProviderKind::DigitalOcean
@@ -88,6 +92,7 @@ impl ProviderKind {
             ProviderKind::I3d => "i3d",
             ProviderKind::Leaseweb => "leaseweb",
             ProviderKind::Linode => "linode",
+            ProviderKind::NetBox => "nb",
             ProviderKind::Oracle => "oci",
             ProviderKind::Ovh => "ovh",
             ProviderKind::Proxmox => "pve",
@@ -100,10 +105,10 @@ impl ProviderKind {
         }
     }
 
-    /// Whether this provider requires a `url` (Proxmox endpoint).
+    /// Whether this provider requires a `url` (self-hosted endpoint).
     pub fn requires_url(self) -> bool {
         match self {
-            ProviderKind::Proxmox => true,
+            ProviderKind::NetBox | ProviderKind::Proxmox => true,
             ProviderKind::Aws
             | ProviderKind::Azure
             | ProviderKind::DigitalOcean
@@ -141,6 +146,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Oracle
             | ProviderKind::Ovh
             | ProviderKind::Proxmox
@@ -165,6 +171,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Ovh
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
@@ -189,6 +196,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
             | ProviderKind::Teleport
@@ -213,6 +221,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Oracle
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
@@ -239,6 +248,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Proxmox
             | ProviderKind::Tailscale
             | ProviderKind::Teleport
@@ -259,6 +269,7 @@ impl ProviderKind {
             | ProviderKind::I3d
             | ProviderKind::Leaseweb
             | ProviderKind::Linode
+            | ProviderKind::NetBox
             | ProviderKind::Oracle
             | ProviderKind::Proxmox
             | ProviderKind::Scaleway
@@ -296,6 +307,7 @@ impl FromStr for ProviderKind {
             "i3d" => Ok(ProviderKind::I3d),
             "leaseweb" => Ok(ProviderKind::Leaseweb),
             "linode" => Ok(ProviderKind::Linode),
+            "netbox" => Ok(ProviderKind::NetBox),
             "oracle" => Ok(ProviderKind::Oracle),
             "ovh" => Ok(ProviderKind::Ovh),
             "proxmox" => Ok(ProviderKind::Proxmox),
@@ -329,6 +341,7 @@ mod tests {
         ("i3d", ProviderKind::I3d),
         ("leaseweb", ProviderKind::Leaseweb),
         ("linode", ProviderKind::Linode),
+        ("netbox", ProviderKind::NetBox),
         ("oracle", ProviderKind::Oracle),
         ("ovh", ProviderKind::Ovh),
         ("proxmox", ProviderKind::Proxmox),
@@ -388,11 +401,12 @@ mod tests {
     }
 
     #[test]
-    fn requires_url_only_proxmox() {
+    fn requires_url_matches_documented_set() {
+        let expected: &[ProviderKind] = &[ProviderKind::NetBox, ProviderKind::Proxmox];
         for (_, kind) in ALL {
             assert_eq!(
                 kind.requires_url(),
-                *kind == ProviderKind::Proxmox,
+                expected.contains(kind),
                 "requires_url for {kind:?}"
             );
         }

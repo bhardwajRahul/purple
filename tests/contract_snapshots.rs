@@ -210,6 +210,39 @@ fn contract_hetzner_servers() {
     assert_has_key(server, "location.name");
 }
 
+// ── NetBox ───────────────────────────────────────────────────────────
+
+#[test]
+fn contract_netbox_devices() {
+    let v = load_json("netbox_devices.json");
+    assert_has_key(&v, "count");
+    assert_has_key(&v, "results");
+    let device = &v["results"][0];
+    assert_has_key(device, "id");
+    assert_has_key(device, "name");
+    assert_has_key(device, "status.value");
+    assert_has_key(device, "primary_ip4.address");
+    assert_has_key(device, "tags");
+    assert_has_key(device, "site.name");
+    assert_has_key(device, "role.name");
+    assert_has_key(device, "platform.name");
+    assert_has_key(device, "device_type.model");
+}
+
+#[test]
+fn contract_netbox_virtual_machines() {
+    let v = load_json("netbox_virtual_machines.json");
+    assert_has_key(&v, "count");
+    assert_has_key(&v, "results");
+    let vm = &v["results"][0];
+    assert_has_key(vm, "id");
+    assert_has_key(vm, "name");
+    assert_has_key(vm, "status.value");
+    assert_has_key(vm, "primary_ip4.address");
+    assert_has_key(vm, "tags");
+    assert_has_key(vm, "cluster.name");
+}
+
 // ── Linode ───────────────────────────────────────────────────────────
 
 #[test]
@@ -618,6 +651,9 @@ fn contract_all_fixtures_present() {
         "hetzner_servers.json",
         // Linode
         "linode_instances.json",
+        // NetBox
+        "netbox_devices.json",
+        "netbox_virtual_machines.json",
         // Oracle
         "oracle_compartments.json",
         "oracle_instances.json",

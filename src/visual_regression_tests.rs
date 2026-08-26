@@ -558,13 +558,13 @@ fn visual_keys_push_picker() {
 fn visual_keys_push_picker_selected() {
     let _g = setup();
     let mut app = demo::build_demo_app();
-    // Lock the demo host count so the picker title `2 selected of 33
+    // Lock the demo host count so the picker title `2 selected of 35
     // (N eligible)` is stable under demo-data drift. If a new host is
     // added or removed from the demo this assertion fails with a clear
     // message instead of an opaque golden diff.
     assert_eq!(
         app.hosts_state.list().len(),
-        33,
+        35,
         "demo host count drifted; update this assertion and regenerate the golden"
     );
     app.top_page = crate::app::TopPage::Keys;
@@ -1800,6 +1800,20 @@ fn visual_provider_form_teleport() {
 }
 
 #[test]
+fn visual_provider_form_netbox() {
+    // NetBox leads with Url like Proxmox and adds the Filter field.
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.open_provider_form(crate::providers::config::ProviderConfigId::bare("netbox"));
+    assert_eq!(
+        app.providers.form().focused_field,
+        crate::app::ProviderFormField::Url
+    );
+    let actual = render_screen(&mut app);
+    assert_golden("provider_form_netbox", &actual);
+}
+
+#[test]
 fn visual_provider_form_label_entry() {
     // Issue #51: when the user adds an N-th labeled config (with at least one
     // labeled section already present), the form opens with a `Label` input
@@ -1814,6 +1828,7 @@ fn visual_provider_form_label_entry() {
     // depending on demo data layout. Label is the focused field; the form
     // sits in collapsed mode like a freshly opened add flow.
     *app.providers.form_mut() = crate::app::ProviderFormFields {
+        filter: String::new(),
         label: String::new(),
         label_entry: true,
         url: String::new(),
