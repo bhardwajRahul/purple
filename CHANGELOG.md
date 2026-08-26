@@ -1,3 +1,10 @@
+## 3.27.0 - 2026-08-26
+
+- feat: Your NetBox inventory becomes your SSH host list.
+- feat: Add NetBox with `S` in the TUI: fill URL and token and your devices and virtual machines sync into `~/.ssh/config`. Primary IPs become HostNames, tag slugs become searchable tags and site, role, platform and status show up in the detail panel.
+- feat: Scope the sync with NetBox's own query language in the Filter field: `status=active` is the default and `tag=ssh&site=ams1` narrows it to exactly the machines you reach over SSH.
+- feat: Both token forms work without configuration: new `nbt_` tokens and classic API tokens are detected automatically. Self-signed TLS is a toggle away.
+
 ## 3.26.1 - 2026-08-24
 
 - fix: Every ssh session starts on a clean screen.
