@@ -149,15 +149,16 @@ fn select_cloud_ip(ips: &[CloudIp]) -> Option<String> {
 
 fn format_baremetal_specs(specs: &BareMetalSpecs) -> String {
     let mut parts = Vec::new();
-    if let Some(ref cpu) = specs.cpu {
-        if cpu.quantity > 0 && !cpu.cpu_type.is_empty() {
-            parts.push(format!("{}x {}", cpu.quantity, cpu.cpu_type));
-        }
+    if let Some(ref cpu) = specs.cpu
+        && cpu.quantity > 0
+        && !cpu.cpu_type.is_empty()
+    {
+        parts.push(format!("{}x {}", cpu.quantity, cpu.cpu_type));
     }
-    if let Some(ref ram) = specs.ram {
-        if ram.size > 0 {
-            parts.push(format!("{}{}", ram.size, ram.unit));
-        }
+    if let Some(ref ram) = specs.ram
+        && ram.size > 0
+    {
+        parts.push(format!("{}{}", ram.size, ram.unit));
     }
     parts.join(", ")
 }
@@ -220,39 +221,39 @@ impl Leaseweb {
                                 .as_ref()
                                 .map(|iface| super::strip_cidr(&iface.ip).to_string())
                         });
-                    if let Some(ip) = ip {
-                        if !ip.is_empty() {
-                            let mut metadata = super::ProviderMetadata::new();
-                            if let Some(ref loc) = server.location {
-                                if !loc.site.is_empty() {
-                                    metadata.push("location", loc.site.clone());
-                                }
-                            }
-                            if let Some(ref specs) = server.specs {
-                                let spec_str = format_baremetal_specs(specs);
-                                if !spec_str.is_empty() {
-                                    metadata.push("specs", spec_str);
-                                }
-                            }
-                            if let Some(ref contract) = server.contract {
-                                if !contract.delivery_status.is_empty() {
-                                    metadata.push("status", contract.delivery_status.clone());
-                                }
-                            }
-                            let name = if server.reference.is_empty() {
-                                server.id.clone()
-                            } else {
-                                server.reference.clone()
-                            };
-                            hosts.push(ProviderHost {
-                                server_id: format!("bm-{}", server.id),
-                                name,
-                                ip,
-                                tags: Vec::new(),
-                                metadata: metadata.finish(),
-                                ..Default::default()
-                            });
+                    if let Some(ip) = ip
+                        && !ip.is_empty()
+                    {
+                        let mut metadata = super::ProviderMetadata::new();
+                        if let Some(ref loc) = server.location
+                            && !loc.site.is_empty()
+                        {
+                            metadata.push("location", loc.site.clone());
                         }
+                        if let Some(ref specs) = server.specs {
+                            let spec_str = format_baremetal_specs(specs);
+                            if !spec_str.is_empty() {
+                                metadata.push("specs", spec_str);
+                            }
+                        }
+                        if let Some(ref contract) = server.contract
+                            && !contract.delivery_status.is_empty()
+                        {
+                            metadata.push("status", contract.delivery_status.clone());
+                        }
+                        let name = if server.reference.is_empty() {
+                            server.id.clone()
+                        } else {
+                            server.reference.clone()
+                        };
+                        hosts.push(ProviderHost {
+                            server_id: format!("bm-{}", server.id),
+                            name,
+                            ip,
+                            tags: Vec::new(),
+                            metadata: metadata.finish(),
+                            ..Default::default()
+                        });
                     }
                 }
 
@@ -289,12 +290,11 @@ impl Leaseweb {
                         if !instance.instance_type.is_empty() {
                             metadata.push("type", instance.instance_type.clone());
                         }
-                        if let Some(ref image) = instance.image {
-                            if let Some(ref name) = image.name {
-                                if !name.is_empty() {
-                                    metadata.push("image", name.clone());
-                                }
-                            }
+                        if let Some(ref image) = instance.image
+                            && let Some(ref name) = image.name
+                            && !name.is_empty()
+                        {
+                            metadata.push("image", name.clone());
                         }
                         if !instance.state.is_empty() {
                             metadata.push("status", instance.state.clone());

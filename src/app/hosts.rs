@@ -391,10 +391,10 @@ impl App {
             log::debug!("[purple] apply_alias_renames: {old_alias} -> {new_alias}");
             self.history.rename(old_alias, new_alias);
             let mut recents = crate::app::jump::load_recents(paths.as_ref());
-            if crate::app::jump::rename_host_recent(&mut recents, old_alias, new_alias) {
-                if let Err(e) = crate::app::jump::save_recents(&recents, paths.as_ref()) {
-                    log::warn!("[purple] failed to save recents after rename: {e}");
-                }
+            if crate::app::jump::rename_host_recent(&mut recents, old_alias, new_alias)
+                && let Err(e) = crate::app::jump::save_recents(&recents, paths.as_ref())
+            {
+                log::warn!("[purple] failed to save recents after rename: {e}");
             }
         }
         if applied {
@@ -442,13 +442,13 @@ impl App {
                 self.container_state.cache(),
             );
         }
-        if collapsed_hosts_changed {
-            if let Err(e) = crate::preferences::save_containers_collapsed_hosts(
+        if collapsed_hosts_changed
+            && let Err(e) = crate::preferences::save_containers_collapsed_hosts(
                 self.env().paths(),
                 self.containers_overview.collapsed_hosts(),
-            ) {
-                log::warn!("[config] failed to save collapsed_hosts after rename: {e}");
-            }
+            )
+        {
+            log::warn!("[config] failed to save collapsed_hosts after rename: {e}");
         }
     }
 
@@ -683,10 +683,10 @@ pub fn migrate_renames_persistent_state(
         history.rename(old_alias, new_alias);
 
         let mut recents = crate::app::jump::load_recents(paths);
-        if crate::app::jump::rename_host_recent(&mut recents, old_alias, new_alias) {
-            if let Err(e) = crate::app::jump::save_recents(&recents, paths) {
-                log::warn!("[purple] failed to save recents after cli sync rename: {e}");
-            }
+        if crate::app::jump::rename_host_recent(&mut recents, old_alias, new_alias)
+            && let Err(e) = crate::app::jump::save_recents(&recents, paths)
+        {
+            log::warn!("[purple] failed to save recents after cli sync rename: {e}");
         }
 
         let mut collapsed = crate::preferences::load_containers_collapsed_hosts(paths);

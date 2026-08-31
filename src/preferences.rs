@@ -39,10 +39,10 @@ fn load_value(paths: Option<&Paths>, key: &str) -> Option<String> {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == key {
-                return Some(v.trim().to_string());
-            }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
+            return Some(v.trim().to_string());
         }
     }
     None
@@ -405,10 +405,10 @@ mod tests {
             if line.starts_with('#') || line.is_empty() {
                 continue;
             }
-            if let Some((k, v)) = line.split_once('=') {
-                if k.trim() == key {
-                    return Some(v.trim().to_string());
-                }
+            if let Some((k, v)) = line.split_once('=')
+                && k.trim() == key
+            {
+                return Some(v.trim().to_string());
             }
         }
         None

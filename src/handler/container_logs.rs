@@ -315,21 +315,21 @@ impl ContainerLogsCtx<'_> {
             .find(|h| h.alias == alias)
             .and_then(|h| h.askpass.clone());
 
-        if matches!(*self.screen, Screen::ContainerLogs) {
-            if let Some(view) = self.container_state.logs_view_mut() {
-                view.body.clear();
-                view.scroll = 0;
-                view.error = None;
-                view.fetched_at = 0;
-                // Wipe stale line indices: the body just emptied, so any old
-                // match positions now point past the end. The completion path
-                // in event_loop calls `refresh_search` to repopulate against
-                // the fresh body, but until then the search bar would show
-                // a stale "(3 of 5)" badge tied to the previous fetch.
-                if let Some(s) = view.search.as_mut() {
-                    s.matches.clear();
-                    s.current = 0;
-                }
+        if matches!(*self.screen, Screen::ContainerLogs)
+            && let Some(view) = self.container_state.logs_view_mut()
+        {
+            view.body.clear();
+            view.scroll = 0;
+            view.error = None;
+            view.fetched_at = 0;
+            // Wipe stale line indices: the body just emptied, so any old
+            // match positions now point past the end. The completion path
+            // in event_loop calls `refresh_search` to repopulate against
+            // the fresh body, but until then the search bar would show
+            // a stale "(3 of 5)" badge tied to the previous fetch.
+            if let Some(s) = view.search.as_mut() {
+                s.matches.clear();
+                s.current = 0;
             }
         }
         log::debug!(

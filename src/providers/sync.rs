@@ -132,14 +132,14 @@ pub fn sync_provider(
         // reappeared (it exists in the provider, just has no IP).
         if remote.ip.is_empty() {
             if let Some(alias) = existing_map.get(&remote.server_id) {
-                if let Some(entry) = entries_map.get(alias.as_str()) {
-                    if entry.stale.is_some() {
-                        if !dry_run {
-                            let _ = config.clear_host_stale(alias);
-                        }
-                        result.updated += 1;
-                        continue;
+                if let Some(entry) = entries_map.get(alias.as_str())
+                    && entry.stale.is_some()
+                {
+                    if !dry_run {
+                        let _ = config.clear_host_stale(alias);
                     }
+                    result.updated += 1;
+                    continue;
                 }
                 result.unchanged += 1;
             }

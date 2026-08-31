@@ -324,27 +324,27 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
             match fb.active_pane {
                 BrowserPane::Local => {
                     let idx = fb.local_list_state.selected().unwrap_or(0);
-                    if idx > 0 {
-                        if let Some(entry) = fb.local_entries.get(idx - 1) {
-                            let name = entry.name.clone();
-                            if fb.local_selected.contains(&name) {
-                                fb.local_selected.remove(&name);
-                            } else {
-                                fb.local_selected.insert(name);
-                            }
+                    if idx > 0
+                        && let Some(entry) = fb.local_entries.get(idx - 1)
+                    {
+                        let name = entry.name.clone();
+                        if fb.local_selected.contains(&name) {
+                            fb.local_selected.remove(&name);
+                        } else {
+                            fb.local_selected.insert(name);
                         }
                     }
                 }
                 BrowserPane::Remote => {
                     let idx = fb.remote_list_state.selected().unwrap_or(0);
-                    if idx > 0 {
-                        if let Some(entry) = fb.remote_entries.get(idx - 1) {
-                            let name = entry.name.clone();
-                            if fb.remote_selected.contains(&name) {
-                                fb.remote_selected.remove(&name);
-                            } else {
-                                fb.remote_selected.insert(name);
-                            }
+                    if idx > 0
+                        && let Some(entry) = fb.remote_entries.get(idx - 1)
+                    {
+                        let name = entry.name.clone();
+                        if fb.remote_selected.contains(&name) {
+                            fb.remote_selected.remove(&name);
+                        } else {
+                            fb.remote_selected.insert(name);
                         }
                     }
                 }

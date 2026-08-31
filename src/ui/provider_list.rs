@@ -214,11 +214,11 @@ fn render_header_line(
     }
     used += 1;
 
-    if let Some(section) = single_section.as_ref() {
-        if !section.auto_sync {
-            spans.push(Span::styled(" (manual)", theme::muted()));
-            used += 9;
-        }
+    if let Some(section) = single_section.as_ref()
+        && !section.auto_sync
+    {
+        spans.push(Span::styled(" (manual)", theme::muted()));
+        used += 9;
     }
 
     let stale_count = app
@@ -257,11 +257,11 @@ fn render_leaf_line(
     }
     used += 1;
 
-    if let Some(section) = app.providers.config().section_by_id(id) {
-        if !section.auto_sync {
-            spans.push(Span::styled(" (manual)", theme::muted()));
-            used += 9;
-        }
+    if let Some(section) = app.providers.config().section_by_id(id)
+        && !section.auto_sync
+    {
+        spans.push(Span::styled(" (manual)", theme::muted()));
+        used += 9;
     }
 
     let stale_count = app

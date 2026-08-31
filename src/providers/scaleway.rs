@@ -99,12 +99,11 @@ fn build_metadata(server: &ScalewayServer, zone: &str) -> Vec<(String, String)> 
     if !server.commercial_type.is_empty() {
         metadata.push("type", server.commercial_type.clone());
     }
-    if let Some(ref image) = server.image {
-        if let Some(ref name) = image.name {
-            if !name.is_empty() {
-                metadata.push("image", name.clone());
-            }
-        }
+    if let Some(ref image) = server.image
+        && let Some(ref name) = image.name
+        && !name.is_empty()
+    {
+        metadata.push("image", name.clone());
     }
     if !server.state.is_empty() {
         metadata.push("status", server.state.clone());
@@ -132,16 +131,16 @@ fn select_ip(server: &ScalewayServer) -> Option<String> {
         return Some(super::strip_cidr(&ip.address).to_string());
     }
     // Fall back to legacy public_ip field
-    if let Some(ref legacy) = server.public_ip {
-        if !legacy.address.is_empty() {
-            return Some(legacy.address.clone());
-        }
+    if let Some(ref legacy) = server.public_ip
+        && !legacy.address.is_empty()
+    {
+        return Some(legacy.address.clone());
     }
     // Fall back to private_ip
-    if let Some(ref priv_ip) = server.private_ip {
-        if !priv_ip.is_empty() {
-            return Some(priv_ip.clone());
-        }
+    if let Some(ref priv_ip) = server.private_ip
+        && !priv_ip.is_empty()
+    {
+        return Some(priv_ip.clone());
     }
     None
 }

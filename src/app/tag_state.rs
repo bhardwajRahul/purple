@@ -100,10 +100,10 @@ impl TagState {
     }
 
     pub fn cursor_right(&mut self) {
-        if let Some(ref input) = self.input {
-            if self.cursor < input.chars().count() {
-                self.cursor += 1;
-            }
+        if let Some(ref input) = self.input
+            && self.cursor < input.chars().count()
+        {
+            self.cursor += 1;
         }
     }
 

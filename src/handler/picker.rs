@@ -147,21 +147,21 @@ pub(super) fn handle_password_picker(app: &mut App, key: KeyEvent) {
 fn password_picker_key(ctx: &mut PickerCtx, key: KeyEvent) {
     // Ctrl+D sets selected source as global default
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('d') {
-        if let Some(index) = ctx.ui.password_picker().list.selected() {
-            if let Some(source) = crate::askpass::PASSWORD_SOURCES.get(index) {
-                let is_none = source.label == "None";
-                let value = if is_none { "" } else { source.value };
-                match crate::preferences::save_askpass_default(ctx.env.paths(), value) {
-                    Ok(()) => {
-                        if is_none {
-                            ctx.notify(crate::messages::GLOBAL_DEFAULT_CLEARED);
-                        } else {
-                            ctx.notify(crate::messages::global_default_set(source.label));
-                        }
+        if let Some(index) = ctx.ui.password_picker().list.selected()
+            && let Some(source) = crate::askpass::PASSWORD_SOURCES.get(index)
+        {
+            let is_none = source.label == "None";
+            let value = if is_none { "" } else { source.value };
+            match crate::preferences::save_askpass_default(ctx.env.paths(), value) {
+                Ok(()) => {
+                    if is_none {
+                        ctx.notify(crate::messages::GLOBAL_DEFAULT_CLEARED);
+                    } else {
+                        ctx.notify(crate::messages::global_default_set(source.label));
                     }
-                    Err(e) => {
-                        ctx.notify_error(crate::messages::save_default_failed(&e));
-                    }
+                }
+                Err(e) => {
+                    ctx.notify_error(crate::messages::save_default_failed(&e));
                 }
             }
         }
@@ -181,34 +181,34 @@ fn password_picker_key(ctx: &mut PickerCtx, key: KeyEvent) {
         }
         KeyCode::Enter => {
             let mut needs_more_input = false;
-            if let Some(index) = ctx.ui.password_picker().list.selected() {
-                if let Some(source) = crate::askpass::PASSWORD_SOURCES.get(index) {
-                    let is_none = source.label == "None";
-                    let is_custom_cmd = source.label == "Custom command";
-                    let is_prefix = source.value.ends_with(':') || source.value.ends_with("//");
-                    if is_none {
-                        ctx.forms
-                            .host_mut()
-                            .apply_password_source(String::new(), false);
-                        ctx.notify(crate::messages::PASSWORD_SOURCE_CLEARED);
-                    } else if is_custom_cmd {
-                        ctx.forms
-                            .host_mut()
-                            .apply_password_source(String::new(), true);
-                        ctx.notify(crate::messages::ASKPASS_CUSTOM_COMMAND_HINT);
-                        needs_more_input = true;
-                    } else if is_prefix {
-                        ctx.forms
-                            .host_mut()
-                            .apply_password_source(source.value.to_string(), true);
-                        ctx.notify(crate::messages::complete_path(source.label));
-                        needs_more_input = true;
-                    } else {
-                        ctx.forms
-                            .host_mut()
-                            .apply_password_source(source.value.to_string(), false);
-                        ctx.notify(crate::messages::password_source_set(source.label));
-                    }
+            if let Some(index) = ctx.ui.password_picker().list.selected()
+                && let Some(source) = crate::askpass::PASSWORD_SOURCES.get(index)
+            {
+                let is_none = source.label == "None";
+                let is_custom_cmd = source.label == "Custom command";
+                let is_prefix = source.value.ends_with(':') || source.value.ends_with("//");
+                if is_none {
+                    ctx.forms
+                        .host_mut()
+                        .apply_password_source(String::new(), false);
+                    ctx.notify(crate::messages::PASSWORD_SOURCE_CLEARED);
+                } else if is_custom_cmd {
+                    ctx.forms
+                        .host_mut()
+                        .apply_password_source(String::new(), true);
+                    ctx.notify(crate::messages::ASKPASS_CUSTOM_COMMAND_HINT);
+                    needs_more_input = true;
+                } else if is_prefix {
+                    ctx.forms
+                        .host_mut()
+                        .apply_password_source(source.value.to_string(), true);
+                    ctx.notify(crate::messages::complete_path(source.label));
+                    needs_more_input = true;
+                } else {
+                    ctx.forms
+                        .host_mut()
+                        .apply_password_source(source.value.to_string(), false);
+                    ctx.notify(crate::messages::password_source_set(source.label));
                 }
             }
             ctx.close_password_picker();
@@ -242,17 +242,17 @@ fn key_picker_shared_key(ctx: &mut PickerCtx, key: KeyEvent, for_provider: bool)
             ctx.step_picker_key(false);
         }
         KeyCode::Enter => {
-            if let Some(index) = ctx.ui.key_picker().list.selected() {
-                if let Some(key_info) = ctx.keys.list().get(index) {
-                    if for_provider {
-                        ctx.providers.form_mut().identity_file = key_info.display_path.clone();
-                        ctx.providers.form_mut().sync_cursor_to_end();
-                    } else {
-                        ctx.forms.host_mut().identity_file = key_info.display_path.clone();
-                        ctx.forms.host_mut().sync_cursor_to_end();
-                    }
-                    ctx.notify(crate::messages::key_selected(&key_info.name));
+            if let Some(index) = ctx.ui.key_picker().list.selected()
+                && let Some(key_info) = ctx.keys.list().get(index)
+            {
+                if for_provider {
+                    ctx.providers.form_mut().identity_file = key_info.display_path.clone();
+                    ctx.providers.form_mut().sync_cursor_to_end();
+                } else {
+                    ctx.forms.host_mut().identity_file = key_info.display_path.clone();
+                    ctx.forms.host_mut().sync_cursor_to_end();
                 }
+                ctx.notify(crate::messages::key_selected(&key_info.name));
             }
             ctx.close_key_picker();
             if !for_provider {
@@ -288,18 +288,17 @@ fn proxyjump_picker_key(ctx: &mut PickerCtx, key: KeyEvent, candidates: &[ProxyJ
             ctx.step_proxyjump(candidates, false);
         }
         KeyCode::Enter => {
-            if let Some(index) = ctx.ui.proxyjump_picker().list.selected() {
-                if let Some(crate::app::ProxyJumpCandidate::Host { alias, .. }) =
+            if let Some(index) = ctx.ui.proxyjump_picker().list.selected()
+                && let Some(crate::app::ProxyJumpCandidate::Host { alias, .. }) =
                     candidates.get(index)
-                {
-                    ctx.forms.host_mut().proxy_jump = alias.clone();
-                    ctx.forms.host_mut().sync_cursor_to_end();
-                    ctx.notify(crate::messages::proxy_jump_set(alias));
-                    ctx.close_proxyjump_picker();
-                    ctx.defer(try_auto_submit_after_picker);
-                }
-                // Separator selected: no-op, stay in picker.
+            {
+                ctx.forms.host_mut().proxy_jump = alias.clone();
+                ctx.forms.host_mut().sync_cursor_to_end();
+                ctx.notify(crate::messages::proxy_jump_set(alias));
+                ctx.close_proxyjump_picker();
+                ctx.defer(try_auto_submit_after_picker);
             }
+            // Separator selected: no-op, stay in picker.
         }
         _ => {}
     }
@@ -331,12 +330,12 @@ fn vault_role_picker_key(ctx: &mut PickerCtx, key: KeyEvent, candidates: &[Strin
             ctx.step_vault_role(candidates.len(), false);
         }
         KeyCode::Enter => {
-            if let Some(index) = ctx.ui.vault_role_picker().list.selected() {
-                if let Some(role) = candidates.get(index) {
-                    ctx.forms.host_mut().vault_ssh = role.clone();
-                    ctx.forms.host_mut().sync_cursor_to_end();
-                    ctx.notify(crate::messages::vault_role_set(role));
-                }
+            if let Some(index) = ctx.ui.vault_role_picker().list.selected()
+                && let Some(role) = candidates.get(index)
+            {
+                ctx.forms.host_mut().vault_ssh = role.clone();
+                ctx.forms.host_mut().sync_cursor_to_end();
+                ctx.notify(crate::messages::vault_role_set(role));
             }
             ctx.close_vault_role_picker();
         }

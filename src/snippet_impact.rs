@@ -776,15 +776,15 @@ fn classify(segments: &[Segment], depth: usize) -> Vec<Finding> {
             if idx <= fi {
                 continue;
             }
-            if let Some((name, priv_)) = h {
-                if INTERPRETERS.contains(&name.as_str()) {
-                    let sev = if *priv_ {
-                        Severity::Critical
-                    } else {
-                        Severity::Elevated
-                    };
-                    findings.push(Finding::new(sev, Category::RemoteExec, "curl|sh"));
-                }
+            if let Some((name, priv_)) = h
+                && INTERPRETERS.contains(&name.as_str())
+            {
+                let sev = if *priv_ {
+                    Severity::Critical
+                } else {
+                    Severity::Elevated
+                };
+                findings.push(Finding::new(sev, Category::RemoteExec, "curl|sh"));
             }
         }
     }

@@ -88,10 +88,10 @@ fn key_list_key(ctx: &mut HelpCtx, key: KeyEvent) {
             crate::app::page_up(ctx.keys.list_state_mut(), len, 10);
         }
         KeyCode::Enter => {
-            if let Some(index) = ctx.keys.list_state().selected() {
-                if index < ctx.keys.list().len() {
-                    ctx.set_screen(Screen::KeyDetail { index });
-                }
+            if let Some(index) = ctx.keys.list_state().selected()
+                && index < ctx.keys.list().len()
+            {
+                ctx.set_screen(Screen::KeyDetail { index });
             }
         }
         _ => {}

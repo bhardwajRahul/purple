@@ -360,20 +360,18 @@ pub(super) fn handle_delete_key(app: &mut App, key: KeyEvent) {
                     // errors are surfaced via the status bar (never via
                     // eprintln, which would corrupt the ratatui screen).
                     let mut cert_cleanup_warning: Option<String> = None;
-                    if !crate::demo_flag::is_demo() {
-                        if let Ok(cert_path) =
+                    if !crate::demo_flag::is_demo()
+                        && let Ok(cert_path) =
                             crate::vault_ssh::cert_path_for(app.env().paths(), &alias)
-                        {
-                            match std::fs::remove_file(&cert_path) {
-                                Ok(()) => {}
-                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                                Err(e) => {
-                                    cert_cleanup_warning =
-                                        Some(crate::messages::cert_cleanup_warning(
-                                            &cert_path.display(),
-                                            &e,
-                                        ));
-                                }
+                    {
+                        match std::fs::remove_file(&cert_path) {
+                            Ok(()) => {}
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(e) => {
+                                cert_cleanup_warning = Some(crate::messages::cert_cleanup_warning(
+                                    &cert_path.display(),
+                                    &e,
+                                ));
                             }
                         }
                     }

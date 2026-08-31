@@ -285,18 +285,18 @@ fn select_ip(
     // Try public IP first
     if let Some(ref pub_ref) = ip_config.properties.public_ip_address {
         let pub_id_lower = pub_ref.id.to_ascii_lowercase();
-        if let Some(addr) = public_ip_map.get(&pub_id_lower) {
-            if !addr.is_empty() {
-                return Some(addr.clone());
-            }
+        if let Some(addr) = public_ip_map.get(&pub_id_lower)
+            && !addr.is_empty()
+        {
+            return Some(addr.clone());
         }
     }
 
     // Fallback to private IP
-    if let Some(ref private) = ip_config.properties.private_ip_address {
-        if !private.is_empty() {
-            return Some(private.clone());
-        }
+    if let Some(ref private) = ip_config.properties.private_ip_address
+        && !private.is_empty()
+    {
+        return Some(private.clone());
     }
 
     None
@@ -330,15 +330,15 @@ fn build_metadata(vm: &VirtualMachine) -> Vec<(String, String)> {
     if !vm.location.is_empty() {
         metadata.push("region", vm.location.to_ascii_lowercase());
     }
-    if let Some(ref hw) = vm.properties.hardware_profile {
-        if !hw.vm_size.is_empty() {
-            metadata.push("vm_size", hw.vm_size.clone());
-        }
+    if let Some(ref hw) = vm.properties.hardware_profile
+        && !hw.vm_size.is_empty()
+    {
+        metadata.push("vm_size", hw.vm_size.clone());
     }
-    if let Some(ref sp) = vm.properties.storage_profile {
-        if let Some(os) = build_os_string(&sp.image_reference) {
-            metadata.push("image", os);
-        }
+    if let Some(ref sp) = vm.properties.storage_profile
+        && let Some(os) = build_os_string(&sp.image_reference)
+    {
+        metadata.push("image", os);
     }
     if let Some(state) = extract_power_state(&vm.properties.instance_view) {
         metadata.push("status", state);

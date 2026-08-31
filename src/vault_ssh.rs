@@ -291,19 +291,19 @@ pub fn sign_certificate(
     let stderr_handle = child.stderr.take();
     let stdout_thread = std::thread::spawn(move || -> Vec<u8> {
         let mut buf = Vec::new();
-        if let Some(mut h) = stdout_handle {
-            if let Err(e) = std::io::Read::read_to_end(&mut h, &mut buf) {
-                log::warn!("[external] Failed to read vault stdout pipe: {e}");
-            }
+        if let Some(mut h) = stdout_handle
+            && let Err(e) = std::io::Read::read_to_end(&mut h, &mut buf)
+        {
+            log::warn!("[external] Failed to read vault stdout pipe: {e}");
         }
         buf
     });
     let stderr_thread = std::thread::spawn(move || -> Vec<u8> {
         let mut buf = Vec::new();
-        if let Some(mut h) = stderr_handle {
-            if let Err(e) = std::io::Read::read_to_end(&mut h, &mut buf) {
-                log::warn!("[external] Failed to read vault stderr pipe: {e}");
-            }
+        if let Some(mut h) = stderr_handle
+            && let Err(e) = std::io::Read::read_to_end(&mut h, &mut buf)
+        {
+            log::warn!("[external] Failed to read vault stderr pipe: {e}");
         }
         buf
     });
@@ -700,10 +700,10 @@ pub fn resolve_vault_role(
     provider_label: Option<&str>,
     provider_config: &crate::providers::config::ProviderConfig,
 ) -> Option<String> {
-    if let Some(role) = host_vault_ssh {
-        if !role.is_empty() {
-            return Some(role.to_string());
-        }
+    if let Some(role) = host_vault_ssh
+        && !role.is_empty()
+    {
+        return Some(role.to_string());
     }
 
     if let Some(name) = provider_name {
@@ -714,10 +714,10 @@ pub fn resolve_vault_role(
         let section = provider_config
             .section_by_id(&id)
             .or_else(|| provider_config.section(name));
-        if let Some(section) = section {
-            if !section.vault_role.is_empty() {
-                return Some(section.vault_role.clone());
-            }
+        if let Some(section) = section
+            && !section.vault_role.is_empty()
+        {
+            return Some(section.vault_role.clone());
         }
     }
 
@@ -843,10 +843,10 @@ pub fn resolve_proxy_chain(config_path: &Path, alias: &str) -> Vec<String> {
 fn parse_proxy_jump_host(jump: &str) -> &str {
     let trimmed = jump.trim();
     let after_user = trimmed.rsplit_once('@').map(|(_, h)| h).unwrap_or(trimmed);
-    if let Some(rest) = after_user.strip_prefix('[') {
-        if let Some(end) = rest.find(']') {
-            return &rest[..end];
-        }
+    if let Some(rest) = after_user.strip_prefix('[')
+        && let Some(end) = rest.find(']')
+    {
+        return &rest[..end];
     }
     after_user.split(':').next().unwrap_or(after_user)
 }

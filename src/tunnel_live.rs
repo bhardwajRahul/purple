@@ -924,28 +924,29 @@ pub fn parse_lsof_output(
         }
         // ESTABLISHED rows where the client process owns a socket whose
         // remote port is one of our bind ports. The client process != ssh.
-        if let Some(remote_port) = row.remote_port {
-            if bind_ports.contains(&remote_port) && !tunnel_pids.contains(&row.pid) {
-                let src = row.local_addr_port().unwrap_or_else(|| "?".to_string());
-                let key = (remote_port, src.clone());
-                let since = *first_seen.entry(key).or_insert(now);
-                let entry = clients.entry(remote_port).or_default();
-                if entry.len() >= MAX_CLIENTS_PER_PORT {
-                    continue;
-                }
-                entry.push(ClientPeer {
-                    src,
-                    process: beautify_process(&row.command),
-                    pid: row.pid,
-                    since,
-                    responsible_app: None,
-                    current_rx_bps: 0,
-                    current_tx_bps: 0,
-                    bytes_rcvd: None,
-                    bytes_sent: None,
-                    last_sample_at: None,
-                });
+        if let Some(remote_port) = row.remote_port
+            && bind_ports.contains(&remote_port)
+            && !tunnel_pids.contains(&row.pid)
+        {
+            let src = row.local_addr_port().unwrap_or_else(|| "?".to_string());
+            let key = (remote_port, src.clone());
+            let since = *first_seen.entry(key).or_insert(now);
+            let entry = clients.entry(remote_port).or_default();
+            if entry.len() >= MAX_CLIENTS_PER_PORT {
+                continue;
             }
+            entry.push(ClientPeer {
+                src,
+                process: beautify_process(&row.command),
+                pid: row.pid,
+                since,
+                responsible_app: None,
+                current_rx_bps: 0,
+                current_tx_bps: 0,
+                bytes_rcvd: None,
+                bytes_sent: None,
+                last_sample_at: None,
+            });
         }
     }
     // Drop first-seen entries for sockets we no longer see, so their age
@@ -1045,10 +1046,10 @@ fn parse_lsof_row(line: &str) -> Option<LsofRow> {
 ///   `curl`                        → `curl`
 /// Other names pass through unchanged.
 pub fn beautify_process(raw: &str) -> String {
-    if let Some(rest) = raw.strip_prefix("com.apple.") {
-        if !rest.is_empty() {
-            return rest.to_string();
-        }
+    if let Some(rest) = raw.strip_prefix("com.apple.")
+        && !rest.is_empty()
+    {
+        return rest.to_string();
     }
     raw.to_string()
 }

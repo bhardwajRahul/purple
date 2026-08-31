@@ -308,10 +308,10 @@ impl TunnelState {
     /// directives because `ActiveTunnel` does not store the rule set
     /// directly. The poller picks up the new list on its next iteration.
     pub fn set_lsof_ports(&self, ports: Vec<(String, u16, u32)>) {
-        if let Some(handle) = &self.lsof {
-            if let Ok(mut g) = handle.bind_ports.lock() {
-                *g = ports;
-            }
+        if let Some(handle) = &self.lsof
+            && let Ok(mut g) = handle.bind_ports.lock()
+        {
+            *g = ports;
         }
     }
 

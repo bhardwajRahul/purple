@@ -370,14 +370,14 @@ impl SshConfigFile {
                         // canonicalize fails (e.g. permission denied).
                         let canonical =
                             std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-                        if let Some(ref mut v) = visited {
-                            if !v.insert(canonical) {
-                                log::warn!(
-                                    "[config] Include cycle detected, skipping {} (already visited up the chain)",
-                                    path.display()
-                                );
-                                continue;
-                            }
+                        if let Some(ref mut v) = visited
+                            && !v.insert(canonical)
+                        {
+                            log::warn!(
+                                "[config] Include cycle detected, skipping {} (already visited up the chain)",
+                                path.display()
+                            );
+                            continue;
                         }
                         match std::fs::read_to_string(&path) {
                             Ok(content) => {
@@ -420,10 +420,10 @@ impl SshConfigFile {
     /// (`$HOME`) so expansion stays free of ambient `dirs::home_dir()`. On the
     /// supported Unix platforms `$HOME` is the same source `dirs` reads.
     pub(crate) fn expand_tilde(pattern: &str, lookup: &dyn Fn(&str) -> Option<String>) -> String {
-        if let Some(rest) = pattern.strip_prefix("~/") {
-            if let Some(home) = lookup("HOME") {
-                return format!("{}/{}", home, rest);
-            }
+        if let Some(rest) = pattern.strip_prefix("~/")
+            && let Some(home) = lookup("HOME")
+        {
+            return format!("{}/{}", home, rest);
         }
         pattern.to_string()
     }
@@ -443,32 +443,32 @@ impl SshConfigFile {
         let mut result = String::with_capacity(s.len());
         let mut chars = s.char_indices().peekable();
         while let Some((i, c)) = chars.next() {
-            if c == '$' {
-                if let Some(&(_, '{')) = chars.peek() {
-                    chars.next(); // consume '{'
-                    if let Some(close) = s[i + 2..].find('}') {
-                        let var_name = &s[i + 2..i + 2 + close];
-                        if let Some(val) = lookup(var_name) {
-                            result.push_str(&val);
-                        } else {
-                            // Preserve unknown vars as-is
-                            result.push_str(&s[i..i + 2 + close + 1]);
-                        }
-                        // Advance past the closing '}'
-                        while let Some(&(j, _)) = chars.peek() {
-                            if j <= i + 2 + close {
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-                        continue;
+            if c == '$'
+                && let Some(&(_, '{')) = chars.peek()
+            {
+                chars.next(); // consume '{'
+                if let Some(close) = s[i + 2..].find('}') {
+                    let var_name = &s[i + 2..i + 2 + close];
+                    if let Some(val) = lookup(var_name) {
+                        result.push_str(&val);
+                    } else {
+                        // Preserve unknown vars as-is
+                        result.push_str(&s[i..i + 2 + close + 1]);
                     }
-                    // No closing '}' — preserve literally
-                    result.push('$');
-                    result.push('{');
+                    // Advance past the closing '}'
+                    while let Some(&(j, _)) = chars.peek() {
+                        if j <= i + 2 + close {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
                     continue;
                 }
+                // No closing '}' — preserve literally
+                result.push('$');
+                result.push('{');
+                continue;
             }
             result.push(c);
         }

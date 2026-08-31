@@ -19,30 +19,30 @@ pub(crate) fn handle_file_browser_listing(
     terminal: &mut tui::Tui,
 ) {
     let mut record_connection = false;
-    if let Some(ref mut fb) = app.file_browser_session {
-        if fb.alias == alias {
-            fb.remote_loading = false;
-            match entries {
-                Ok(listing) => {
-                    if !fb.connection_recorded {
-                        fb.connection_recorded = true;
-                        record_connection = true;
-                    }
-                    if fb.remote_path.is_empty() || fb.remote_path != path {
-                        fb.remote_path = path;
-                    }
-                    fb.remote_entries = listing;
-                    fb.remote_error = None;
-                    fb.remote_list_state = ratatui::widgets::ListState::default();
-                    fb.remote_list_state.select(Some(0));
+    if let Some(ref mut fb) = app.file_browser_session
+        && fb.alias == alias
+    {
+        fb.remote_loading = false;
+        match entries {
+            Ok(listing) => {
+                if !fb.connection_recorded {
+                    fb.connection_recorded = true;
+                    record_connection = true;
                 }
-                Err(msg) => {
-                    if fb.remote_path.is_empty() {
-                        fb.remote_path = path;
-                    }
-                    fb.remote_error = Some(msg);
-                    fb.remote_entries.clear();
+                if fb.remote_path.is_empty() || fb.remote_path != path {
+                    fb.remote_path = path;
                 }
+                fb.remote_entries = listing;
+                fb.remote_error = None;
+                fb.remote_list_state = ratatui::widgets::ListState::default();
+                fb.remote_list_state.select(Some(0));
+            }
+            Err(msg) => {
+                if fb.remote_path.is_empty() {
+                    fb.remote_path = path;
+                }
+                fb.remote_error = Some(msg);
+                fb.remote_entries.clear();
             }
         }
     }

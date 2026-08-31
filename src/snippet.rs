@@ -82,12 +82,11 @@ impl SnippetStore {
                 continue;
             }
             if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                if let Some(snippet) = current.take() {
-                    if !snippet.command.is_empty()
-                        && !snippets.iter().any(|s: &Snippet| s.name == snippet.name)
-                    {
-                        snippets.push(snippet);
-                    }
+                if let Some(snippet) = current.take()
+                    && !snippet.command.is_empty()
+                    && !snippets.iter().any(|s: &Snippet| s.name == snippet.name)
+                {
+                    snippets.push(snippet);
                 }
                 let name = trimmed[1..trimmed.len() - 1].trim().to_string();
                 if snippets.iter().any(|s| s.name == name) {
@@ -99,34 +98,35 @@ impl SnippetStore {
                     command: String::new(),
                     description: String::new(),
                 });
-            } else if let Some(ref mut snippet) = current {
-                if let Some((key, value)) = trimmed.split_once('=') {
-                    let key = key.trim();
-                    // Trim whitespace around key but preserve value content
-                    // (only trim leading whitespace after '=', not trailing)
-                    let value = value.trim_start().to_string();
-                    match key {
-                        "command" => snippet.command = value,
-                        "description" => snippet.description = value,
-                        "hosts" => {
-                            let aliases: Vec<String> = value
-                                .split(',')
-                                .map(|a| unescape_alias(a.trim()))
-                                .filter(|a| !a.is_empty())
-                                .collect();
-                            if !aliases.is_empty() {
-                                targets.insert(snippet.name.clone(), aliases);
-                            }
+            } else if let Some(ref mut snippet) = current
+                && let Some((key, value)) = trimmed.split_once('=')
+            {
+                let key = key.trim();
+                // Trim whitespace around key but preserve value content
+                // (only trim leading whitespace after '=', not trailing)
+                let value = value.trim_start().to_string();
+                match key {
+                    "command" => snippet.command = value,
+                    "description" => snippet.description = value,
+                    "hosts" => {
+                        let aliases: Vec<String> = value
+                            .split(',')
+                            .map(|a| unescape_alias(a.trim()))
+                            .filter(|a| !a.is_empty())
+                            .collect();
+                        if !aliases.is_empty() {
+                            targets.insert(snippet.name.clone(), aliases);
                         }
-                        _ => {}
                     }
+                    _ => {}
                 }
             }
         }
-        if let Some(snippet) = current {
-            if !snippet.command.is_empty() && !snippets.iter().any(|s| s.name == snippet.name) {
-                snippets.push(snippet);
-            }
+        if let Some(snippet) = current
+            && !snippet.command.is_empty()
+            && !snippets.iter().any(|s| s.name == snippet.name)
+        {
+            snippets.push(snippet);
         }
         // Drop targets for sections that did not yield a snippet (no command,
         // or a duplicate name) so the map never holds orphans.
@@ -160,15 +160,15 @@ impl SnippetStore {
             if !snippet.description.is_empty() {
                 content.push_str(&format!("description={}\n", snippet.description));
             }
-            if let Some(hosts) = self.targets.get(&snippet.name) {
-                if !hosts.is_empty() {
-                    let joined = hosts
-                        .iter()
-                        .map(|a| escape_alias(a))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    content.push_str(&format!("hosts={joined}\n"));
-                }
+            if let Some(hosts) = self.targets.get(&snippet.name)
+                && !hosts.is_empty()
+            {
+                let joined = hosts
+                    .iter()
+                    .map(|a| escape_alias(a))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                content.push_str(&format!("hosts={joined}\n"));
             }
         }
 
@@ -279,22 +279,22 @@ pub fn parse_params(command: &str) -> Vec<SnippetParam> {
     let len = bytes.len();
     let mut i = 0;
     while i + 3 < len {
-        if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
-            if let Some(end) = command[i + 2..].find("}}") {
-                let inner = &command[i + 2..i + 2 + end];
-                let (name, default) = if let Some((n, d)) = inner.split_once(':') {
-                    (n.to_string(), Some(d.to_string()))
-                } else {
-                    (inner.to_string(), None)
-                };
-                if validate_param_name(&name).is_ok() && !seen.contains(&name) && params.len() < 20
-                {
-                    seen.insert(name.clone());
-                    params.push(SnippetParam { name, default });
-                }
-                i = i + 2 + end + 2;
-                continue;
+        if bytes[i] == b'{'
+            && bytes.get(i + 1) == Some(&b'{')
+            && let Some(end) = command[i + 2..].find("}}")
+        {
+            let inner = &command[i + 2..i + 2 + end];
+            let (name, default) = if let Some((n, d)) = inner.split_once(':') {
+                (n.to_string(), Some(d.to_string()))
+            } else {
+                (inner.to_string(), None)
+            };
+            if validate_param_name(&name).is_ok() && !seen.contains(&name) && params.len() < 20 {
+                seen.insert(name.clone());
+                params.push(SnippetParam { name, default });
             }
+            i = i + 2 + end + 2;
+            continue;
         }
         i += 1;
     }
@@ -310,16 +310,17 @@ pub fn count_params(command: &str) -> usize {
     let len = bytes.len();
     let mut i = 0;
     while i + 3 < len {
-        if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
-            if let Some(end) = command[i + 2..].find("}}") {
-                let inner = &command[i + 2..i + 2 + end];
-                let name = inner.split_once(':').map_or(inner, |(n, _)| n);
-                if validate_param_name(name).is_ok() && !seen.contains(&name) && seen.len() < 20 {
-                    seen.push(name);
-                }
-                i = i + 2 + end + 2;
-                continue;
+        if bytes[i] == b'{'
+            && bytes.get(i + 1) == Some(&b'{')
+            && let Some(end) = command[i + 2..].find("}}")
+        {
+            let inner = &command[i + 2..i + 2 + end];
+            let name = inner.split_once(':').map_or(inner, |(n, _)| n);
+            if validate_param_name(name).is_ok() && !seen.contains(&name) && seen.len() < 20 {
+                seen.push(name);
             }
+            i = i + 2 + end + 2;
+            continue;
         }
         i += 1;
     }
@@ -352,28 +353,30 @@ pub fn substitute_params(
     let len = bytes.len();
     let mut i = 0;
     while i < len {
-        if i + 3 < len && bytes[i] == b'{' && bytes[i + 1] == b'{' {
-            if let Some(end) = command[i + 2..].find("}}") {
-                let inner = &command[i + 2..i + 2 + end];
-                let (name, default) = if let Some((n, d)) = inner.split_once(':') {
-                    (n, Some(d))
-                } else {
-                    (inner, None)
-                };
-                // Only a valid name is a parameter. parse_params and count_params
-                // gate the same way, so an invalid placeholder (e.g. `{{a b}}`)
-                // stays literal here instead of being silently rewritten to ''.
-                if validate_param_name(name).is_ok() {
-                    let value = values
-                        .get(name)
-                        .filter(|v| !v.is_empty())
-                        .map(|v| v.as_str())
-                        .or(default)
-                        .unwrap_or("");
-                    result.push_str(&shell_escape(value));
-                    i = i + 2 + end + 2;
-                    continue;
-                }
+        if i + 3 < len
+            && bytes[i] == b'{'
+            && bytes[i + 1] == b'{'
+            && let Some(end) = command[i + 2..].find("}}")
+        {
+            let inner = &command[i + 2..i + 2 + end];
+            let (name, default) = if let Some((n, d)) = inner.split_once(':') {
+                (n, Some(d))
+            } else {
+                (inner, None)
+            };
+            // Only a valid name is a parameter. parse_params and count_params
+            // gate the same way, so an invalid placeholder (e.g. `{{a b}}`)
+            // stays literal here instead of being silently rewritten to ''.
+            if validate_param_name(name).is_ok() {
+                let value = values
+                    .get(name)
+                    .filter(|v| !v.is_empty())
+                    .map(|v| v.as_str())
+                    .or(default)
+                    .unwrap_or("");
+                result.push_str(&shell_escape(value));
+                i = i + 2 + end + 2;
+                continue;
             }
         }
         // Properly decode UTF-8 character (not byte-level cast)

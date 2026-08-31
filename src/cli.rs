@@ -1078,11 +1078,11 @@ pub fn handle_snippet_command(
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
-            if let Some(ref desc) = description {
-                if desc.contains(|c: char| c.is_control()) {
-                    eprintln!("{}", crate::messages::cli::DESCRIPTION_CONTROL_CHARS);
-                    std::process::exit(1);
-                }
+            if let Some(ref desc) = description
+                && desc.contains(|c: char| c.is_control())
+            {
+                eprintln!("{}", crate::messages::cli::DESCRIPTION_CONTROL_CHARS);
+                std::process::exit(1);
             }
             let mut store = snippet::SnippetStore::load(env.paths());
             let is_update = store.get(&name).is_some();
@@ -1411,12 +1411,12 @@ pub fn handle_vault_sign_command(
         all,
         cli_vault_addr
     );
-    if let Some(ref addr) = cli_vault_addr {
-        if !vault_ssh::is_valid_vault_addr(addr) {
-            anyhow::bail!(
-                "Invalid --vault-addr value. Must be non-empty, no whitespace or control chars."
-            );
-        }
+    if let Some(ref addr) = cli_vault_addr
+        && !vault_ssh::is_valid_vault_addr(addr)
+    {
+        anyhow::bail!(
+            "Invalid --vault-addr value. Must be non-empty, no whitespace or control chars."
+        );
     }
     let provider_config = providers::config::ProviderConfig::load(env.paths());
     let entries = config.host_entries();
@@ -1498,10 +1498,10 @@ pub fn handle_vault_sign_command(
                 }
             }
         }
-        if signed > 0 {
-            if let Err(e) = config.write() {
-                eprintln!("{}", crate::messages::cli::vault_config_update_warning(&e));
-            }
+        if signed > 0
+            && let Err(e) = config.write()
+        {
+            eprintln!("{}", crate::messages::cli::vault_config_update_warning(&e));
         }
         println!(
             "\nSigned: {}, failed: {}, skipped (valid): {}",

@@ -363,12 +363,11 @@ fn run_direct_connect(
 ) -> Result<()> {
     let provider_config = providers::config::ProviderConfig::load(env.paths());
     let host_entry = config.host_entries().into_iter().find(|h| h.alias == alias);
-    if host_entry.is_some() {
-        if let Some((msg, _is_error)) =
+    if host_entry.is_some()
+        && let Some((msg, _is_error)) =
             ensure_vault_ssh_chain_if_needed(env, &alias, config_path, &provider_config, config)
-        {
-            eprintln!("{}", msg);
-        }
+    {
+        eprintln!("{}", msg);
     }
     let askpass = host_entry
         .as_ref()

@@ -146,10 +146,11 @@ impl I3d {
                         if !host.category.is_empty() {
                             metadata.push("type", host.category.clone());
                         }
-                        if let Some(ncpu) = host.num_cpu {
-                            if ncpu > 0 && !host.cpu_type.is_empty() {
-                                metadata.push("specs", format!("{}x {}", ncpu, host.cpu_type));
-                            }
+                        if let Some(ncpu) = host.num_cpu
+                            && ncpu > 0
+                            && !host.cpu_type.is_empty()
+                        {
+                            metadata.push("specs", format!("{}x {}", ncpu, host.cpu_type));
                         }
                         let name = if host.server_name.is_empty() {
                             host.id.to_string()
@@ -770,10 +771,11 @@ mod tests {
         if !host.category.is_empty() {
             metadata.push("type", host.category.clone());
         }
-        if let Some(ncpu) = host.num_cpu {
-            if ncpu > 0 && !host.cpu_type.is_empty() {
-                metadata.push("specs", format!("{}x {}", ncpu, host.cpu_type));
-            }
+        if let Some(ncpu) = host.num_cpu
+            && ncpu > 0
+            && !host.cpu_type.is_empty()
+        {
+            metadata.push("specs", format!("{}x {}", ncpu, host.cpu_type));
         }
         let metadata = metadata.finish();
         assert_eq!(ip, "1.2.3.4");

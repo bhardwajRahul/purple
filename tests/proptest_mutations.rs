@@ -318,10 +318,10 @@ fn apply_action(config: &mut SshConfigFile, action: &Action) {
             }
         }
         Action::DeleteUndoFirst => {
-            if let Some(alias) = &first_alias {
-                if let Some((element, position)) = config.delete_host_undoable(alias) {
-                    config.insert_host_at(element, position);
-                }
+            if let Some(alias) = &first_alias
+                && let Some((element, position)) = config.delete_host_undoable(alias)
+            {
+                config.insert_host_at(element, position);
             }
         }
         Action::SwapFirstTwo => {

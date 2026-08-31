@@ -261,10 +261,10 @@ impl UpCloud {
                     .iter()
                     .find(|d| d.boot_disk == "1")
                     .or_else(|| sd.storage_device.first());
-                if let Some(disk) = boot {
-                    if !disk.storage_title.is_empty() {
-                        metadata.push("image", disk.storage_title.clone());
-                    }
+                if let Some(disk) = boot
+                    && !disk.storage_title.is_empty()
+                {
+                    metadata.push("image", disk.storage_title.clone());
                 }
             }
             if !server.state.is_empty() {

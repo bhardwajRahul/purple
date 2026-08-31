@@ -80,24 +80,24 @@ pub struct AuditLog {
 
 impl AuditLog {
     pub fn open(path: &Path) -> std::io::Result<Self> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-                // Note: we do not chmod the parent. It may be a user-chosen
-                // location (e.g. /tmp) that we have no business locking down.
-                // The log file itself is set to 0o600 below.
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+            // Note: we do not chmod the parent. It may be a user-chosen
+            // location (e.g. /tmp) that we have no business locking down.
+            // The log file itself is set to 0o600 below.
         }
         // Refuse to open a path that already exists as a symlink: an attacker
         // who can pre-create a symlink in a writable location could redirect
         // the log into a sensitive file (cron, ssh authorized_keys, etc.).
-        if let Ok(meta) = std::fs::symlink_metadata(path) {
-            if meta.file_type().is_symlink() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied,
-                    "audit log path is a symlink; refusing to open",
-                ));
-            }
+        if let Ok(meta) = std::fs::symlink_metadata(path)
+            && meta.file_type().is_symlink()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "audit log path is a symlink; refusing to open",
+            ));
         }
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         // Restrict to owner read/write. The log can carry host aliases and

@@ -184,10 +184,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 
     // Action in progress
-    if let Some(ci) = action_ci {
-        if let Some(ref msg) = state.action_in_progress {
-            design::render_loading(frame, chunks[ci], msg);
-        }
+    if let Some(ci) = action_ci
+        && let Some(ref msg) = state.action_in_progress
+    {
+        design::render_loading(frame, chunks[ci], msg);
     }
 
     // Footer below the block
@@ -202,30 +202,30 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .render_with_status(frame, footer_area, app);
 
     // Confirmation dialog for stop/restart
-    if let Some(ref confirm_state) = app.container_session {
-        if let Some((ref action, ref name, _)) = confirm_state.confirm_action {
-            let verb = action.as_str();
-            let display_name = truncate_str(name, 30);
-            let content: Vec<Line<'static>> = vec![Line::from(Span::styled(
-                format!("  {} \"{}\"?", verb, display_name),
-                theme::bold(),
-            ))];
-            // Stakes test: stop/restart take effect on the remote
-            // immediately, so use destructive action verbs (stop/restart
-            // vs keep) instead of generic yes/no.
-            let footer_spans = design::confirm_footer_destructive(verb, "keep")
-                .to_line()
-                .spans;
-            design::render_confirm_popup(
-                frame,
-                52,
-                design::PopupKind::Destructive,
-                &format!("Confirm {}", verb),
-                content,
-                footer_spans,
-                app,
-            );
-        }
+    if let Some(ref confirm_state) = app.container_session
+        && let Some((ref action, ref name, _)) = confirm_state.confirm_action
+    {
+        let verb = action.as_str();
+        let display_name = truncate_str(name, 30);
+        let content: Vec<Line<'static>> = vec![Line::from(Span::styled(
+            format!("  {} \"{}\"?", verb, display_name),
+            theme::bold(),
+        ))];
+        // Stakes test: stop/restart take effect on the remote
+        // immediately, so use destructive action verbs (stop/restart
+        // vs keep) instead of generic yes/no.
+        let footer_spans = design::confirm_footer_destructive(verb, "keep")
+            .to_line()
+            .spans;
+        design::render_confirm_popup(
+            frame,
+            52,
+            design::PopupKind::Destructive,
+            &format!("Confirm {}", verb),
+            content,
+            footer_spans,
+            app,
+        );
     }
 }
 

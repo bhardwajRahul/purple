@@ -37,10 +37,10 @@ pub fn parse(input: &str) -> Vec<Section> {
 
     for line in input.lines() {
         if let Some(rest) = line.strip_prefix("## ") {
-            if let Some(sec) = current.take() {
-                if !sec.entries.is_empty() {
-                    sections.push(sec);
-                }
+            if let Some(sec) = current.take()
+                && !sec.entries.is_empty()
+            {
+                sections.push(sec);
             }
             if let Some((version, date)) = parse_header(rest) {
                 current = Some(Section {
@@ -53,18 +53,18 @@ pub fn parse(input: &str) -> Vec<Section> {
             }
             continue;
         }
-        if let Some(rest) = line.strip_prefix("- ") {
-            if let Some(sec) = current.as_mut() {
-                let (kind, text) = classify(rest.trim());
-                sec.entries.push(Entry { kind, text });
-            }
+        if let Some(rest) = line.strip_prefix("- ")
+            && let Some(sec) = current.as_mut()
+        {
+            let (kind, text) = classify(rest.trim());
+            sec.entries.push(Entry { kind, text });
         }
     }
 
-    if let Some(sec) = current.take() {
-        if !sec.entries.is_empty() {
-            sections.push(sec);
-        }
+    if let Some(sec) = current.take()
+        && !sec.entries.is_empty()
+    {
+        sections.push(sec);
     }
 
     sections
@@ -119,10 +119,10 @@ pub fn versions_to_show<'a>(
     current: &Version,
     cap: usize,
 ) -> &'a [Section] {
-    if let Some(seen) = last_seen {
-        if seen >= current {
-            return &[];
-        }
+    if let Some(seen) = last_seen
+        && seen >= current
+    {
+        return &[];
     }
     let Some((upper, lower)) = window_bounds(sections, last_seen, current) else {
         return &[];

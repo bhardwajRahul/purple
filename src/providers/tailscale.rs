@@ -114,12 +114,12 @@ fn find_tailscale_binary() -> Result<PathBuf, ProviderError> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .output();
-    if let Ok(output) = found {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Ok(PathBuf::from(path));
-            }
+    if let Ok(output) = found
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(PathBuf::from(path));
         }
     }
 

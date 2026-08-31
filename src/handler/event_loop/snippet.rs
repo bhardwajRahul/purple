@@ -23,25 +23,23 @@ pub(crate) fn handle_snippet_host_done(
         app.record_key_use(&alias, crate::key_activity::now_secs());
         app.apply_sort();
     }
-    if is_current {
-        if let Some(state) = app.snippets.output_mut() {
-            state.results.push(app::SnippetHostOutput {
-                alias,
-                stdout,
-                stderr,
-                exit_code,
-            });
-        }
+    if is_current && let Some(state) = app.snippets.output_mut() {
+        state.results.push(app::SnippetHostOutput {
+            alias,
+            stdout,
+            stderr,
+            exit_code,
+        });
     }
 }
 
 /// Handle `AppEvent::SnippetProgress`.
 pub(crate) fn handle_snippet_progress(app: &mut App, run_id: u64, completed: usize, total: usize) {
-    if let Some(state) = app.snippets.output_mut() {
-        if state.run_id == run_id {
-            state.completed = completed;
-            state.total = total;
-        }
+    if let Some(state) = app.snippets.output_mut()
+        && state.run_id == run_id
+    {
+        state.completed = completed;
+        state.total = total;
     }
 }
 

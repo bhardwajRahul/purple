@@ -327,12 +327,12 @@ fn tunnel_list_key(ctx: &mut TunnelCtx, key: KeyEvent) {
                 ctx.notify_warning(crate::messages::TUNNEL_INCLUDED_READ_ONLY);
                 return;
             }
-            if let Some(sel) = ctx.ui.tunnel_list_state().selected() {
-                if let Some(rule) = ctx.tunnels.list().get(sel).cloned() {
-                    let alias = alias.clone();
-                    ctx.effects
-                        .defer(move |app| app.open_tunnel_edit_form(alias, &rule, sel));
-                }
+            if let Some(sel) = ctx.ui.tunnel_list_state().selected()
+                && let Some(rule) = ctx.tunnels.list().get(sel).cloned()
+            {
+                let alias = alias.clone();
+                ctx.effects
+                    .defer(move |app| app.open_tunnel_edit_form(alias, &rule, sel));
             }
         }
         KeyCode::Char('d') => {
@@ -340,10 +340,10 @@ fn tunnel_list_key(ctx: &mut TunnelCtx, key: KeyEvent) {
                 ctx.notify_warning(crate::messages::TUNNEL_INCLUDED_READ_ONLY);
                 return;
             }
-            if let Some(sel) = ctx.ui.tunnel_list_state().selected() {
-                if sel < ctx.tunnels.list().len() {
-                    ctx.tunnels.request_delete(sel);
-                }
+            if let Some(sel) = ctx.ui.tunnel_list_state().selected()
+                && sel < ctx.tunnels.list().len()
+            {
+                ctx.tunnels.request_delete(sel);
             }
         }
         KeyCode::Enter => {

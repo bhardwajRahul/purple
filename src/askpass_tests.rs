@@ -656,12 +656,12 @@ fn parse_preferences_content(content: &str) -> Option<String> {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == "askpass" {
-                let val = v.trim();
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == "askpass"
+        {
+            let val = v.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
             }
         }
     }

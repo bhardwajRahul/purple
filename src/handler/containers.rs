@@ -299,14 +299,14 @@ fn containers_key(
                 if state.action_in_progress.is_some() || state.confirm_action.is_some() {
                     return Ok(());
                 }
-                if let Some(idx) = state.list_state.selected() {
-                    if let Some(container) = state.containers.get(idx) {
-                        state.confirm_action = Some((
-                            crate::containers::ContainerAction::Stop,
-                            container.names.clone(),
-                            container.id.clone(),
-                        ));
-                    }
+                if let Some(idx) = state.list_state.selected()
+                    && let Some(container) = state.containers.get(idx)
+                {
+                    state.confirm_action = Some((
+                        crate::containers::ContainerAction::Stop,
+                        container.names.clone(),
+                        container.id.clone(),
+                    ));
                 }
             }
         }
@@ -316,14 +316,14 @@ fn containers_key(
                 if state.action_in_progress.is_some() || state.confirm_action.is_some() {
                     return Ok(());
                 }
-                if let Some(idx) = state.list_state.selected() {
-                    if let Some(container) = state.containers.get(idx) {
-                        state.confirm_action = Some((
-                            crate::containers::ContainerAction::Restart,
-                            container.names.clone(),
-                            container.id.clone(),
-                        ));
-                    }
+                if let Some(idx) = state.list_state.selected()
+                    && let Some(container) = state.containers.get(idx)
+                {
+                    state.confirm_action = Some((
+                        crate::containers::ContainerAction::Restart,
+                        container.names.clone(),
+                        container.id.clone(),
+                    ));
                 }
             }
         }

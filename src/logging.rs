@@ -22,11 +22,11 @@ pub fn log_path(paths: Option<&crate::runtime::env::Paths>) -> Option<PathBuf> {
 /// Rotate log file if it exceeds MAX_LOG_SIZE.
 /// Renames purple.log -> purple.log.1 (overwrites previous backup).
 fn rotate_if_needed(path: &Path) {
-    if let Ok(meta) = fs::metadata(path) {
-        if meta.len() > MAX_LOG_SIZE {
-            let backup = path.with_file_name("purple.log.1");
-            let _ = fs::rename(path, backup);
-        }
+    if let Ok(meta) = fs::metadata(path)
+        && meta.len() > MAX_LOG_SIZE
+    {
+        let backup = path.with_file_name("purple.log.1");
+        let _ = fs::rename(path, backup);
     }
 }
 
@@ -87,10 +87,10 @@ pub fn init(verbose: bool, cli_stderr: bool, env: &crate::runtime::env::Env) {
         ));
     }
 
-    if !loggers.is_empty() {
-        if let Err(e) = CombinedLogger::init(loggers) {
-            eprintln!("{}", crate::messages::logging::init_failed(&e));
-        }
+    if !loggers.is_empty()
+        && let Err(e) = CombinedLogger::init(loggers)
+    {
+        eprintln!("{}", crate::messages::logging::init_failed(&e));
     }
 }
 

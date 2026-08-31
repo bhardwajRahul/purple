@@ -41,13 +41,12 @@ impl SshConfigFile {
 
         let mut removed = 0;
         self.elements.retain(|e| {
-            if let ConfigElement::GlobalLine(line) = e {
-                if let Some(rest) = line.trim().strip_prefix("# purple:group ") {
-                    if !active_providers.contains(rest.trim()) {
-                        removed += 1;
-                        return false;
-                    }
-                }
+            if let ConfigElement::GlobalLine(line) = e
+                && let Some(rest) = line.trim().strip_prefix("# purple:group ")
+                && !active_providers.contains(rest.trim())
+            {
+                removed += 1;
+                return false;
             }
             true
         });

@@ -456,19 +456,19 @@ impl ContainersOverviewState {
             );
             self.auto_list_in_flight.insert(new.to_string());
         }
-        if let Some(batch) = self.refresh_batch.as_mut() {
-            if batch.in_flight_aliases.remove(old) {
-                debug_assert!(
-                    !batch.in_flight_aliases.contains(new),
-                    "refresh_batch.in_flight_aliases collision on rename {old} -> {new}"
-                );
-                batch.in_flight_aliases.insert(new.to_string());
-            }
+        if let Some(batch) = self.refresh_batch.as_mut()
+            && batch.in_flight_aliases.remove(old)
+        {
+            debug_assert!(
+                !batch.in_flight_aliases.contains(new),
+                "refresh_batch.in_flight_aliases collision on rename {old} -> {new}"
+            );
+            batch.in_flight_aliases.insert(new.to_string());
         }
-        if let Some(ctx) = self.pending_bulk_confirm.as_mut() {
-            if ctx.alias == old {
-                ctx.alias = new.to_string();
-            }
+        if let Some(ctx) = self.pending_bulk_confirm.as_mut()
+            && ctx.alias == old
+        {
+            ctx.alias = new.to_string();
         }
         if self.collapsed_hosts.remove(old) {
             debug_assert!(
@@ -540,10 +540,10 @@ impl ContainersOverviewState {
         // Bulk-confirm payload aimed at a deleted host: clear it; the
         // matching Screen::Confirm* variant would render an empty body
         // and a y press would no-op.
-        if let Some(ctx) = self.pending_bulk_confirm.as_ref() {
-            if !valid_aliases.contains(ctx.alias.as_str()) {
-                self.pending_bulk_confirm = None;
-            }
+        if let Some(ctx) = self.pending_bulk_confirm.as_ref()
+            && !valid_aliases.contains(ctx.alias.as_str())
+        {
+            self.pending_bulk_confirm = None;
         }
 
         // Containers-overview collapsed groups are persisted to disk via

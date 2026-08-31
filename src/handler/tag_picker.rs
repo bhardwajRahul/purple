@@ -66,20 +66,20 @@ fn tag_key(ctx: &mut TagCtx, key: KeyEvent) {
             crate::app::page_up(ctx.ui.tag_picker_state_mut(), ctx.tags.list().len(), 10);
         }
         KeyCode::Enter => {
-            if let Some(index) = ctx.ui.tag_picker_state().selected() {
-                if let Some(tag) = ctx.tags.list().get(index) {
-                    let tag: String = tag.clone();
-                    ctx.set_screen(Screen::HostList);
-                    // start_search and apply_filter recompute the host display
-                    // list (hosts, ping, providers), so they run on the full App
-                    // after the slice borrow ends. set_query sits between them
-                    // in the original, so defer the whole sequence to keep order.
-                    ctx.defer(move |app| {
-                        app.start_search();
-                        app.search.set_query(Some(format!("tag={}", tag)));
-                        app.apply_filter();
-                    });
-                }
+            if let Some(index) = ctx.ui.tag_picker_state().selected()
+                && let Some(tag) = ctx.tags.list().get(index)
+            {
+                let tag: String = tag.clone();
+                ctx.set_screen(Screen::HostList);
+                // start_search and apply_filter recompute the host display
+                // list (hosts, ping, providers), so they run on the full App
+                // after the slice borrow ends. set_query sits between them
+                // in the original, so defer the whole sequence to keep order.
+                ctx.defer(move |app| {
+                    app.start_search();
+                    app.search.set_query(Some(format!("tag={}", tag)));
+                    app.apply_filter();
+                });
             }
         }
         _ => {}

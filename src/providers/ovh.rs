@@ -186,17 +186,16 @@ impl Ovh {
                 if !instance.region.is_empty() {
                     metadata.push("region", instance.region.clone());
                 }
-                if let Some(ref flavor) = instance.flavor {
-                    if !flavor.name.is_empty() {
-                        metadata.push("type", flavor.name.clone());
-                    }
+                if let Some(ref flavor) = instance.flavor
+                    && !flavor.name.is_empty()
+                {
+                    metadata.push("type", flavor.name.clone());
                 }
-                if let Some(ref image) = instance.image {
-                    if let Some(ref name) = image.name {
-                        if !name.is_empty() {
-                            metadata.push("image", name.clone());
-                        }
-                    }
+                if let Some(ref image) = instance.image
+                    && let Some(ref name) = image.name
+                    && !name.is_empty()
+                {
+                    metadata.push("image", name.clone());
                 }
                 if !instance.status.is_empty() {
                     metadata.push("status", instance.status.clone());
@@ -689,17 +688,16 @@ mod tests {
         if !inst.region.is_empty() {
             metadata.push("region", inst.region.clone());
         }
-        if let Some(ref flavor) = inst.flavor {
-            if !flavor.name.is_empty() {
-                metadata.push("type", flavor.name.clone());
-            }
+        if let Some(ref flavor) = inst.flavor
+            && !flavor.name.is_empty()
+        {
+            metadata.push("type", flavor.name.clone());
         }
-        if let Some(ref image) = inst.image {
-            if let Some(ref name) = image.name {
-                if !name.is_empty() {
-                    metadata.push("image", name.clone());
-                }
-            }
+        if let Some(ref image) = inst.image
+            && let Some(ref name) = image.name
+            && !name.is_empty()
+        {
+            metadata.push("image", name.clone());
         }
         if !inst.status.is_empty() {
             metadata.push("status", inst.status.clone());
@@ -724,10 +722,10 @@ mod tests {
         if !inst.region.is_empty() {
             metadata.push("region", inst.region.clone());
         }
-        if let Some(ref flavor) = inst.flavor {
-            if !flavor.name.is_empty() {
-                metadata.push("type", flavor.name.clone());
-            }
+        if let Some(ref flavor) = inst.flavor
+            && !flavor.name.is_empty()
+        {
+            metadata.push("type", flavor.name.clone());
         }
         if !inst.status.is_empty() {
             metadata.push("status", inst.status.clone());

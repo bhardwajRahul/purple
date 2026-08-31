@@ -8074,14 +8074,13 @@ fn jump_enter_on_container_hit_lands_on_global_containers_tab() {
     app.recompute_jump_hits();
     // Move selection onto the container hit (it should be the first
     // matching candidate; we check by kind to be robust).
-    if let Some(p) = app.jump.as_mut() {
-        if let Some(idx) = p
+    if let Some(p) = app.jump.as_mut()
+        && let Some(idx) = p
             .visible_hits()
             .iter()
             .position(|h| matches!(h, crate::app::JumpHit::Container(_)))
-        {
-            p.set_selected(idx);
-        }
+    {
+        p.set_selected(idx);
     }
     let (tx, _rx) = mpsc::channel();
     handle_key_event(&mut app, key(KeyCode::Enter), &tx).unwrap();
@@ -8128,14 +8127,13 @@ fn jump_enter_on_snippet_hit_with_no_host_warns() {
         }
     }
     app.recompute_jump_hits();
-    if let Some(p) = app.jump.as_mut() {
-        if let Some(idx) = p
+    if let Some(p) = app.jump.as_mut()
+        && let Some(idx) = p
             .visible_hits()
             .iter()
             .position(|h| matches!(h, crate::app::JumpHit::Snippet(_)))
-        {
-            p.set_selected(idx);
-        }
+    {
+        p.set_selected(idx);
     }
     let (tx, _rx) = mpsc::channel();
     handle_key_event(&mut app, key(KeyCode::Enter), &tx).unwrap();

@@ -99,14 +99,15 @@ fn resolve_credentials(
         }
     }
     // Environment variables, from the injected snapshot.
-    if let Some((ak, sk)) = env.aws_credentials() {
-        if !ak.is_empty() && !sk.is_empty() {
-            return Ok(AwsCredentials {
-                access_key: ak.to_string(),
-                secret_key: sk.to_string(),
-                session_token: env.aws_session_token().map(str::to_string),
-            });
-        }
+    if let Some((ak, sk)) = env.aws_credentials()
+        && !ak.is_empty()
+        && !sk.is_empty()
+    {
+        return Ok(AwsCredentials {
+            access_key: ak.to_string(),
+            secret_key: sk.to_string(),
+            session_token: env.aws_session_token().map(str::to_string),
+        });
     }
     // A config saved without a token and without a profile is valid, so name
     // the three sources here rather than point at a token that was never set.

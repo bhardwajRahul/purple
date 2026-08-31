@@ -301,10 +301,10 @@ impl ProviderConfig {
                 continue;
             }
             if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                if let Some(section) = current.take() {
-                    if !sections.iter().any(|s| s.id == section.id) {
-                        sections.push(section);
-                    }
+                if let Some(section) = current.take()
+                    && !sections.iter().any(|s| s.id == section.id)
+                {
+                    sections.push(section);
                 }
                 let raw = trimmed[1..trimmed.len() - 1].trim();
                 let id = match ProviderConfigId::from_str(raw) {
@@ -362,56 +362,56 @@ impl ProviderConfig {
                     vault_role: String::new(),
                     vault_addr: String::new(),
                 });
-            } else if let Some(ref mut section) = current {
-                if let Some((key, value)) = trimmed.split_once('=') {
-                    let key = key.trim();
-                    let value = value.trim().to_string();
-                    match key {
-                        "token" => section.token = value,
-                        "alias_prefix" => section.alias_prefix = value,
-                        "user" => section.user = value,
-                        "key" => section.identity_file = value,
-                        "url" => section.url = value,
-                        "verify_tls" => {
-                            section.verify_tls =
-                                !matches!(value.to_lowercase().as_str(), "false" | "0" | "no")
-                        }
-                        "auto_sync" => {
-                            section.auto_sync =
-                                !matches!(value.to_lowercase().as_str(), "false" | "0" | "no")
-                        }
-                        "profile" => section.profile = value,
-                        "regions" => section.regions = value,
-                        "project" => section.project = value,
-                        "compartment" => section.compartment = value,
-                        "filter" => section.filter = value,
-                        "vault_role" => {
-                            // Silently drop invalid roles so parsing stays infallible.
-                            section.vault_role = if crate::vault_ssh::is_valid_role(&value) {
-                                value
-                            } else {
-                                String::new()
-                            };
-                        }
-                        "vault_addr" => {
-                            // Same silent-drop policy as vault_role: a bad
-                            // value is ignored on parse rather than crashing
-                            // the whole config load.
-                            section.vault_addr = if crate::vault_ssh::is_valid_vault_addr(&value) {
-                                value
-                            } else {
-                                String::new()
-                            };
-                        }
-                        _ => {}
+            } else if let Some(ref mut section) = current
+                && let Some((key, value)) = trimmed.split_once('=')
+            {
+                let key = key.trim();
+                let value = value.trim().to_string();
+                match key {
+                    "token" => section.token = value,
+                    "alias_prefix" => section.alias_prefix = value,
+                    "user" => section.user = value,
+                    "key" => section.identity_file = value,
+                    "url" => section.url = value,
+                    "verify_tls" => {
+                        section.verify_tls =
+                            !matches!(value.to_lowercase().as_str(), "false" | "0" | "no")
                     }
+                    "auto_sync" => {
+                        section.auto_sync =
+                            !matches!(value.to_lowercase().as_str(), "false" | "0" | "no")
+                    }
+                    "profile" => section.profile = value,
+                    "regions" => section.regions = value,
+                    "project" => section.project = value,
+                    "compartment" => section.compartment = value,
+                    "filter" => section.filter = value,
+                    "vault_role" => {
+                        // Silently drop invalid roles so parsing stays infallible.
+                        section.vault_role = if crate::vault_ssh::is_valid_role(&value) {
+                            value
+                        } else {
+                            String::new()
+                        };
+                    }
+                    "vault_addr" => {
+                        // Same silent-drop policy as vault_role: a bad
+                        // value is ignored on parse rather than crashing
+                        // the whole config load.
+                        section.vault_addr = if crate::vault_ssh::is_valid_vault_addr(&value) {
+                            value
+                        } else {
+                            String::new()
+                        };
+                    }
+                    _ => {}
                 }
             }
         }
-        if let Some(section) = current {
-            if !sections.iter().any(|s| s.id == section.id) {
-                sections.push(section);
-            }
+        if let Some(section) = current
+            && !sections.iter().any(|s| s.id == section.id)
+        {
+            sections.push(section);
         }
         Self {
             sections,

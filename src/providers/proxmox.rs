@@ -248,10 +248,10 @@ fn format_failure_summary(total: usize, groups: &HashMap<&'static str, usize>) -
     if groups.is_empty() {
         return format!("{} failed", total);
     }
-    if let Some(&n) = groups.get(AUTH_GROUP) {
-        if n == total {
-            return format!("{} failed (authentication)", total);
-        }
+    if let Some(&n) = groups.get(AUTH_GROUP)
+        && n == total
+    {
+        return format!("{} failed (authentication)", total);
     }
     let mut entries: Vec<(&str, usize)> = groups
         .iter()
@@ -892,11 +892,9 @@ impl Proxmox {
         if resource.resource_type == "qemu"
             && resource.status == "running"
             && is_agent_enabled(config.agent.as_deref())
+            && let Some(os) = fetch_guest_os_info(agent, base, auth, &resource.node, resource.vmid)
         {
-            if let Some(os) = fetch_guest_os_info(agent, base, auth, &resource.node, resource.vmid)
-            {
-                return Some(os);
-            }
+            return Some(os);
         }
 
         extract_ostype(&config)

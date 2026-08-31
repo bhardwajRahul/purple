@@ -303,10 +303,10 @@ fn detect_install_method(exe_path: &Path, env: &crate::runtime::env::Env) -> Ins
     // Homebrew: check HOMEBREW_CELLAR env var first (most specific),
     // then derive Cellar from HOMEBREW_PREFIX, then fall back to
     // well-known default Cellar locations
-    if let Some(cellar) = env.var("HOMEBREW_CELLAR") {
-        if is_homebrew_path(exe_path, Path::new(cellar)) {
-            return InstallMethod::Homebrew;
-        }
+    if let Some(cellar) = env.var("HOMEBREW_CELLAR")
+        && is_homebrew_path(exe_path, Path::new(cellar))
+    {
+        return InstallMethod::Homebrew;
     }
     if let Some(prefix) = env.var("HOMEBREW_PREFIX") {
         let cellar = std::path::PathBuf::from(prefix).join("Cellar");
@@ -327,19 +327,17 @@ fn detect_install_method(exe_path: &Path, env: &crate::runtime::env::Env) -> Ins
 
     // Cargo: check CARGO_HOME env var first, then check if parent
     // is a "bin" dir inside a ".cargo" dir (component-aware fallback)
-    if let Some(cargo_home) = env.var("CARGO_HOME") {
-        if is_cargo_path(exe_path, Path::new(cargo_home)) {
-            return InstallMethod::Cargo;
-        }
+    if let Some(cargo_home) = env.var("CARGO_HOME")
+        && is_cargo_path(exe_path, Path::new(cargo_home))
+    {
+        return InstallMethod::Cargo;
     }
-    if let Some(parent) = exe_path.parent() {
-        if parent.file_name().and_then(|n| n.to_str()) == Some("bin") {
-            if let Some(grandparent) = parent.parent() {
-                if grandparent.file_name().and_then(|n| n.to_str()) == Some(".cargo") {
-                    return InstallMethod::Cargo;
-                }
-            }
-        }
+    if let Some(parent) = exe_path.parent()
+        && parent.file_name().and_then(|n| n.to_str()) == Some("bin")
+        && let Some(grandparent) = parent.parent()
+        && grandparent.file_name().and_then(|n| n.to_str()) == Some(".cargo")
+    {
+        return InstallMethod::Cargo;
     }
 
     InstallMethod::CurlOrManual
@@ -611,10 +609,10 @@ fn verify_checksum(file: &Path, sha_file: &Path) -> Result<()> {
 fn clean_stale_staged(dir: &Path) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.starts_with(".purple_new_") {
-                    let _ = std::fs::remove_file(entry.path());
-                }
+            if let Some(name) = entry.file_name().to_str()
+                && name.starts_with(".purple_new_")
+            {
+                let _ = std::fs::remove_file(entry.path());
             }
         }
     }

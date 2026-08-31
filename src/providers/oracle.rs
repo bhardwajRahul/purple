@@ -281,15 +281,15 @@ struct OciErrorBody {
 // ---------------------------------------------------------------------------
 
 fn select_ip(vnic: &OciVnic) -> String {
-    if let Some(ip) = &vnic.public_ip {
-        if !ip.is_empty() {
-            return ip.clone();
-        }
+    if let Some(ip) = &vnic.public_ip
+        && !ip.is_empty()
+    {
+        return ip.clone();
     }
-    if let Some(ip) = &vnic.private_ip {
-        if !ip.is_empty() {
-            return ip.clone();
-        }
+    if let Some(ip) = &vnic.private_ip
+        && !ip.is_empty()
+    {
+        return ip.clone();
     }
     String::new()
 }
@@ -778,10 +778,10 @@ impl Oracle {
             let url = format!("{}/20160918/images/{}", iaas_base, image_id);
             match self.signed_get(creds, rsa_key, &agent, host, &url) {
                 Ok(mut resp) => {
-                    if let Ok(img) = resp.body_mut().read_json::<OciImage>() {
-                        if let Some(name) = img.display_name {
-                            image_names.insert(image_id.clone(), name);
-                        }
+                    if let Ok(img) = resp.body_mut().read_json::<OciImage>()
+                        && let Some(name) = img.display_name
+                    {
+                        image_names.insert(image_id.clone(), name);
                     }
                 }
                 Err(ProviderError::AuthFailed) => return Err(ProviderError::AuthFailed),

@@ -28,12 +28,12 @@ pub fn evaluate(paths: Option<&crate::runtime::env::Paths>) -> PostInitOutcome {
         };
     }
 
-    if let Some(ref seen) = last {
-        if seen >= &current {
-            return PostInitOutcome {
-                upgrade_toast: None,
-            };
-        }
+    if let Some(ref seen) = last
+        && seen >= &current
+    {
+        return PostInitOutcome {
+            upgrade_toast: None,
+        };
     }
 
     let sections = crate::changelog::cached();

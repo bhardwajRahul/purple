@@ -1294,13 +1294,13 @@ impl ThemeDef {
         let mut themes = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "toml") {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Some(theme) = Self::parse_toml(&content) {
-                        themes.push(theme);
-                    } else {
-                        log::warn!("[config] Invalid theme file: {}", path.display());
-                    }
+            if path.extension().is_some_and(|e| e == "toml")
+                && let Ok(content) = std::fs::read_to_string(&path)
+            {
+                if let Some(theme) = Self::parse_toml(&content) {
+                    themes.push(theme);
+                } else {
+                    log::warn!("[config] Invalid theme file: {}", path.display());
                 }
             }
         }

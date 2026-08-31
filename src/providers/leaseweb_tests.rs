@@ -481,10 +481,10 @@ fn test_baremetal_metadata_all_fields() {
     let resp: BareMetalListResponse = serde_json::from_str(json).unwrap();
     let server = &resp.servers[0];
     let mut metadata = Vec::new();
-    if let Some(ref loc) = server.location {
-        if !loc.site.is_empty() {
-            metadata.push(("location".to_string(), loc.site.clone()));
-        }
+    if let Some(ref loc) = server.location
+        && !loc.site.is_empty()
+    {
+        metadata.push(("location".to_string(), loc.site.clone()));
     }
     if let Some(ref specs) = server.specs {
         let spec_str = format_baremetal_specs(specs);
@@ -492,10 +492,10 @@ fn test_baremetal_metadata_all_fields() {
             metadata.push(("specs".to_string(), spec_str));
         }
     }
-    if let Some(ref contract) = server.contract {
-        if !contract.delivery_status.is_empty() {
-            metadata.push(("status".to_string(), contract.delivery_status.clone()));
-        }
+    if let Some(ref contract) = server.contract
+        && !contract.delivery_status.is_empty()
+    {
+        metadata.push(("status".to_string(), contract.delivery_status.clone()));
     }
     assert_eq!(metadata.len(), 3);
     assert_eq!(metadata[0], ("location".into(), "AMS-01".into()));
@@ -526,12 +526,11 @@ fn test_cloud_metadata_all_fields() {
     if !inst.instance_type.is_empty() {
         metadata.push(("type".to_string(), inst.instance_type.clone()));
     }
-    if let Some(ref image) = inst.image {
-        if let Some(ref name) = image.name {
-            if !name.is_empty() {
-                metadata.push(("image".to_string(), name.clone()));
-            }
-        }
+    if let Some(ref image) = inst.image
+        && let Some(ref name) = image.name
+        && !name.is_empty()
+    {
+        metadata.push(("image".to_string(), name.clone()));
     }
     if !inst.state.is_empty() {
         metadata.push(("status".to_string(), inst.state.clone()));

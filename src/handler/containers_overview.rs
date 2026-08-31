@@ -1466,10 +1466,10 @@ pub(super) fn ensure_list_for_selected_host(app: &mut App, events_tx: &mpsc::Sen
     if app.containers_overview.auto_list_pending(&alias) {
         return;
     }
-    if let Some(batch) = app.containers_overview.refresh_batch() {
-        if batch.in_flight_aliases.contains(&alias) {
-            return;
-        }
+    if let Some(batch) = app.containers_overview.refresh_batch()
+        && batch.in_flight_aliases.contains(&alias)
+    {
+        return;
     }
     app.containers_overview
         .mark_auto_list_pending(alias.clone());

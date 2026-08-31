@@ -180,10 +180,10 @@ fn handle_new_tag_input(ctx: &mut BulkTagCtx, key: KeyEvent) {
                 .new_tag_input
                 .as_ref()
                 .map(|s| s.chars().count());
-            if let Some(len) = len {
-                if ctx.forms.bulk_tag_editor().new_tag_cursor < len {
-                    ctx.forms.bulk_tag_editor_mut().new_tag_cursor += 1;
-                }
+            if let Some(len) = len
+                && ctx.forms.bulk_tag_editor().new_tag_cursor < len
+            {
+                ctx.forms.bulk_tag_editor_mut().new_tag_cursor += 1;
             }
         }
         KeyCode::Home => {

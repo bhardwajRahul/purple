@@ -51,10 +51,10 @@ impl DigitalOcean {
                     .map(|n| n.ip_address.clone());
                 if let Some(ip) = ip {
                     let mut metadata = super::ProviderMetadata::new();
-                    if let Some(ref region) = droplet.region {
-                        if !region.slug.is_empty() {
-                            metadata.push("region", &region.slug);
-                        }
+                    if let Some(ref region) = droplet.region
+                        && !region.slug.is_empty()
+                    {
+                        metadata.push("region", &region.slug);
                     }
                     if !droplet.size_slug.is_empty() {
                         metadata.push("size", &droplet.size_slug);

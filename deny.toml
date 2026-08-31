@@ -4,15 +4,6 @@ ignore = [
     # rsa: timing sidechannel (no fix available). Purple only uses it for GCP
     # JWT signing, not for private key operations over a network.
     "RUSTSEC-2023-0071",
-    # time: DoS via stack exhaustion in RFC 2822 parsing. Fix requires Rust
-    # 1.88 but our MSRV is 1.86. Purple does not parse user-provided RFC 2822
-    # input. Revisit when MSRV is raised.
-    "RUSTSEC-2026-0009",
-    # paste: unmaintained, no security vulnerability. Pulled transitively by
-    # netlink-packet-utils (the rust-netlink ecosystem) for the Linux tunnel
-    # throughput sampler. Revisit when netlink-packet-utils migrates to
-    # `pastey` or drops the proc-macro dep.
-    "RUSTSEC-2024-0436",
 ]
 
 [licenses]
@@ -32,6 +23,10 @@ confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
+# netlink-packet-core defines the NetlinkMessage type that src/tcp_diag.rs
+# shares with netlink-packet-sock-diag. Two versions in the tree compile as
+# unrelated types and only fail on Linux, so pin the graph to exactly one.
+deny = [{ crate = "netlink-packet-core", deny-multiple-versions = true }]
 
 [sources]
 unknown-registry = "deny"

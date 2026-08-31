@@ -514,7 +514,7 @@ A: Yes, once you set the variables. With XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STA
 - Current version: __VERSION__ (__DATE_HUMAN__)
 - Release cadence: approximately bi-weekly
 - Test suite: 7300+ tests (unit, integration, property-based, HTTP mocking and OpenSSH ground-truth cross-validation)
-- CI: fmt, clippy, build, test on macOS and Linux, cargo-deny, MSRV 1.86 check, rustdoc warnings, site sync, TUI smoke test, design system, message centralization, keybinding invariants and visual regression
+- CI: fmt, clippy, build, test on macOS and Linux, cargo-deny, MSRV 1.88 check, rustdoc warnings, site sync, TUI smoke test, design system, message centralization, keybinding invariants and visual regression
 - Dependencies actively maintained
 
 ## Logging and troubleshooting

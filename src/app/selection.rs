@@ -406,10 +406,10 @@ impl App {
         let mut seen = std::collections::HashSet::new();
         let mut roles = Vec::new();
         for host in &self.hosts_state.list {
-            if let Some(ref role) = host.vault_ssh {
-                if seen.insert(role.clone()) {
-                    roles.push(role.clone());
-                }
+            if let Some(ref role) = host.vault_ssh
+                && seen.insert(role.clone())
+            {
+                roles.push(role.clone());
             }
         }
         // Also collect from provider configs.
@@ -448,10 +448,10 @@ impl App {
                     tags.push(tag.clone());
                 }
             }
-            if let Some(ref provider) = host.provider {
-                if seen.insert(provider.clone()) {
-                    tags.push(provider.clone());
-                }
+            if let Some(ref provider) = host.provider
+                && seen.insert(provider.clone())
+            {
+                tags.push(provider.clone());
             }
             if host.stale.is_some() {
                 has_stale = true;

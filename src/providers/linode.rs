@@ -100,32 +100,32 @@ impl Linode {
                             .filter(|v| !v.is_empty())
                             .map(|v| super::strip_cidr(v).to_string())
                     });
-                if let Some(ip) = ip {
-                    if !ip.is_empty() {
-                        let mut metadata = super::ProviderMetadata::new();
-                        if !instance.region.is_empty() {
-                            metadata.push("region", instance.region.clone());
-                        }
-                        if !instance.instance_type.is_empty() {
-                            metadata.push("plan", instance.instance_type.clone());
-                        }
-                        if let Some(ref image) = instance.image {
-                            if !image.is_empty() {
-                                metadata.push("image", image.clone());
-                            }
-                        }
-                        if !instance.status.is_empty() {
-                            metadata.push("status", instance.status.clone());
-                        }
-                        hosts.push(ProviderHost {
-                            server_id: instance.id.to_string(),
-                            name: instance.label.clone(),
-                            ip,
-                            tags: instance.tags.clone(),
-                            metadata: metadata.finish(),
-                            ..Default::default()
-                        });
+                if let Some(ip) = ip
+                    && !ip.is_empty()
+                {
+                    let mut metadata = super::ProviderMetadata::new();
+                    if !instance.region.is_empty() {
+                        metadata.push("region", instance.region.clone());
                     }
+                    if !instance.instance_type.is_empty() {
+                        metadata.push("plan", instance.instance_type.clone());
+                    }
+                    if let Some(ref image) = instance.image
+                        && !image.is_empty()
+                    {
+                        metadata.push("image", image.clone());
+                    }
+                    if !instance.status.is_empty() {
+                        metadata.push("status", instance.status.clone());
+                    }
+                    hosts.push(ProviderHost {
+                        server_id: instance.id.to_string(),
+                        name: instance.label.clone(),
+                        ip,
+                        tags: instance.tags.clone(),
+                        metadata: metadata.finish(),
+                        ..Default::default()
+                    });
                 }
             }
 

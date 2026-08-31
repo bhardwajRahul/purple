@@ -20,15 +20,15 @@ pub(crate) fn handle_vault_sign_result(
         // we never re-look up the host (which would be O(n) and
         // racy under concurrent renames).
         let mut host_missing = false;
-        if crate::should_write_certificate_file(&existing_cert_file) {
-            if let Ok(cert_path) = vault_ssh::cert_path_for(app.env().paths(), &alias) {
-                let updated = app
-                    .hosts_state
-                    .ssh_config_mut()
-                    .set_host_certificate_file(&alias, &cert_path.to_string_lossy());
-                if !updated {
-                    host_missing = true;
-                }
+        if crate::should_write_certificate_file(&existing_cert_file)
+            && let Ok(cert_path) = vault_ssh::cert_path_for(app.env().paths(), &alias)
+        {
+            let updated = app
+                .hosts_state
+                .ssh_config_mut()
+                .set_host_certificate_file(&alias, &cert_path.to_string_lossy());
+            if !updated {
+                host_missing = true;
             }
         }
         app.refresh_cert_cache(&alias);
@@ -160,15 +160,14 @@ pub(crate) fn handle_vault_sign_all_done(
                             .host_entries()
                             .into_iter()
                             .find(|h| &h.alias == alias);
-                        if let Some(entry) = entry {
-                            if crate::should_write_certificate_file(&entry.certificate_file)
-                                && app
-                                    .hosts_state
-                                    .ssh_config_mut()
-                                    .set_host_certificate_file(alias, cert_path)
-                            {
-                                reapplied += 1;
-                            }
+                        if let Some(entry) = entry
+                            && crate::should_write_certificate_file(&entry.certificate_file)
+                            && app
+                                .hosts_state
+                                .ssh_config_mut()
+                                .set_host_certificate_file(alias, cert_path)
+                        {
+                            reapplied += 1;
                         }
                     }
                     if reapplied > 0 {

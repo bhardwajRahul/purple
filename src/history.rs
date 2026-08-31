@@ -59,26 +59,26 @@ impl ConnectionHistory {
         let mut entries = HashMap::new();
         for line in content.lines() {
             let parts: Vec<&str> = line.splitn(4, '\t').collect();
-            if parts.len() >= 3 {
-                if let (Ok(ts), Ok(count)) = (parts[1].parse::<u64>(), parts[2].parse::<u32>()) {
-                    let timestamps = if parts.len() == 4 && !parts[3].is_empty() {
-                        parts[3]
-                            .split(',')
-                            .filter_map(|s| s.parse::<u64>().ok())
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    entries.insert(
-                        parts[0].to_string(),
-                        HistoryEntry {
-                            alias: parts[0].to_string(),
-                            last_connected: ts,
-                            count,
-                            timestamps,
-                        },
-                    );
-                }
+            if parts.len() >= 3
+                && let (Ok(ts), Ok(count)) = (parts[1].parse::<u64>(), parts[2].parse::<u32>())
+            {
+                let timestamps = if parts.len() == 4 && !parts[3].is_empty() {
+                    parts[3]
+                        .split(',')
+                        .filter_map(|s| s.parse::<u64>().ok())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                entries.insert(
+                    parts[0].to_string(),
+                    HistoryEntry {
+                        alias: parts[0].to_string(),
+                        last_connected: ts,
+                        count,
+                        timestamps,
+                    },
+                );
             }
         }
         let cutoff = SystemTime::now()
@@ -313,26 +313,26 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         for line in content.lines() {
             let parts: Vec<&str> = line.splitn(4, '\t').collect();
-            if parts.len() >= 3 {
-                if let (Ok(ts), Ok(count)) = (parts[1].parse::<u64>(), parts[2].parse::<u32>()) {
-                    let timestamps = if parts.len() == 4 && !parts[3].is_empty() {
-                        parts[3]
-                            .split(',')
-                            .filter_map(|s| s.parse::<u64>().ok())
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    history.entries.insert(
-                        parts[0].to_string(),
-                        HistoryEntry {
-                            alias: parts[0].to_string(),
-                            last_connected: ts,
-                            count,
-                            timestamps,
-                        },
-                    );
-                }
+            if parts.len() >= 3
+                && let (Ok(ts), Ok(count)) = (parts[1].parse::<u64>(), parts[2].parse::<u32>())
+            {
+                let timestamps = if parts.len() == 4 && !parts[3].is_empty() {
+                    parts[3]
+                        .split(',')
+                        .filter_map(|s| s.parse::<u64>().ok())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                history.entries.insert(
+                    parts[0].to_string(),
+                    HistoryEntry {
+                        alias: parts[0].to_string(),
+                        last_connected: ts,
+                        count,
+                        timestamps,
+                    },
+                );
             }
         }
 

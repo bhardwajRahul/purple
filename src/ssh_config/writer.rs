@@ -243,14 +243,14 @@ fn is_block_start(line: &str) -> bool {
 fn ensure_block_separators(lines: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(lines.len() + 4);
     for line in lines {
-        if is_block_start(line) {
-            if let Some(prev) = out.last() {
-                let prev_blank = prev.trim().is_empty();
-                let prev_top_level_comment =
-                    !prev.starts_with(char::is_whitespace) && prev.trim_start().starts_with('#');
-                if !prev_blank && !prev_top_level_comment {
-                    out.push(String::new());
-                }
+        if is_block_start(line)
+            && let Some(prev) = out.last()
+        {
+            let prev_blank = prev.trim().is_empty();
+            let prev_top_level_comment =
+                !prev.starts_with(char::is_whitespace) && prev.trim_start().starts_with('#');
+            if !prev_blank && !prev_top_level_comment {
+                out.push(String::new());
             }
         }
         out.push(line.clone());

@@ -425,13 +425,13 @@ impl App {
             // Per-alias overview state (auto-list in-flight, refresh
             // batch, collapsed-hosts). Persist collapsed_hosts when it
             // shrank.
-            if self.containers_overview.prune_orphans(&valid_aliases) {
-                if let Err(e) = crate::preferences::save_containers_collapsed_hosts(
+            if self.containers_overview.prune_orphans(&valid_aliases)
+                && let Err(e) = crate::preferences::save_containers_collapsed_hosts(
                     self.env().paths(),
                     self.containers_overview.collapsed_hosts(),
-                ) {
-                    log::warn!("[config] failed to save collapsed_hosts after prune: {e}");
-                }
+                )
+            {
+                log::warn!("[config] failed to save collapsed_hosts after prune: {e}");
             }
 
             self.file_browser_state.prune_orphans(&valid_aliases);
@@ -1977,10 +1977,10 @@ pub fn match_source_for_host(host: &HostHit, query: &str) -> Option<MatchSource>
     if !host.proxy_jump.is_empty() && host.proxy_jump.to_lowercase().contains(&q) {
         return Some(MatchSource::ProxyJump);
     }
-    if let Some(role) = &host.vault_ssh {
-        if role.to_lowercase().contains(&q) {
-            return Some(MatchSource::VaultSsh);
-        }
+    if let Some(role) = &host.vault_ssh
+        && role.to_lowercase().contains(&q)
+    {
+        return Some(MatchSource::VaultSsh);
     }
     if !host.identity_file.is_empty() && host.identity_file.to_lowercase().contains(&q) {
         return Some(MatchSource::IdentityFile);
@@ -2011,10 +2011,10 @@ fn kind_rank(k: SourceKind) -> u8 {
 /// `recompute_jump_hits` so mid-typing arrow navigation does not lose
 /// the user's place.
 fn restore_selection(hits: &[JumpHit], prior: Option<&RecentRef>, fallback: usize) -> usize {
-    if let Some(target) = prior {
-        if let Some(idx) = hits.iter().position(|h| &h.identity() == target) {
-            return idx;
-        }
+    if let Some(target) = prior
+        && let Some(idx) = hits.iter().position(|h| &h.identity() == target)
+    {
+        return idx;
     }
     fallback.min(hits.len().saturating_sub(1))
 }

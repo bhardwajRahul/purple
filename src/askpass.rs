@@ -237,10 +237,10 @@ fn build_proxy_chain(config: &SshConfigFile, target: &str) -> HashSet<String> {
 fn parse_proxy_jump_host(jump: &str) -> &str {
     let trimmed = jump.trim();
     let after_user = trimmed.rsplit_once('@').map(|(_, h)| h).unwrap_or(trimmed);
-    if let Some(rest) = after_user.strip_prefix('[') {
-        if let Some(end) = rest.find(']') {
-            return &rest[..end];
-        }
+    if let Some(rest) = after_user.strip_prefix('[')
+        && let Some(end) = rest.find(']')
+    {
+        return &rest[..end];
     }
     after_user.split(':').next().unwrap_or(after_user)
 }
@@ -253,10 +253,10 @@ fn find_askpass_source(
 ) -> Option<String> {
     // Per-host source
     for entry in config.host_entries() {
-        if entry.alias == alias {
-            if let Some(ref source) = entry.askpass {
-                return Some(source.clone());
-            }
+        if entry.alias == alias
+            && let Some(ref source) = entry.askpass
+        {
+            return Some(source.clone());
         }
     }
     // Global default from preferences file
@@ -273,12 +273,12 @@ fn load_askpass_default_direct(paths: Option<&crate::runtime::env::Paths>) -> Op
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == "askpass" {
-                let val = v.trim();
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == "askpass"
+        {
+            let val = v.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
             }
         }
     }
@@ -615,12 +615,11 @@ fn marker_path(paths: Option<&crate::runtime::env::Paths>, alias: &str) -> Optio
 
 /// Check if a marker file exists and is recent (< 60 seconds old).
 fn is_recent_marker(path: &PathBuf) -> bool {
-    if let Ok(meta) = std::fs::metadata(path) {
-        if let Ok(modified) = meta.modified() {
-            if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                return elapsed.as_secs() < 60;
-            }
-        }
+    if let Ok(meta) = std::fs::metadata(path)
+        && let Ok(modified) = meta.modified()
+        && let Ok(elapsed) = SystemTime::now().duration_since(modified)
+    {
+        return elapsed.as_secs() < 60;
     }
     false
 }

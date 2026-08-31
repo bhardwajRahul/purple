@@ -395,10 +395,10 @@ fn render_overlay_inner(
     }
 
     // Apply opening animation: clip overlay to a growing scaled region.
-    if let (Some(progress), Some(saved)) = (progress, pre_overlay) {
-        if progress < 1.0 {
-            apply_scale_clip(frame, &saved, progress);
-        }
+    if let (Some(progress), Some(saved)) = (progress, pre_overlay)
+        && progress < 1.0
+    {
+        apply_scale_clip(frame, &saved, progress);
     }
 }
 
@@ -446,18 +446,18 @@ fn render_overlay_close(frame: &mut Frame, anim: &mut crate::animation::Animatio
         None => return,
     };
 
-    if let Some(ref state) = anim.overlay_close {
-        if progress > 0.0 {
-            if state.dimmed {
-                dim_background(frame);
-            }
-            let area = frame.area();
-            let (left, right, top, bottom) = scale_clip_rect(area, progress);
-            for y in top..bottom {
-                for x in left..right {
-                    if let Some(cell) = state.buffer.cell((x, y)) {
-                        frame.buffer_mut()[(x, y)] = cell.clone();
-                    }
+    if let Some(ref state) = anim.overlay_close
+        && progress > 0.0
+    {
+        if state.dimmed {
+            dim_background(frame);
+        }
+        let area = frame.area();
+        let (left, right, top, bottom) = scale_clip_rect(area, progress);
+        for y in top..bottom {
+            for x in left..right {
+                if let Some(cell) = state.buffer.cell((x, y)) {
+                    frame.buffer_mut()[(x, y)] = cell.clone();
                 }
             }
         }
@@ -472,10 +472,10 @@ fn apply_scale_clip(frame: &mut Frame, saved: &ratatui::buffer::Buffer, progress
 
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
-            if y < top || y >= bottom || x < left || x >= right {
-                if let Some(cell) = saved.cell((x, y)) {
-                    frame.buffer_mut()[(x, y)] = cell.clone();
-                }
+            if (y < top || y >= bottom || x < left || x >= right)
+                && let Some(cell) = saved.cell((x, y))
+            {
+                frame.buffer_mut()[(x, y)] = cell.clone();
             }
         }
     }

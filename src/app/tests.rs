@@ -4841,10 +4841,10 @@ use proptest::prelude::*;
 /// Generate a simple SSH config block with optional user tags.
 fn prop_host_block(alias: String, hostname: String, tags: Option<Vec<String>>) -> String {
     let mut lines = vec![format!("Host {alias}"), format!("  HostName {hostname}")];
-    if let Some(ref ts) = tags {
-        if !ts.is_empty() {
-            lines.push(format!("  # purple:tags {}", ts.join(",")));
-        }
+    if let Some(ref ts) = tags
+        && !ts.is_empty()
+    {
+        lines.push(format!("  # purple:tags {}", ts.join(",")));
     }
     lines.join("\n")
 }

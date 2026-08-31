@@ -154,17 +154,16 @@ impl Hetzner {
                                 .filter(|n| !n.is_empty())
                         });
                     metadata.push_opt("location", region.cloned());
-                    if let Some(ref st) = server.server_type {
-                        if !st.name.is_empty() {
-                            metadata.push("type", st.name.clone());
-                        }
+                    if let Some(ref st) = server.server_type
+                        && !st.name.is_empty()
+                    {
+                        metadata.push("type", st.name.clone());
                     }
-                    if let Some(ref image) = server.image {
-                        if let Some(ref name) = image.name {
-                            if !name.is_empty() {
-                                metadata.push("image", name.clone());
-                            }
-                        }
+                    if let Some(ref image) = server.image
+                        && let Some(ref name) = image.name
+                        && !name.is_empty()
+                    {
+                        metadata.push("image", name.clone());
                     }
                     if !server.status.is_empty() {
                         metadata.push("status", server.status.clone());

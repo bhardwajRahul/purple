@@ -544,10 +544,10 @@ pub fn apply_saved_sort(app: &mut App) {
     app.hosts_state
         .set_view_mode(crate::preferences::load_view_mode(p));
     app.containers_overview.hydrate_from_prefs(p);
-    if app.clear_stale_group_tag() {
-        if let Err(e) = crate::preferences::save_group_by(p, app.hosts_state.group_by()) {
-            app.notify_error(crate::messages::group_pref_reset_failed(&e));
-        }
+    if app.clear_stale_group_tag()
+        && let Err(e) = crate::preferences::save_group_by(p, app.hosts_state.group_by())
+    {
+        app.notify_error(crate::messages::group_pref_reset_failed(&e));
     }
     if saved != app::SortMode::Original || !matches!(app.hosts_state.group_by(), app::GroupBy::None)
     {

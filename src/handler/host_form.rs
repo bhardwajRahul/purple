@@ -342,19 +342,16 @@ pub(super) fn submit_form(app: &mut App) {
                     final_msg = format!("{}. Keychain entry removed.", final_msg);
                 } else if let Screen::EditHost { ref alias } = app.screen {
                     // Alias renamed. migrate keychain entry
-                    if *alias != app.forms.host_mut().alias {
-                        if let Ok(pw) = crate::askpass::retrieve_keychain_password(&app.env, alias)
-                        {
-                            if crate::askpass::store_in_keychain(
-                                &app.env,
-                                &app.forms.host_mut().alias,
-                                &pw,
-                            )
-                            .is_ok()
-                            {
-                                let _ = crate::askpass::remove_from_keychain(&app.env, alias);
-                            }
-                        }
+                    if *alias != app.forms.host_mut().alias
+                        && let Ok(pw) = crate::askpass::retrieve_keychain_password(&app.env, alias)
+                        && crate::askpass::store_in_keychain(
+                            &app.env,
+                            &app.forms.host_mut().alias,
+                            &pw,
+                        )
+                        .is_ok()
+                    {
+                        let _ = crate::askpass::remove_from_keychain(&app.env, alias);
                     }
                 }
             }

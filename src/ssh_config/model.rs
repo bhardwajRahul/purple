@@ -1026,10 +1026,10 @@ impl SshConfigFile {
         for element in elements {
             match element {
                 ConfigElement::HostBlock(block) => {
-                    if let Some((name, server_id)) = block.provider_raw() {
-                        if name == provider_name {
-                            results.push((block.host_pattern.clone(), server_id));
-                        }
+                    if let Some((name, server_id)) = block.provider_raw()
+                        && name == provider_name
+                    {
+                        results.push((block.host_pattern.clone(), server_id));
                     }
                 }
                 ConfigElement::Include(include) => {
@@ -1050,10 +1050,10 @@ impl SshConfigFile {
         for element in elements {
             match element {
                 ConfigElement::HostBlock(block) => {
-                    if let Some((name, id)) = block.provider() {
-                        if name == provider_name {
-                            results.push((block.host_pattern.clone(), id));
-                        }
+                    if let Some((name, id)) = block.provider()
+                        && name == provider_name
+                    {
+                        results.push((block.host_pattern.clone(), id));
                     }
                 }
                 ConfigElement::Include(include) => {
@@ -1074,10 +1074,10 @@ impl SshConfigFile {
         for element in elements {
             match element {
                 ConfigElement::HostBlock(block) => {
-                    if let Some((host_id, server_id)) = block.provider_id() {
-                        if &host_id == id {
-                            results.push((block.host_pattern.clone(), server_id));
-                        }
+                    if let Some((host_id, server_id)) = block.provider_id()
+                        && &host_id == id
+                    {
+                        results.push((block.host_pattern.clone(), server_id));
                     }
                 }
                 ConfigElement::Include(include) => {
@@ -1101,21 +1101,21 @@ impl SshConfigFile {
     /// Uses split_whitespace matching for multi-pattern Host lines.
     pub fn add_forward(&mut self, alias: &str, directive_key: &str, value: &str) {
         for element in &mut self.elements {
-            if let ConfigElement::HostBlock(block) = element {
-                if pattern_contains_token(&block.host_pattern, alias) {
-                    let indent = block.detect_indent();
-                    let pos = block.content_end();
-                    block.directives.insert(
-                        pos,
-                        Directive {
-                            key: directive_key.to_string(),
-                            value: value.to_string(),
-                            raw_line: format!("{}{} {}", indent, directive_key, value),
-                            is_non_directive: false,
-                        },
-                    );
-                    return;
-                }
+            if let ConfigElement::HostBlock(block) = element
+                && pattern_contains_token(&block.host_pattern, alias)
+            {
+                let indent = block.detect_indent();
+                let pos = block.content_end();
+                block.directives.insert(
+                    pos,
+                    Directive {
+                        key: directive_key.to_string(),
+                        value: value.to_string(),
+                        raw_line: format!("{}{} {}", indent, directive_key, value),
+                        is_non_directive: false,
+                    },
+                );
+                return;
             }
         }
     }
@@ -1126,18 +1126,18 @@ impl SshConfigFile {
     /// Returns true if a directive was actually removed.
     pub fn remove_forward(&mut self, alias: &str, directive_key: &str, value: &str) -> bool {
         for element in &mut self.elements {
-            if let ConfigElement::HostBlock(block) = element {
-                if pattern_contains_token(&block.host_pattern, alias) {
-                    if let Some(pos) = block.directives.iter().position(|d| {
-                        !d.is_non_directive
-                            && d.key.eq_ignore_ascii_case(directive_key)
-                            && Self::values_match(&d.value, value)
-                    }) {
-                        block.directives.remove(pos);
-                        return true;
-                    }
-                    return false;
+            if let ConfigElement::HostBlock(block) = element
+                && pattern_contains_token(&block.host_pattern, alias)
+            {
+                if let Some(pos) = block.directives.iter().position(|d| {
+                    !d.is_non_directive
+                        && d.key.eq_ignore_ascii_case(directive_key)
+                        && Self::values_match(&d.value, value)
+                }) {
+                    block.directives.remove(pos);
+                    return true;
                 }
+                return false;
             }
         }
         false
@@ -1147,14 +1147,14 @@ impl SshConfigFile {
     /// Uses whitespace-normalized value comparison and split_whitespace host matching.
     pub fn has_forward(&self, alias: &str, directive_key: &str, value: &str) -> bool {
         for element in &self.elements {
-            if let ConfigElement::HostBlock(block) = element {
-                if pattern_contains_token(&block.host_pattern, alias) {
-                    return block.directives.iter().any(|d| {
-                        !d.is_non_directive
-                            && d.key.eq_ignore_ascii_case(directive_key)
-                            && Self::values_match(&d.value, value)
-                    });
-                }
+            if let ConfigElement::HostBlock(block) = element
+                && pattern_contains_token(&block.host_pattern, alias)
+            {
+                return block.directives.iter().any(|d| {
+                    !d.is_non_directive
+                        && d.key.eq_ignore_ascii_case(directive_key)
+                        && Self::values_match(&d.value, value)
+                });
             }
         }
         false
@@ -1589,10 +1589,10 @@ impl SshConfigFile {
     pub fn stale_hosts(&self) -> Vec<(String, u64)> {
         let mut result = Vec::new();
         for element in &self.elements {
-            if let ConfigElement::HostBlock(block) = element {
-                if let Some(ts) = block.stale() {
-                    result.push((block.host_pattern.clone(), ts));
-                }
+            if let ConfigElement::HostBlock(block) = element
+                && let Some(ts) = block.stale()
+            {
+                result.push((block.host_pattern.clone(), ts));
             }
         }
         result
@@ -1645,27 +1645,27 @@ impl SshConfigFile {
             // block being removed.
             let mut salvaged_comments: Vec<String> = Vec::new();
             for el in &mut self.elements {
-                if let ConfigElement::HostBlock(block) = el {
-                    if block.host_pattern == alias {
-                        let drain_from = {
-                            let mut idx = block.directives.len();
-                            while idx > 0 {
-                                let d = &block.directives[idx - 1];
-                                let is_user_comment = d.is_non_directive
-                                    && (d.raw_line.trim().is_empty()
-                                        || (d.raw_line.trim().starts_with('#')
-                                            && !d.raw_line.trim().starts_with("# purple:")));
-                                if !is_user_comment {
-                                    break;
-                                }
-                                idx -= 1;
+                if let ConfigElement::HostBlock(block) = el
+                    && block.host_pattern == alias
+                {
+                    let drain_from = {
+                        let mut idx = block.directives.len();
+                        while idx > 0 {
+                            let d = &block.directives[idx - 1];
+                            let is_user_comment = d.is_non_directive
+                                && (d.raw_line.trim().is_empty()
+                                    || (d.raw_line.trim().starts_with('#')
+                                        && !d.raw_line.trim().starts_with("# purple:")));
+                            if !is_user_comment {
+                                break;
                             }
-                            idx
-                        };
-                        for d in block.directives.drain(drain_from..) {
-                            if !d.raw_line.trim().is_empty() {
-                                salvaged_comments.push(d.raw_line);
-                            }
+                            idx -= 1;
+                        }
+                        idx
+                    };
+                    for d in block.directives.drain(drain_from..) {
+                        if !d.raw_line.trim().is_empty() {
+                            salvaged_comments.push(d.raw_line);
                         }
                     }
                 }
@@ -1766,10 +1766,10 @@ impl SshConfigFile {
                 ConfigElement::HostBlock(b) => pattern_contains_token(&b.host_pattern, alias),
                 _ => false,
             })?;
-            if let ConfigElement::HostBlock(b) = &self.elements[token_pos] {
-                if b.host_pattern.split_whitespace().count() > 1 {
-                    return None;
-                }
+            if let ConfigElement::HostBlock(b) = &self.elements[token_pos]
+                && b.host_pattern.split_whitespace().count() > 1
+            {
+                return None;
             }
             token_pos
         };
@@ -1789,12 +1789,11 @@ impl SshConfigFile {
     pub fn find_provider_insert_position(&self, provider_name: &str) -> Option<usize> {
         let mut last_pos = None;
         for (i, element) in self.elements.iter().enumerate() {
-            if let ConfigElement::HostBlock(block) = element {
-                if let Some((name, _)) = block.provider() {
-                    if name == provider_name {
-                        last_pos = Some(i);
-                    }
-                }
+            if let ConfigElement::HostBlock(block) = element
+                && let Some((name, _)) = block.provider()
+                && name == provider_name
+            {
+                last_pos = Some(i);
             }
         }
         // Return position after the last provider host
@@ -1835,10 +1834,10 @@ impl SshConfigFile {
             }
 
             // Add trailing blank to second only if not the last element
-            if second < self.elements.len() - 1 {
-                if let ConfigElement::HostBlock(block) = &mut self.elements[second] {
-                    block.ensure_trailing_blank();
-                }
+            if second < self.elements.len() - 1
+                && let ConfigElement::HostBlock(block) = &mut self.elements[second]
+            {
+                block.ensure_trailing_blank();
             }
 
             return true;

@@ -316,13 +316,14 @@ fn render_header(
                 | crate::app::PingStatus::Unreachable
         )
     );
-    if stable && !status_spans.is_empty() {
-        if let Some(t) = app.ping.last_checked_at(&host.alias) {
-            status_spans.push(Span::styled(
-                format!("  checked {}", crate::messages::relative_age(t.elapsed())),
-                theme::muted(),
-            ));
-        }
+    if stable
+        && !status_spans.is_empty()
+        && let Some(t) = app.ping.last_checked_at(&host.alias)
+    {
+        status_spans.push(Span::styled(
+            format!("  checked {}", crate::messages::relative_age(t.elapsed())),
+            theme::muted(),
+        ));
     }
     if !status_spans.is_empty() {
         section_line(lines, status_spans, box_width);

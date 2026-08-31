@@ -381,10 +381,10 @@ fn open_push_picker(app: &mut App) {
 
 /// Expand a leading `~/` to the injected home directory. Unchanged otherwise.
 fn expand_tilde(paths: Option<&crate::runtime::env::Paths>, p: &str) -> String {
-    if let Some(rest) = p.strip_prefix("~/") {
-        if let Some(paths) = paths {
-            return paths.home().join(rest).display().to_string();
-        }
+    if let Some(rest) = p.strip_prefix("~/")
+        && let Some(paths) = paths
+    {
+        return paths.home().join(rest).display().to_string();
     }
     p.to_string()
 }

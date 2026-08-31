@@ -1058,11 +1058,11 @@ fn visual_containers_overview_paused() {
     let _g = setup();
     let mut app = demo::build_demo_app();
     app.top_page = crate::app::TopPage::Containers;
-    if let Some(entry) = app.container_state.cache_entry_mut("bastion-ams") {
-        if let Some(first) = entry.containers.first_mut() {
-            first.state = "paused".to_string();
-            first.status = "Paused".to_string();
-        }
+    if let Some(entry) = app.container_state.cache_entry_mut("bastion-ams")
+        && let Some(first) = entry.containers.first_mut()
+    {
+        first.state = "paused".to_string();
+        first.status = "Paused".to_string();
     }
     app.ui.containers_overview_state_mut().select(Some(0));
     let actual = render_screen(&mut app);
@@ -1076,11 +1076,11 @@ fn visual_containers_overview_restarting() {
     let _g = setup();
     let mut app = demo::build_demo_app();
     app.top_page = crate::app::TopPage::Containers;
-    if let Some(entry) = app.container_state.cache_entry_mut("db-primary") {
-        if let Some(first) = entry.containers.first_mut() {
-            first.state = "restarting".to_string();
-            first.status = "Restarting (1) 2 seconds ago".to_string();
-        }
+    if let Some(entry) = app.container_state.cache_entry_mut("db-primary")
+        && let Some(first) = entry.containers.first_mut()
+    {
+        first.state = "restarting".to_string();
+        first.status = "Restarting (1) 2 seconds ago".to_string();
     }
     app.ui.containers_overview_state_mut().select(Some(0));
     let actual = render_screen(&mut app);

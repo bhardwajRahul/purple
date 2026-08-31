@@ -299,20 +299,20 @@ pub(crate) fn build_detail_lines(
             }
             // Stop signal: SIGTERM is the implicit docker default; only
             // surface when the image overrides it.
-            if let Some(sig) = insp.stop_signal.as_deref() {
-                if sig != "SIGTERM" {
-                    let stop_text = match insp.stop_timeout {
-                        Some(t) => format!("{} · {}s timeout", sig, t),
-                        None => sig.to_string(),
-                    };
-                    design::section_field(
-                        &mut lines,
-                        "Stop sig",
-                        &stop_text,
-                        max_value_width,
-                        box_width,
-                    );
-                }
+            if let Some(sig) = insp.stop_signal.as_deref()
+                && sig != "SIGTERM"
+            {
+                let stop_text = match insp.stop_timeout {
+                    Some(t) => format!("{} · {}s timeout", sig, t),
+                    None => sig.to_string(),
+                };
+                design::section_field(
+                    &mut lines,
+                    "Stop sig",
+                    &stop_text,
+                    max_value_width,
+                    box_width,
+                );
             }
             if let Some(p) = insp.pid {
                 design::section_field(
@@ -415,10 +415,11 @@ pub(crate) fn build_detail_lines(
             // stay quiet. Cmd / Entrypoint moved out to its own CMD
             // card below so long commands can wrap without a label
             // column eating their width.
-            if let Some(w) = insp.working_dir.as_deref() {
-                if w != "/" && !w.is_empty() {
-                    design::section_field(&mut lines, "WorkDir", w, max_value_width, box_width);
-                }
+            if let Some(w) = insp.working_dir.as_deref()
+                && w != "/"
+                && !w.is_empty()
+            {
+                design::section_field(&mut lines, "WorkDir", w, max_value_width, box_width);
             }
         }
         design::section_close(&mut lines, box_width);
@@ -585,15 +586,11 @@ pub(crate) fn build_detail_lines(
                     box_width,
                 );
             }
-            if apparmor_deviates {
-                if let Some(p) = insp.apparmor_profile.as_deref() {
-                    design::section_field(&mut lines, "AppArmor", p, max_value_width, box_width);
-                }
+            if apparmor_deviates && let Some(p) = insp.apparmor_profile.as_deref() {
+                design::section_field(&mut lines, "AppArmor", p, max_value_width, box_width);
             }
-            if seccomp_deviates {
-                if let Some(p) = insp.seccomp_profile.as_deref() {
-                    design::section_field(&mut lines, "Seccomp", p, max_value_width, box_width);
-                }
+            if seccomp_deviates && let Some(p) = insp.seccomp_profile.as_deref() {
+                design::section_field(&mut lines, "Seccomp", p, max_value_width, box_width);
             }
             design::section_close(&mut lines, box_width);
         }
@@ -640,10 +637,8 @@ pub(crate) fn build_detail_lines(
                     box_width,
                 );
             }
-            if non_standard_log {
-                if let Some(d) = insp.log_driver.as_deref() {
-                    design::section_field(&mut lines, "Logs", d, max_value_width, box_width);
-                }
+            if non_standard_log && let Some(d) = insp.log_driver.as_deref() {
+                design::section_field(&mut lines, "Logs", d, max_value_width, box_width);
             }
             design::section_close(&mut lines, box_width);
         }
@@ -806,74 +801,74 @@ pub(crate) fn build_detail_lines(
     // paths do not leave a wide gap before the arrow. The mode flag
     // stays right-flush via a flex spacer between dest and mode.
     // Falls back to a 50/50 truncated split when content cannot fit.
-    if let Some(insp) = inspect_ok {
-        if !insp.mounts.is_empty() {
-            design::section_open(&mut lines, "MOUNTS", box_width);
-            // section_line strips 3 cols for the left/right borders.
-            // Subtract one more so the mode tag does not press against
-            // the right `│`; other section helpers get this gap for free
-            // via their right-padding, but the mounts row fills `inner`
-            // exactly with its own spacer.
-            let inner = box_width.saturating_sub(4);
-            const ARROW: &str = " \u{2192} ";
-            const ARROW_W: usize = 3;
-            const MODE_W: usize = 2;
-            const SEP_MIN: usize = 2;
-            let source_max = insp
-                .mounts
-                .iter()
-                .map(|m| m.source.width())
-                .max()
-                .unwrap_or(0);
-            let dest_max = insp
-                .mounts
-                .iter()
-                .map(|m| m.destination.width())
-                .max()
-                .unwrap_or(0);
-            let needed = source_max + ARROW_W + dest_max + SEP_MIN + MODE_W;
-            let (source_w, dest_w) = if needed <= inner {
-                (source_max, dest_max)
-            } else {
-                let total_path = inner.saturating_sub(ARROW_W + SEP_MIN + MODE_W);
-                let s = total_path / 2;
-                (s, total_path.saturating_sub(s))
-            };
-            for m in &insp.mounts {
-                let source = pad_or_truncate_path(&m.source, source_w);
-                let dest = pad_or_truncate_path(&m.destination, dest_w);
-                let mode = if m.read_only { "ro" } else { "rw" };
-                let used = source_w + ARROW_W + dest_w + MODE_W;
-                let spacer_w = inner.saturating_sub(used).max(SEP_MIN);
-                design::section_line(
-                    &mut lines,
-                    vec![
-                        Span::styled(source, theme::muted()),
-                        Span::styled(ARROW, theme::muted()),
-                        Span::styled(dest, theme::bold()),
-                        Span::raw(" ".repeat(spacer_w)),
-                        Span::styled(mode.to_string(), theme::muted()),
-                    ],
-                    box_width,
-                );
-            }
-            design::section_close(&mut lines, box_width);
+    if let Some(insp) = inspect_ok
+        && !insp.mounts.is_empty()
+    {
+        design::section_open(&mut lines, "MOUNTS", box_width);
+        // section_line strips 3 cols for the left/right borders.
+        // Subtract one more so the mode tag does not press against
+        // the right `│`; other section helpers get this gap for free
+        // via their right-padding, but the mounts row fills `inner`
+        // exactly with its own spacer.
+        let inner = box_width.saturating_sub(4);
+        const ARROW: &str = " \u{2192} ";
+        const ARROW_W: usize = 3;
+        const MODE_W: usize = 2;
+        const SEP_MIN: usize = 2;
+        let source_max = insp
+            .mounts
+            .iter()
+            .map(|m| m.source.width())
+            .max()
+            .unwrap_or(0);
+        let dest_max = insp
+            .mounts
+            .iter()
+            .map(|m| m.destination.width())
+            .max()
+            .unwrap_or(0);
+        let needed = source_max + ARROW_W + dest_max + SEP_MIN + MODE_W;
+        let (source_w, dest_w) = if needed <= inner {
+            (source_max, dest_max)
+        } else {
+            let total_path = inner.saturating_sub(ARROW_W + SEP_MIN + MODE_W);
+            let s = total_path / 2;
+            (s, total_path.saturating_sub(s))
+        };
+        for m in &insp.mounts {
+            let source = pad_or_truncate_path(&m.source, source_w);
+            let dest = pad_or_truncate_path(&m.destination, dest_w);
+            let mode = if m.read_only { "ro" } else { "rw" };
+            let used = source_w + ARROW_W + dest_w + MODE_W;
+            let spacer_w = inner.saturating_sub(used).max(SEP_MIN);
+            design::section_line(
+                &mut lines,
+                vec![
+                    Span::styled(source, theme::muted()),
+                    Span::styled(ARROW, theme::muted()),
+                    Span::styled(dest, theme::bold()),
+                    Span::raw(" ".repeat(spacer_w)),
+                    Span::styled(mode.to_string(), theme::muted()),
+                ],
+                box_width,
+            );
         }
+        design::section_close(&mut lines, box_width);
     }
 
     // COMPOSE card: only for compose-managed containers. Mirrors the
     // PROXMOX VE / VAULT SSH cards on the host detail.
-    if let Some(insp) = inspect_ok {
-        if insp.compose_project.is_some() || insp.compose_service.is_some() {
-            design::section_open(&mut lines, "COMPOSE", box_width);
-            if let Some(p) = insp.compose_project.as_deref() {
-                design::section_field(&mut lines, "Project", p, max_value_width, box_width);
-            }
-            if let Some(s) = insp.compose_service.as_deref() {
-                design::section_field(&mut lines, "Service", s, max_value_width, box_width);
-            }
-            design::section_close(&mut lines, box_width);
+    if let Some(insp) = inspect_ok
+        && (insp.compose_project.is_some() || insp.compose_service.is_some())
+    {
+        design::section_open(&mut lines, "COMPOSE", box_width);
+        if let Some(p) = insp.compose_project.as_deref() {
+            design::section_field(&mut lines, "Project", p, max_value_width, box_width);
         }
+        if let Some(s) = insp.compose_service.as_deref() {
+            design::section_field(&mut lines, "Service", s, max_value_width, box_width);
+        }
+        design::section_close(&mut lines, box_width);
     }
 
     lines

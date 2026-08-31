@@ -28,21 +28,21 @@ pub fn run_tui(mut app: App) -> Result<()> {
     // First-launch welcome hint (one-shot: backs up the SSH config so it won't show again)
     if app.status_center.status().is_none() && !app.demo_mode {
         let paths = app.env().paths().cloned();
-        if let Some(paths) = paths {
-            if let Some(has_backup) = first_launch_init(&paths, app.reload.config_path()) {
-                let host_count = app.hosts_state.list().len();
-                let known_hosts_count = if host_count == 0 {
-                    import::count_known_hosts_candidates(Some(&paths))
-                } else {
-                    0
-                };
-                app.ui.set_known_hosts_count(known_hosts_count);
-                app.screen = app::Screen::Welcome {
-                    has_backup,
-                    host_count,
-                    known_hosts_count,
-                };
-            }
+        if let Some(paths) = paths
+            && let Some(has_backup) = first_launch_init(&paths, app.reload.config_path())
+        {
+            let host_count = app.hosts_state.list().len();
+            let known_hosts_count = if host_count == 0 {
+                import::count_known_hosts_candidates(Some(&paths))
+            } else {
+                0
+            };
+            app.ui.set_known_hosts_count(known_hosts_count);
+            app.screen = app::Screen::Welcome {
+                has_backup,
+                host_count,
+                known_hosts_count,
+            };
         }
     }
 

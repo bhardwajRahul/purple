@@ -230,10 +230,10 @@ impl ContainerState {
         // dropping the view also frees the body Vec. The matching
         // handler restores the screen to HostList on the next key
         // (`container_logs_key` checks for a missing view).
-        if let Some(view) = self.logs_view.as_ref() {
-            if !valid_aliases.contains(view.alias.as_str()) {
-                self.logs_view = None;
-            }
+        if let Some(view) = self.logs_view.as_ref()
+            && !valid_aliases.contains(view.alias.as_str())
+        {
+            self.logs_view = None;
         }
         if dropped > 0 {
             log::debug!("[purple] reload_hosts: dropped {dropped} orphan container_cache host(s)");
@@ -252,10 +252,10 @@ impl ContainerState {
         }
         // Open logs overlay: rename its alias too so a refresh queued
         // after the rename does not run against the stale name.
-        if let Some(view) = self.logs_view.as_mut() {
-            if view.alias == old {
-                view.alias = new.to_string();
-            }
+        if let Some(view) = self.logs_view.as_mut()
+            && view.alias == old
+        {
+            view.alias = new.to_string();
         }
         if let Some(v) = self.cache.remove(old) {
             debug_assert!(

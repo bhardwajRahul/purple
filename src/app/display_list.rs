@@ -375,10 +375,10 @@ impl App {
                 let mut order = Vec::new();
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for item in &self.hosts_state.display_list {
-                    if let HostListItem::GroupHeader(text) = item {
-                        if seen.insert(text.as_str()) {
-                            order.push(text.clone());
-                        }
+                    if let HostListItem::GroupHeader(text) = item
+                        && seen.insert(text.as_str())
+                    {
+                        order.push(text.clone());
                     }
                 }
                 order
@@ -397,22 +397,21 @@ impl App {
                     match &item {
                         HostListItem::GroupHeader(_) => {} // skip all headers
                         HostListItem::Host { index } => {
-                            if let Some(host) = self.hosts_state.list.get(*index) {
-                                if host
+                            if let Some(host) = self.hosts_state.list.get(*index)
+                                && host
                                     .tags
                                     .iter()
                                     .chain(host.provider_tags.iter())
                                     .any(|t| t == filter)
-                                {
-                                    filtered.push(item);
-                                }
+                            {
+                                filtered.push(item);
                             }
                         }
                         HostListItem::Pattern { index } => {
-                            if let Some(pattern) = self.hosts_state.patterns.get(*index) {
-                                if pattern.tags.iter().any(|t| t == filter) {
-                                    filtered.push(item);
-                                }
+                            if let Some(pattern) = self.hosts_state.patterns.get(*index)
+                                && pattern.tags.iter().any(|t| t == filter)
+                            {
+                                filtered.push(item);
                             }
                         }
                     }

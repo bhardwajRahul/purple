@@ -292,12 +292,12 @@ fn build_metadata(instance: &GcpInstance) -> Vec<(String, String)> {
         metadata.push("machine", machine);
     }
     // OS from first disk's first license (e.g. "debian-11" from license URL)
-    if let Some(disk) = instance.disks.first() {
-        if let Some(license) = disk.licenses.first() {
-            let os = last_url_segment(license);
-            if !os.is_empty() {
-                metadata.push("os", os);
-            }
+    if let Some(disk) = instance.disks.first()
+        && let Some(license) = disk.licenses.first()
+    {
+        let os = last_url_segment(license);
+        if !os.is_empty() {
+            metadata.push("os", os);
         }
     }
     if !instance.status.is_empty() {

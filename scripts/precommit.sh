@@ -67,8 +67,8 @@ step "cargo deny check"
 cargo deny check
 pass
 
-step "rustup run 1.86 cargo check --locked (MSRV)"
-rustup run 1.86 cargo check --locked
+step "rustup run 1.88 cargo check --locked (MSRV)"
+rustup run 1.88 cargo check --locked
 pass
 
 step 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps'

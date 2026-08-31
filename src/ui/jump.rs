@@ -274,14 +274,14 @@ fn render_hit_row(
 
     // Match-source hint when host matched via a non-visible field (User,
     // ProxyJump, VaultSsh, IdentityFile).
-    if let JumpHit::Host(h) = hit {
-        if let Some(src) = match_source_for_host(h, effective_query) {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(
-                match_source_hint(src, h),
-                theme::muted().add_modifier(Modifier::DIM),
-            ));
-        }
+    if let JumpHit::Host(h) = hit
+        && let Some(src) = match_source_for_host(h, effective_query)
+    {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            match_source_hint(src, h),
+            theme::muted().add_modifier(Modifier::DIM),
+        ));
     }
 
     if !secondary.is_empty() {

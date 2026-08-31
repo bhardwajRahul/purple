@@ -9,7 +9,7 @@ homepage = "https://getpurple.sh"
 readme = "README.md"
 keywords = ["ssh", "ssh-client", "tui", "ssh-manager", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
-rust-version = "1.86"
+rust-version = "1.88"
 exclude = [".github/", ".gitignore", "demo.gif", "demo.webm", "assets/"]
 
 [lib]
@@ -51,8 +51,8 @@ nucleo-matcher = "0.3"
 # by src/tcp_diag.rs to populate live tunnel throughput on the Tunnels
 # detail panel without spawning the `ss` userland tool.
 [target.'cfg(target_os = "linux")'.dependencies]
-netlink-packet-sock-diag = "0.4"
-netlink-packet-core = "0.7"
+netlink-packet-sock-diag = "0.5"
+netlink-packet-core = "0.9"
 netlink-sys = "0.9"
 
 # musl static builds need OpenSSL compiled from source. Without this,

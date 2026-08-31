@@ -201,23 +201,21 @@ pub(super) fn handle_provider_list_key(
         // of being consumed as a literal space.
         KeyCode::Char(' ') => {
             // Space toggles expand/collapse on a multi-config provider header.
-            if let Some(idx) = app.ui.provider_list_state().selected() {
-                if let Some(crate::app::ProviderRow::Header { name, config_count }) = rows.get(idx)
-                {
-                    if *config_count >= 2 {
-                        let n = name.clone();
-                        let now_expanded = app.providers.toggle_expanded(&n);
-                        log::debug!(
-                            "[purple] provider tree: {} '{}'",
-                            if now_expanded {
-                                "expanded"
-                            } else {
-                                "collapsed"
-                            },
-                            n
-                        );
-                    }
-                }
+            if let Some(idx) = app.ui.provider_list_state().selected()
+                && let Some(crate::app::ProviderRow::Header { name, config_count }) = rows.get(idx)
+                && *config_count >= 2
+            {
+                let n = name.clone();
+                let now_expanded = app.providers.toggle_expanded(&n);
+                log::debug!(
+                    "[purple] provider tree: {} '{}'",
+                    if now_expanded {
+                        "expanded"
+                    } else {
+                        "collapsed"
+                    },
+                    n
+                );
             }
         }
         KeyCode::Char('a') => {
@@ -239,20 +237,20 @@ pub(super) fn handle_provider_list_key(
                     None => return,
                 };
                 // Multi-config header: Enter toggles expand/collapse.
-                if let crate::app::ProviderRow::Header { name, config_count } = &row {
-                    if *config_count >= 2 {
-                        let now_expanded = app.providers.toggle_expanded(name);
-                        log::debug!(
-                            "[purple] provider tree: {} '{}'",
-                            if now_expanded {
-                                "expanded"
-                            } else {
-                                "collapsed"
-                            },
-                            name
-                        );
-                        return;
-                    }
+                if let crate::app::ProviderRow::Header { name, config_count } = &row
+                    && *config_count >= 2
+                {
+                    let now_expanded = app.providers.toggle_expanded(name);
+                    log::debug!(
+                        "[purple] provider tree: {} '{}'",
+                        if now_expanded {
+                            "expanded"
+                        } else {
+                            "collapsed"
+                        },
+                        name
+                    );
+                    return;
                 }
                 // Single-config header or leaf: open the edit form.
                 let target_id = match &row {
@@ -494,10 +492,10 @@ fn label_migration_key(ctx: &mut LabelMigrationCtx, key: KeyEvent, provider: &st
             }
         }
         KeyCode::Left => {
-            if let Some(p) = ctx.providers.pending_label_migration_mut() {
-                if p.cursor_pos > 0 {
-                    p.cursor_pos -= 1;
-                }
+            if let Some(p) = ctx.providers.pending_label_migration_mut()
+                && p.cursor_pos > 0
+            {
+                p.cursor_pos -= 1;
             }
         }
         KeyCode::Right => {
@@ -519,15 +517,15 @@ fn label_migration_key(ctx: &mut LabelMigrationCtx, key: KeyEvent, provider: &st
             }
         }
         KeyCode::Backspace => {
-            if let Some(p) = ctx.providers.pending_label_migration_mut() {
-                if p.cursor_pos > 0 {
-                    let cursor_pos = p.cursor_pos;
-                    let target = p.focused_value_mut();
-                    let mut chars: Vec<char> = target.chars().collect();
-                    chars.remove(cursor_pos - 1);
-                    *target = chars.into_iter().collect();
-                    p.cursor_pos -= 1;
-                }
+            if let Some(p) = ctx.providers.pending_label_migration_mut()
+                && p.cursor_pos > 0
+            {
+                let cursor_pos = p.cursor_pos;
+                let target = p.focused_value_mut();
+                let mut chars: Vec<char> = target.chars().collect();
+                chars.remove(cursor_pos - 1);
+                *target = chars.into_iter().collect();
+                p.cursor_pos -= 1;
             }
         }
         KeyCode::Delete => {
@@ -1093,28 +1091,27 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
 
     // Step 1: if a lazy migration is pending, rewrite the existing bare
     // section to its new labeled id BEFORE inserting the new section.
-    if let Some(migration) = &pending_migration {
-        if migration.provider == provider_name {
-            if let Some(mut existing) = old_bare_section.clone() {
-                let new_id = providers::config::ProviderConfigId::labeled(
-                    migration.provider.clone(),
-                    migration.existing_label.clone(),
-                );
-                existing.id = new_id.clone();
-                // Default a sensible alias_prefix for the relabeled config
-                // when the user hadn't set a custom one. Bare configs use
-                // the provider short label as alias_prefix; once labeled,
-                // we suffix the label so the two configs don't collide.
-                let short = providers::get_provider(provider_name.as_str())
-                    .map(|p| p.short_label().to_string())
-                    .unwrap_or_else(|| provider_name.clone());
-                if existing.alias_prefix == short {
-                    existing.alias_prefix = format!("{}-{}", short, migration.existing_label);
-                }
-                app.providers.config_mut().remove_section_by_id(&bare_id);
-                app.providers.config_mut().set_section(existing);
-            }
+    if let Some(migration) = &pending_migration
+        && migration.provider == provider_name
+        && let Some(mut existing) = old_bare_section.clone()
+    {
+        let new_id = providers::config::ProviderConfigId::labeled(
+            migration.provider.clone(),
+            migration.existing_label.clone(),
+        );
+        existing.id = new_id.clone();
+        // Default a sensible alias_prefix for the relabeled config
+        // when the user hadn't set a custom one. Bare configs use
+        // the provider short label as alias_prefix; once labeled,
+        // we suffix the label so the two configs don't collide.
+        let short = providers::get_provider(provider_name.as_str())
+            .map(|p| p.short_label().to_string())
+            .unwrap_or_else(|| provider_name.clone());
+        if existing.alias_prefix == short {
+            existing.alias_prefix = format!("{}-{}", short, migration.existing_label);
         }
+        app.providers.config_mut().remove_section_by_id(&bare_id);
+        app.providers.config_mut().set_section(existing);
     }
 
     app.providers.config_mut().set_section(section);

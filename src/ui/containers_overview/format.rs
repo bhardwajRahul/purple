@@ -164,10 +164,10 @@ pub(crate) fn pad_or_truncate_path(s: &str, w: usize) -> String {
 /// the 48-col panel has space for the row alignment without dropping
 /// the prefix that identifies the algorithm.
 pub(crate) fn short_digest(d: &str) -> String {
-    if let Some(hex) = d.strip_prefix("sha256:") {
-        if hex.len() > 12 {
-            return format!("sha256:{}…{}", &hex[..6], &hex[hex.len() - 4..]);
-        }
+    if let Some(hex) = d.strip_prefix("sha256:")
+        && hex.len() > 12
+    {
+        return format!("sha256:{}…{}", &hex[..6], &hex[hex.len() - 4..]);
     }
     d.to_string()
 }

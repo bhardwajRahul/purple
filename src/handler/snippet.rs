@@ -368,31 +368,31 @@ fn picker_key(ctx: &mut SnippetCtx, key: KeyEvent, events_tx: &mpsc::Sender<AppE
             ctx.open_snippet_add_form(target_aliases.clone());
         }
         KeyCode::Char('e') => {
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned() {
-                    ctx.open_snippet_edit_form(&snippet, target_aliases.clone(), sel);
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned()
+            {
+                ctx.open_snippet_edit_form(&snippet, target_aliases.clone(), sel);
             }
         }
         KeyCode::Char('d') => {
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if sel < ctx.snippets.store().snippets.len() {
-                    ctx.snippets.request_delete(sel);
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && sel < ctx.snippets.store().snippets.len()
+            {
+                ctx.snippets.request_delete(sel);
             }
         }
         KeyCode::Enter => {
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned() {
-                    run_or_prompt_params(ctx, snippet, target_aliases, false, events_tx);
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned()
+            {
+                run_or_prompt_params(ctx, snippet, target_aliases, false, events_tx);
             }
         }
         KeyCode::Char('!') => {
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned() {
-                    run_or_prompt_params(ctx, snippet, target_aliases, true, events_tx);
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && let Some(snippet) = ctx.snippets.store().snippets.get(sel).cloned()
+            {
+                run_or_prompt_params(ctx, snippet, target_aliases, true, events_tx);
             }
         }
         _ => {}
@@ -531,10 +531,10 @@ fn output_key(ctx: &mut SnippetCtx, key: KeyEvent) {
 
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
-            if let Some(state) = ctx.snippets.output() {
-                if !state.all_done {
-                    state.cancel.store(true, Ordering::Relaxed);
-                }
+            if let Some(state) = ctx.snippets.output()
+                && !state.all_done
+            {
+                state.cancel.store(true, Ordering::Relaxed);
             }
             ctx.snippets.set_output(None);
             // Free the flow context slots so the next snippet flow opens
@@ -666,19 +666,13 @@ fn handle_snippet_picker_search(
         }
         KeyCode::Enter => {
             let filtered = ctx.filtered_snippet_indices();
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if sel < filtered.len() {
-                    let real_idx = filtered[sel];
-                    if let Some(snippet) = ctx.snippets.store().snippets.get(real_idx).cloned() {
-                        ctx.ui.close_snippet_search();
-                        run_or_prompt_params(
-                            ctx,
-                            snippet,
-                            target_aliases.to_vec(),
-                            false,
-                            events_tx,
-                        );
-                    }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && sel < filtered.len()
+            {
+                let real_idx = filtered[sel];
+                if let Some(snippet) = ctx.snippets.store().snippets.get(real_idx).cloned() {
+                    ctx.ui.close_snippet_search();
+                    run_or_prompt_params(ctx, snippet, target_aliases.to_vec(), false, events_tx);
                 }
             }
         }
@@ -703,17 +697,17 @@ fn handle_snippet_picker_search(
         }
         KeyCode::Down => {
             let count = ctx.filtered_snippet_indices().len();
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if sel + 1 < count {
-                    ctx.ui.snippet_picker_state_mut().select(Some(sel + 1));
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && sel + 1 < count
+            {
+                ctx.ui.snippet_picker_state_mut().select(Some(sel + 1));
             }
         }
         KeyCode::Up => {
-            if let Some(sel) = ctx.ui.snippet_picker_state().selected() {
-                if sel > 0 {
-                    ctx.ui.snippet_picker_state_mut().select(Some(sel - 1));
-                }
+            if let Some(sel) = ctx.ui.snippet_picker_state().selected()
+                && sel > 0
+            {
+                ctx.ui.snippet_picker_state_mut().select(Some(sel - 1));
             }
         }
         _ => {}

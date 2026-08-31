@@ -230,13 +230,13 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
     // inode (= silently dropped edit). Best-effort: log but don't fail the
     // write if the parent sync itself fails — the rename already succeeded.
     #[cfg(unix)]
-    if let Some(parent) = path.parent() {
-        if let Err(err) = fs::File::open(parent).and_then(|d| d.sync_all()) {
-            debug!(
-                "[purple] parent dir sync after rename failed (rename succeeded): {}: {err}",
-                parent.display()
-            );
-        }
+    if let Some(parent) = path.parent()
+        && let Err(err) = fs::File::open(parent).and_then(|d| d.sync_all())
+    {
+        debug!(
+            "[purple] parent dir sync after rename failed (rename succeeded): {}: {err}",
+            parent.display()
+        );
     }
 
     result

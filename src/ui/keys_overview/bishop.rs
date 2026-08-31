@@ -178,7 +178,7 @@ fn twinkle(row: usize, col: usize, tick: u64) -> bool {
         .wrapping_add((col as u64).wrapping_mul(0x9E37_79B9))
         .wrapping_add(bucket.wrapping_mul(0xDEAD_BEEF));
     let h = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    (h >> 33) % 12 == 0
+    (h >> 33).is_multiple_of(12)
 }
 
 /// Companion gate to `twinkle`: when a cell is twinkling, roughly one
@@ -193,7 +193,7 @@ fn twinkle_accent(row: usize, col: usize, tick: u64) -> bool {
         .wrapping_add((col as u64).wrapping_mul(0xBADD_CAFE))
         .wrapping_add(bucket.wrapping_mul(0xFEED_FACE));
     let h = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    (h >> 33) % 3 == 0
+    (h >> 33).is_multiple_of(3)
 }
 
 #[cfg(test)]

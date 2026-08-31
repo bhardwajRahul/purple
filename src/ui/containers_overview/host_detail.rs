@@ -134,16 +134,16 @@ pub(crate) fn build_host_detail_lines(
             max_value_width,
             box_width,
         );
-    } else if let Some(h) = host {
-        if h.tunnel_count > 0 {
-            design::section_field(
-                &mut lines,
-                "Tunnels",
-                &h.tunnel_count.to_string(),
-                max_value_width,
-                box_width,
-            );
-        }
+    } else if let Some(h) = host
+        && h.tunnel_count > 0
+    {
+        design::section_field(
+            &mut lines,
+            "Tunnels",
+            &h.tunnel_count.to_string(),
+            max_value_width,
+            box_width,
+        );
     }
     if collapsed {
         design::section_field_styled(

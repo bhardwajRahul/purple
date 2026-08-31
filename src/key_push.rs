@@ -356,10 +356,10 @@ pub fn read_pubkey_file(path: &Path) -> Result<String, PubkeyValidationError> {
 /// is expected to validate the file exists before reading.
 pub fn pubkey_path_for(paths: Option<&crate::runtime::env::Paths>, display_path: &str) -> PathBuf {
     let with_pub = format!("{}.pub", display_path);
-    if let Some(rest) = with_pub.strip_prefix("~/") {
-        if let Some(p) = paths {
-            return p.home().join(rest);
-        }
+    if let Some(rest) = with_pub.strip_prefix("~/")
+        && let Some(p) = paths
+    {
+        return p.home().join(rest);
     }
     PathBuf::from(with_pub)
 }

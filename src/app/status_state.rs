@@ -207,11 +207,11 @@ impl StatusCenter {
     /// finish so the "Pushing X..." line does not linger after the
     /// transient success/partial toast lands on top of it.
     pub fn clear_sticky_status(&mut self) {
-        if let Some(s) = &self.status {
-            if s.sticky {
-                log::debug!("[purple] footer <- clear sticky: {}", s.text);
-                self.status = None;
-            }
+        if let Some(s) = &self.status
+            && s.sticky
+        {
+            log::debug!("[purple] footer <- clear sticky: {}", s.text);
+            self.status = None;
         }
     }
 

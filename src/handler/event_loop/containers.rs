@@ -65,37 +65,37 @@ pub(crate) fn handle_container_listing(
         }
         Err(e) => {
             // Preserve runtime even on error
-            if let Some(rt) = e.runtime {
-                if let Some(entry) = app.container_state.cache_entry_mut(&alias) {
-                    entry.runtime = rt;
-                }
+            if let Some(rt) = e.runtime
+                && let Some(entry) = app.container_state.cache_entry_mut(&alias)
+            {
+                entry.runtime = rt;
             }
         }
     }
     // Update overlay state if open
-    if let Some(ref mut state) = app.container_session {
-        if state.alias == alias {
-            match result {
-                Ok(listing) => {
-                    state.runtime = Some(listing.runtime);
-                    state.containers = listing.containers;
-                    state.loading = false;
-                    state.error = None;
-                    if let Some(sel) = state.list_state.selected() {
-                        if sel >= state.containers.len() && !state.containers.is_empty() {
-                            state.list_state.select(Some(0));
-                        }
-                    } else if !state.containers.is_empty() {
+    if let Some(ref mut state) = app.container_session
+        && state.alias == alias
+    {
+        match result {
+            Ok(listing) => {
+                state.runtime = Some(listing.runtime);
+                state.containers = listing.containers;
+                state.loading = false;
+                state.error = None;
+                if let Some(sel) = state.list_state.selected() {
+                    if sel >= state.containers.len() && !state.containers.is_empty() {
                         state.list_state.select(Some(0));
                     }
+                } else if !state.containers.is_empty() {
+                    state.list_state.select(Some(0));
                 }
-                Err(e) => {
-                    if let Some(rt) = e.runtime {
-                        state.runtime = Some(rt);
-                    }
-                    state.loading = false;
-                    state.error = Some(e.message);
+            }
+            Err(e) => {
+                if let Some(rt) = e.runtime {
+                    state.runtime = Some(rt);
                 }
+                state.loading = false;
+                state.error = Some(e.message);
             }
         }
     }
@@ -310,68 +310,68 @@ pub(crate) fn handle_container_logs_complete(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if matches!(app.screen, Screen::ContainerLogs) {
-        if let Some(view) = app.container_state.logs_view_mut() {
-            if view.alias == alias && view.container_id == container_id {
-                match result {
-                    Ok(lines) => {
-                        log::debug!(
-                            "[purple] container_logs_complete: {} lines for alias={} id={}",
-                            lines.len(),
-                            alias,
-                            container_id
-                        );
-                        view.body = lines;
-                        view.error = None;
-                        view.fetched_at = now;
-                        // Tail-anchor: align the bottom of the body with
-                        // the bottom of the viewport so the latest line
-                        // sits at the last visible row, with N preceding
-                        // lines filling the gap. The renderer wrote
-                        // `last_render_height` while painting the loading
-                        // placeholder one frame earlier.
-                        view.scroll = crate::handler::container_logs::tail_scroll(
-                            view.body.len(),
-                            view.last_render_height,
-                        );
-                        // Recompute search matches against the refreshed
-                        // body so an active `/foo` survives the `r` cycle.
-                        // Re-centre the viewport on the current match so
-                        // the user lands back on a visible hit.
-                        if let Some(mut s) = view.search.take() {
-                            crate::handler::container_logs::refresh_search(&view.body, &mut s);
-                            log::debug!(
-                                "[purple] container_logs: search refreshed query={:?} matches={}",
-                                s.query,
-                                s.matches.len()
-                            );
-                            let body_len = view.body.len();
-                            let last_h = view.last_render_height;
-                            crate::handler::container_logs::recenter_on_match(
-                                body_len,
-                                last_h,
-                                &s,
-                                &mut view.scroll,
-                            );
-                            view.search = Some(s);
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "[external] container_logs_complete: alias={} id={} error={}",
-                            alias,
-                            container_id,
-                            e
-                        );
-                        view.body.clear();
-                        view.error = Some(e);
-                        view.fetched_at = now;
-                        view.scroll = 0;
-                    }
+    if matches!(app.screen, Screen::ContainerLogs)
+        && let Some(view) = app.container_state.logs_view_mut()
+        && view.alias == alias
+        && view.container_id == container_id
+    {
+        match result {
+            Ok(lines) => {
+                log::debug!(
+                    "[purple] container_logs_complete: {} lines for alias={} id={}",
+                    lines.len(),
+                    alias,
+                    container_id
+                );
+                view.body = lines;
+                view.error = None;
+                view.fetched_at = now;
+                // Tail-anchor: align the bottom of the body with
+                // the bottom of the viewport so the latest line
+                // sits at the last visible row, with N preceding
+                // lines filling the gap. The renderer wrote
+                // `last_render_height` while painting the loading
+                // placeholder one frame earlier.
+                view.scroll = crate::handler::container_logs::tail_scroll(
+                    view.body.len(),
+                    view.last_render_height,
+                );
+                // Recompute search matches against the refreshed
+                // body so an active `/foo` survives the `r` cycle.
+                // Re-centre the viewport on the current match so
+                // the user lands back on a visible hit.
+                if let Some(mut s) = view.search.take() {
+                    crate::handler::container_logs::refresh_search(&view.body, &mut s);
+                    log::debug!(
+                        "[purple] container_logs: search refreshed query={:?} matches={}",
+                        s.query,
+                        s.matches.len()
+                    );
+                    let body_len = view.body.len();
+                    let last_h = view.last_render_height;
+                    crate::handler::container_logs::recenter_on_match(
+                        body_len,
+                        last_h,
+                        &s,
+                        &mut view.scroll,
+                    );
+                    view.search = Some(s);
                 }
-                return;
+            }
+            Err(e) => {
+                log::warn!(
+                    "[external] container_logs_complete: alias={} id={} error={}",
+                    alias,
+                    container_id,
+                    e
+                );
+                view.body.clear();
+                view.error = Some(e);
+                view.fetched_at = now;
+                view.scroll = 0;
             }
         }
+        return;
     }
     log::debug!(
         "[purple] container_logs_complete dropped (overlay closed): alias={} id={} name={}",
