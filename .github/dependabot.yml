@@ -20,3 +20,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # dtolnay/rust-toolchain ships a branch per Rust release, so @1.88 is the
+      # MSRV pin rather than an action version. Dependabot reads it as semver
+      # and asks for a Rust that does not exist. Our other refs are @master and
+      # @stable, so nothing here is bumpable anyway.
+      - dependency-name: dtolnay/rust-toolchain
