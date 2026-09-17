@@ -45,6 +45,29 @@ pub struct RegionPickerState {
     pub cursor: usize,
 }
 
+/// What the AWS profile picker says about one profile beyond its name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsProfileNote {
+    pub text: &'static str,
+    /// False when the chain does not resolve, so the row reads as a warning
+    /// rather than as an ordinary annotation.
+    pub usable: bool,
+}
+
+/// One row of the AWS profile picker, built once when the overlay opens.
+///
+/// Cached rather than derived per frame: building a row reads both AWS files
+/// and resolves the profile's chain, and the overlay redraws on every tick.
+/// Every sibling picker scans on open for the same reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsProfileRow {
+    pub name: String,
+    pub note: Option<AwsProfileNote>,
+    /// The profile's own `region`, so picking it can fill the Regions field
+    /// without reading `~/.aws` a second time.
+    pub region: String,
+}
+
 #[derive(Debug, Default)]
 pub struct UiSelection {
     pub(in crate::app) list_state: ListState,
@@ -52,6 +75,10 @@ pub struct UiSelection {
     pub(in crate::app) password_picker: PickerState,
     pub(in crate::app) proxyjump_picker: PickerState,
     pub(in crate::app) vault_role_picker: PickerState,
+    pub(in crate::app) profile_picker: PickerState,
+    /// The profile picker's rows, read when it opens. The list cursor above
+    /// indexes into this.
+    pub(in crate::app) aws_profile_rows: Vec<AwsProfileRow>,
     pub(in crate::app) tag_picker_state: ListState,
     pub(in crate::app) bulk_tag_editor_state: ListState,
     pub(in crate::app) theme_picker: ThemePickerState,
@@ -133,6 +160,18 @@ impl UiSelection {
 
     pub fn key_picker_mut(&mut self) -> &mut PickerState {
         &mut self.key_picker
+    }
+
+    pub fn profile_picker(&self) -> &PickerState {
+        &self.profile_picker
+    }
+
+    pub fn profile_picker_mut(&mut self) -> &mut PickerState {
+        &mut self.profile_picker
+    }
+
+    pub fn aws_profile_rows(&self) -> &[AwsProfileRow] {
+        &self.aws_profile_rows
     }
 
     pub fn password_picker(&self) -> &PickerState {

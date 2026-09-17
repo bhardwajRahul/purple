@@ -260,6 +260,13 @@ impl Paths {
         self.home.join(".aws").join("credentials")
     }
 
+    /// `~/.aws/config`, the shared AWS config file. Named profiles live here
+    /// as `[profile <name>]`, and it is the only file that carries the
+    /// assume-role keys.
+    pub fn aws_config_file(&self) -> PathBuf {
+        self.home.join(".aws").join("config")
+    }
+
     /// `~/.ssh`.
     pub fn ssh_dir(&self) -> PathBuf {
         self.home.join(".ssh")
@@ -293,9 +300,12 @@ fn resolve_category(
     home.join(".purple")
 }
 
-/// Expand a leading `~/`, `$HOME/` or `${HOME}/` in an override value. A
-/// value written in a file rather than typed in a shell arrives unexpanded.
+/// Expand a leading `~`, `$HOME` or `${HOME}` in an override value. A value
+/// written in a file rather than typed in a shell arrives unexpanded.
 fn expand_home(home: &Path, value: &str) -> PathBuf {
+    if ["~", "$HOME", "${HOME}"].contains(&value) {
+        return home.to_path_buf();
+    }
     for prefix in ["~/", "$HOME/", "${HOME}/"] {
         if let Some(rest) = value.strip_prefix(prefix) {
             return home.join(rest);
@@ -408,6 +418,42 @@ impl Env {
     /// `AWS_SESSION_TOKEN`, set alongside temporary STS credentials.
     pub fn aws_session_token(&self) -> Option<&str> {
         self.var("AWS_SESSION_TOKEN")
+    }
+
+    /// Where the shared AWS credentials file lives. `AWS_SHARED_CREDENTIALS_FILE`
+    /// relocates it; otherwise it is `~/.aws/credentials`.
+    pub fn aws_credentials_file(&self) -> Option<PathBuf> {
+        self.relocatable_aws_file("AWS_SHARED_CREDENTIALS_FILE", Paths::aws_credentials_file)
+    }
+
+    /// Where the shared AWS config file lives. `AWS_CONFIG_FILE` relocates it;
+    /// otherwise it is `~/.aws/config`.
+    pub fn aws_config_file(&self) -> Option<PathBuf> {
+        self.relocatable_aws_file("AWS_CONFIG_FILE", Paths::aws_config_file)
+    }
+
+    /// Shared resolution for the two relocatable AWS files.
+    ///
+    /// A leading `~` in the override expands against the known home directory,
+    /// because the AWS CLI accepts that form and a shell does not expand it
+    /// inside a quoted assignment. Exported blank means no file rather than
+    /// the default one: the AWS CLI opens the empty path, finds nothing and
+    /// carries on, so blanking the variable is how you keep a tool away from
+    /// your keys.
+    fn relocatable_aws_file(&self, var: &str, default: fn(&Paths) -> PathBuf) -> Option<PathBuf> {
+        let Some(raw) = self.var(var) else {
+            return self.paths().map(default);
+        };
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return None;
+        }
+        match self.paths() {
+            Some(paths) => Some(expand_home(paths.home(), raw)),
+            // No home to expand against, so the value can only be used as
+            // written.
+            None => Some(PathBuf::from(raw)),
+        }
     }
 
     /// `PURPLE_TOKEN`, the self-invocation auth token. A variable that is
@@ -839,5 +885,74 @@ mod tests {
         // the snapshot mechanism works end to end.
         let _ = env.paths();
         let _ = env.var("PATH");
+    }
+    #[test]
+    fn the_aws_files_default_to_the_dot_aws_directory() {
+        let env = Env::for_test("/home/u");
+        assert_eq!(
+            env.aws_credentials_file(),
+            Some(PathBuf::from("/home/u/.aws/credentials"))
+        );
+        assert_eq!(
+            env.aws_config_file(),
+            Some(PathBuf::from("/home/u/.aws/config"))
+        );
+    }
+
+    #[test]
+    fn an_absolute_override_relocates_the_aws_file() {
+        let env = Env::for_test("/home/u")
+            .with_var("AWS_SHARED_CREDENTIALS_FILE", "/etc/aws/creds")
+            .with_var("AWS_CONFIG_FILE", "/etc/aws/conf");
+        assert_eq!(
+            env.aws_credentials_file(),
+            Some(PathBuf::from("/etc/aws/creds"))
+        );
+        assert_eq!(env.aws_config_file(), Some(PathBuf::from("/etc/aws/conf")));
+    }
+
+    #[test]
+    fn a_home_relative_override_expands_against_the_home_directory() {
+        // The AWS CLI accepts this form, and a value read from a file rather
+        // than typed in a shell arrives unexpanded.
+        let env = Env::for_test("/home/u")
+            .with_var("AWS_SHARED_CREDENTIALS_FILE", "~/work/creds")
+            .with_var("AWS_CONFIG_FILE", "${HOME}/work/conf");
+        assert_eq!(
+            env.aws_credentials_file(),
+            Some(PathBuf::from("/home/u/work/creds"))
+        );
+        assert_eq!(
+            env.aws_config_file(),
+            Some(PathBuf::from("/home/u/work/conf"))
+        );
+    }
+
+    #[test]
+    fn a_bare_tilde_override_is_the_home_directory() {
+        let env = Env::for_test("/home/u").with_var("AWS_CONFIG_FILE", "~");
+        assert_eq!(env.aws_config_file(), Some(PathBuf::from("/home/u")));
+    }
+
+    #[test]
+    fn an_exported_but_blank_override_means_no_file() {
+        // Blanking the variable is how a user keeps a tool away from their
+        // keys. Falling back to the default would read them anyway.
+        let env = Env::for_test("/home/u")
+            .with_var("AWS_SHARED_CREDENTIALS_FILE", "")
+            .with_var("AWS_CONFIG_FILE", "   ");
+        assert_eq!(env.aws_credentials_file(), None);
+        assert_eq!(env.aws_config_file(), None);
+    }
+
+    #[test]
+    fn without_a_home_directory_only_an_override_names_an_aws_file() {
+        assert_eq!(Env::empty().aws_credentials_file(), None);
+        assert_eq!(
+            Env::empty()
+                .with_var("AWS_CONFIG_FILE", "/etc/aws/conf")
+                .aws_config_file(),
+            Some(PathBuf::from("/etc/aws/conf"))
+        );
     }
 }

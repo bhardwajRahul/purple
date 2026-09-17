@@ -125,6 +125,9 @@ pub struct ProviderSection {
     /// SSH certs. Empty = inherit parent env. Stored as a plain string so an
     /// uninitialized field (via `..Default::default()`) stays innocuous.
     pub vault_addr: String,
+    /// Whether synced hosts reach their instance through AWS Systems Manager
+    /// Session Manager. AWS only.
+    pub ssm: crate::providers::aws_ssm::SsmMode,
 }
 
 impl ProviderSection {
@@ -168,6 +171,9 @@ impl ProviderSection {
                 parts.push(format!("{}='{}'", name, value));
             }
         }
+        if self.ssm.is_enabled() {
+            parts.push(format!("ssm={}", self.ssm));
+        }
         parts.push(format!("verify_tls={}", self.verify_tls));
         parts.push(format!("auto_sync={}", self.auto_sync));
         parts.join(" ")
@@ -195,11 +201,12 @@ impl std::fmt::Debug for ProviderSection {
             .field("filter", &self.filter)
             .field("vault_role", &self.vault_role)
             .field("vault_addr", &redacted(&self.vault_addr))
+            .field("ssm", &self.ssm)
             .finish()
     }
 }
 
-fn redacted(value: &str) -> &'static str {
+pub(super) fn redacted(value: &str) -> &'static str {
     if value.is_empty() {
         "<empty>"
     } else {
@@ -227,6 +234,7 @@ impl Default for ProviderSection {
             filter: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         }
     }
 }
@@ -361,6 +369,7 @@ impl ProviderConfig {
                     filter: String::new(),
                     vault_role: String::new(),
                     vault_addr: String::new(),
+                    ssm: crate::providers::aws_ssm::SsmMode::default(),
                 });
             } else if let Some(ref mut section) = current
                 && let Some((key, value)) = trimmed.split_once('=')
@@ -393,6 +402,11 @@ impl ProviderConfig {
                         } else {
                             String::new()
                         };
+                    }
+                    "ssm" => {
+                        // Infallible: an unknown value parses as Off, so a
+                        // hand-edited config still loads.
+                        section.ssm = value.parse().unwrap_or_default();
                     }
                     "vault_addr" => {
                         // Same silent-drop policy as vault_role: a bad
@@ -521,6 +535,9 @@ impl ProviderConfig {
                     "vault_addr={}\n",
                     Self::sanitize_value(&section.vault_addr)
                 ));
+            }
+            if section.ssm.is_enabled() {
+                content.push_str(&format!("ssm={}\n", section.ssm));
             }
             if section.auto_sync != default_auto_sync(&section.id.provider) {
                 content.push_str(if section.auto_sync {

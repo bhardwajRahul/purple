@@ -143,6 +143,11 @@ pub const PICKER_NONE_SELECTED: &str = "Select at least one host with Space.";
 /// Shown in a host picker when the type-to-filter query matches no hosts.
 pub const PICKER_NO_MATCHES: &str = "No matching hosts.";
 
+/// Guard for the AWS profile picker: nothing to pick from, and the field has
+/// an alternative, so name it.
+pub const PICKER_NO_AWS_PROFILES: &str =
+    "No profiles in ~/.aws/config or ~/.aws/credentials. Fill in Token instead.";
+
 /// Title for the snippet host picker (snippet -> hosts run flow).
 pub fn snippet_host_picker_title(snippet_name: &str, selected: usize, total: usize) -> String {
     format!(

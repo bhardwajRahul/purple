@@ -92,6 +92,44 @@ fn contract_aws_describe_images() {
     assert!(xml.contains("<name>"));
 }
 
+#[test]
+fn contract_aws_sts_assume_role() {
+    let xml = load_xml("aws_sts_assume_role.xml");
+    assert!(xml.contains("<AssumeRoleResponse"));
+    assert!(xml.contains("<AssumeRoleResult>"));
+    assert!(xml.contains("<Credentials>"));
+    // The four fields purple reads, each matched by name because STS does not
+    // keep a stable child order across its operations.
+    assert!(xml.contains("<AccessKeyId>"));
+    assert!(xml.contains("<SecretAccessKey>"));
+    assert!(xml.contains("<SessionToken>"));
+    assert!(xml.contains("<Expiration>"));
+    assert!(xml.contains("<AssumedRoleUser>"));
+}
+
+#[test]
+fn contract_aws_ssm_instance_information() {
+    let v = load_json("aws_ssm_instance_information.json");
+    assert_has_key(&v, "InstanceInformationList");
+    assert_has_key(&v, "NextToken");
+    let node = &v["InstanceInformationList"][0];
+    assert_has_key(node, "InstanceId");
+    assert_has_key(node, "PingStatus");
+    assert_has_key(node, "PlatformType");
+    assert_has_key(node, "AgentVersion");
+    assert_has_key(node, "ResourceType");
+    // Session Manager signals the end of paging with an empty string, not by
+    // omitting the field, so the type matters as much as the presence.
+    assert!(v["NextToken"].is_string());
+    // A hybrid managed node carries the mi- prefix and reaches the same API.
+    let hybrid = &v["InstanceInformationList"][1];
+    assert!(
+        hybrid["InstanceId"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("mi-"))
+    );
+}
+
 // ── Azure ────────────────────────────────────────────────────────────
 
 #[test]
@@ -637,6 +675,8 @@ fn contract_all_fixtures_present() {
         // AWS (XML)
         "aws_describe_instances.xml",
         "aws_describe_images.xml",
+        "aws_sts_assume_role.xml",
+        "aws_ssm_instance_information.json",
         // Azure
         "azure_token.json",
         "azure_vms.json",

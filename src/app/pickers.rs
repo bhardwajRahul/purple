@@ -6,6 +6,7 @@
 use ratatui::widgets::ListState;
 
 use crate::app::App;
+use crate::app::ui_state::{AwsProfileNote, AwsProfileRow};
 
 impl App {
     /// Close the password picker overlay.
@@ -44,6 +45,63 @@ impl App {
         self.ui.password_picker.open = true;
         self.ui.password_picker.list = ListState::default();
         self.ui.password_picker.list.select(Some(0));
+    }
+
+    /// The AWS profile picker's rows: every profile found in `~/.aws/config`
+    /// and `~/.aws/credentials`, sorted, each with what purple will do with
+    /// it. A profile with nothing worth saying carries no note.
+    ///
+    /// Resolving the chain per profile is what makes the refusals visible. The
+    /// shape that decides whether purple can use a profile lives in the file
+    /// rather than in the name, so otherwise it only surfaces on the next
+    /// sync.
+    fn aws_profile_rows(&self) -> Vec<AwsProfileRow> {
+        let env = self.env();
+        let profiles = crate::providers::aws_profile::AwsProfiles::load(
+            env.aws_config_file().as_deref(),
+            env.aws_credentials_file().as_deref(),
+        );
+        profiles
+            .names()
+            .iter()
+            .map(|name| {
+                let note = match profiles.resolve_chain(name) {
+                    Ok(chain) if !chain.roles.is_empty() => Some(AwsProfileNote {
+                        text: crate::messages::PROFILE_ASSUMES_ROLE,
+                        usable: true,
+                    }),
+                    Ok(_) => None,
+                    Err(e) => Some(AwsProfileNote {
+                        text: crate::providers::aws::chain_error_note(&e),
+                        usable: false,
+                    }),
+                };
+                AwsProfileRow {
+                    name: (*name).to_string(),
+                    note,
+                    region: profiles
+                        .get(name)
+                        .map(|p| p.region.trim().to_string())
+                        .unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+
+    /// Open the AWS profile picker overlay, reading `~/.aws` once. Returns
+    /// false without opening when there is nothing to pick, so the caller can
+    /// say why instead of showing an empty list.
+    pub fn open_profile_picker(&mut self) -> bool {
+        let rows = self.aws_profile_rows();
+        if rows.is_empty() {
+            return false;
+        }
+        log::debug!("[purple] open_profile_picker: {} profiles", rows.len());
+        self.ui.aws_profile_rows = rows;
+        self.ui.profile_picker.open = true;
+        self.ui.profile_picker.list = ListState::default();
+        self.ui.profile_picker.list.select(Some(0));
+        true
     }
 
     /// Open the key picker overlay. Rescans `~/.ssh` first so the list

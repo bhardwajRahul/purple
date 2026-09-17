@@ -1,5 +1,46 @@
 use super::*;
 
+/// Resolve credentials that need no assume-role call, which is what every
+/// test below expects. Panics on a chain so a mis-set fixture is loud.
+fn resolve_ready(
+    token: &str,
+    profile: &str,
+    env: &crate::runtime::env::Env,
+) -> Result<AwsCredentials, ProviderError> {
+    match resolve_credentials(token, profile, env)? {
+        CredentialSource::Ready(creds) => Ok(creds),
+        CredentialSource::AssumeRole { .. } => {
+            panic!("expected ready credentials, got a role chain")
+        }
+    }
+}
+
+/// Sign an EC2 Query API request: the shape every pre-existing signing test
+/// was written against.
+fn sign_ec2(
+    creds: &AwsCredentials,
+    region: &str,
+    host: &str,
+    query_string: &str,
+    timestamp: &str,
+    datestamp: &str,
+) -> String {
+    sign_request(
+        creds,
+        region,
+        &SigV4Request {
+            method: "GET",
+            service: EC2_SERVICE,
+            host,
+            query_string,
+            payload: b"",
+            extra_headers: &[],
+        },
+        timestamp,
+        datestamp,
+    )
+}
+
 // =========================================================================
 // format_utc
 // =========================================================================
@@ -124,7 +165,7 @@ fn test_sign_request_format() {
         secret_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
         session_token: None,
     };
-    let auth = sign_request(
+    let auth = sign_ec2(
         &creds,
         "us-east-1",
         "ec2.us-east-1.amazonaws.com",
@@ -146,7 +187,7 @@ fn test_sign_request_deterministic() {
         secret_key: "SK".to_string(),
         session_token: None,
     };
-    let a = sign_request(
+    let a = sign_ec2(
         &creds,
         "us-east-1",
         "ec2.us-east-1.amazonaws.com",
@@ -154,7 +195,7 @@ fn test_sign_request_deterministic() {
         "20240101T000000Z",
         "20240101",
     );
-    let b = sign_request(
+    let b = sign_ec2(
         &creds,
         "us-east-1",
         "ec2.us-east-1.amazonaws.com",
@@ -172,7 +213,7 @@ fn test_sign_request_different_regions() {
         secret_key: "SK".to_string(),
         session_token: None,
     };
-    let a = sign_request(
+    let a = sign_ec2(
         &creds,
         "us-east-1",
         "ec2.us-east-1.amazonaws.com",
@@ -180,7 +221,7 @@ fn test_sign_request_different_regions() {
         "20240101T000000Z",
         "20240101",
     );
-    let b = sign_request(
+    let b = sign_ec2(
         &creds,
         "eu-west-1",
         "ec2.eu-west-1.amazonaws.com",
@@ -191,66 +232,6 @@ fn test_sign_request_different_regions() {
     assert_ne!(a, b);
 }
 
-// =========================================================================
-// parse_credentials
-// =========================================================================
-
-#[test]
-fn test_parse_credentials_default_profile() {
-    let content = "[default]\naws_access_key_id = AKID123\naws_secret_access_key = SECRET456\n";
-    let creds = parse_credentials(content, "default").unwrap();
-    assert_eq!(creds.access_key, "AKID123");
-    assert_eq!(creds.secret_key, "SECRET456");
-}
-
-#[test]
-fn test_parse_credentials_named_profile() {
-    let content = "[default]\naws_access_key_id = DEFAULT\naws_secret_access_key = DEFSECRET\n\n[prod]\naws_access_key_id = PRODAK\naws_secret_access_key = PRODSK\n";
-    let creds = parse_credentials(content, "prod").unwrap();
-    assert_eq!(creds.access_key, "PRODAK");
-    assert_eq!(creds.secret_key, "PRODSK");
-}
-
-#[test]
-fn test_parse_credentials_missing_profile() {
-    let content = "[default]\naws_access_key_id = AK\naws_secret_access_key = SK\n";
-    assert!(parse_credentials(content, "nonexistent").is_none());
-}
-
-#[test]
-fn test_parse_credentials_incomplete_profile() {
-    let content = "[incomplete]\naws_access_key_id = AK\n";
-    assert!(parse_credentials(content, "incomplete").is_none());
-}
-
-#[test]
-fn test_parse_credentials_whitespace_handling() {
-    let content =
-        "[default]\n  aws_access_key_id  =  AKID  \n  aws_secret_access_key  =  SECRET  \n";
-    let creds = parse_credentials(content, "default").unwrap();
-    assert_eq!(creds.access_key, "AKID");
-    assert_eq!(creds.secret_key, "SECRET");
-}
-
-#[test]
-fn test_parse_credentials_extra_keys_ignored() {
-    let content =
-        "[default]\naws_access_key_id = AK\naws_secret_access_key = SK\nregion = us-east-1\n";
-    let creds = parse_credentials(content, "default").unwrap();
-    assert_eq!(creds.access_key, "AK");
-    assert_eq!(creds.secret_key, "SK");
-    assert_eq!(creds.session_token, None);
-}
-
-#[test]
-fn test_parse_credentials_session_token() {
-    let content = "[default]\naws_access_key_id = ASIAEXAMPLE\naws_secret_access_key = SK\naws_session_token = TOKEN\n";
-    let creds = parse_credentials(content, "default").unwrap();
-    assert_eq!(creds.access_key, "ASIAEXAMPLE");
-    assert_eq!(creds.secret_key, "SK");
-    assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
-}
-
 #[test]
 fn test_sign_request_includes_security_token_when_present() {
     let creds = AwsCredentials {
@@ -258,7 +239,7 @@ fn test_sign_request_includes_security_token_when_present() {
         secret_key: "SK".to_string(),
         session_token: Some("TOKEN".to_string()),
     };
-    let auth = sign_request(
+    let auth = sign_ec2(
         &creds,
         "eu-central-1",
         "ec2.eu-central-1.amazonaws.com",
@@ -288,8 +269,8 @@ fn test_sign_request_session_token_changes_signature() {
         "20240101T000000Z",
         "20240101",
     );
-    let a = sign_request(&base, args.0, args.1, args.2, args.3, args.4);
-    let b = sign_request(&with_token, args.0, args.1, args.2, args.3, args.4);
+    let a = sign_ec2(&base, args.0, args.1, args.2, args.3, args.4);
+    let b = sign_ec2(&with_token, args.0, args.1, args.2, args.3, args.4);
     assert_ne!(a, b);
 }
 
@@ -298,7 +279,7 @@ fn test_resolve_credentials_env_without_session_token() {
     let env = crate::runtime::env::Env::for_test("/tmp/x")
         .with_var("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE")
         .with_var("AWS_SECRET_ACCESS_KEY", "SECRET");
-    let creds = resolve_credentials("", "", &env).unwrap();
+    let creds = resolve_ready("", "", &env).unwrap();
     assert_eq!(creds.access_key, "AKIDEXAMPLE");
     assert_eq!(creds.secret_key, "SECRET");
     assert_eq!(creds.session_token, None);
@@ -310,7 +291,7 @@ fn test_resolve_credentials_env_with_session_token() {
         .with_var("AWS_ACCESS_KEY_ID", "ASIAEXAMPLE")
         .with_var("AWS_SECRET_ACCESS_KEY", "SECRET")
         .with_var("AWS_SESSION_TOKEN", "TOKEN");
-    let creds = resolve_credentials("", "", &env).unwrap();
+    let creds = resolve_ready("", "", &env).unwrap();
     assert_eq!(creds.access_key, "ASIAEXAMPLE");
     assert_eq!(creds.secret_key, "SECRET");
     assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
@@ -334,7 +315,7 @@ fn test_resolve_credentials_profile_shadows_env_session_token() {
         .with_var("AWS_SECRET_ACCESS_KEY", "ENVSECRET")
         .with_var("AWS_SESSION_TOKEN", "ENVTOKEN");
 
-    let creds = resolve_credentials("", "default", &env).expect("profile resolves from file");
+    let creds = resolve_ready("", "default", &env).expect("profile resolves from file");
     assert_eq!(creds.access_key, "ASIAFROMFILE");
     assert_eq!(creds.secret_key, "FILESECRET");
     assert_eq!(creds.session_token.as_deref(), Some("FILETOKEN"));
@@ -342,7 +323,7 @@ fn test_resolve_credentials_profile_shadows_env_session_token() {
 
 #[test]
 fn test_resolve_credentials_token_with_session_token() {
-    let creds = resolve_credentials(
+    let creds = resolve_ready(
         "ASIAEXAMPLE:SECRET:TOKEN",
         "",
         &crate::runtime::env::Env::empty(),
@@ -357,16 +338,11 @@ fn test_resolve_credentials_token_with_session_token() {
 fn test_resolve_credentials_token_trailing_separator() {
     // An empty third component leaves the secret key intact and yields no
     // session token.
-    let creds = resolve_credentials("AKID:SECRET:", "", &crate::runtime::env::Env::empty())
+    let creds = resolve_ready("AKID:SECRET:", "", &crate::runtime::env::Env::empty())
         .expect("access key and secret are both present");
     assert_eq!(creds.access_key, "AKID");
     assert_eq!(creds.secret_key, "SECRET");
     assert_eq!(creds.session_token, None);
-}
-
-#[test]
-fn test_parse_credentials_empty_content() {
-    assert!(parse_credentials("", "default").is_none());
 }
 
 // =========================================================================
@@ -375,7 +351,7 @@ fn test_parse_credentials_empty_content() {
 
 #[test]
 fn test_resolve_credentials_token_format() {
-    let creds = resolve_credentials("AKID:SECRET", "", &crate::runtime::env::Env::empty()).unwrap();
+    let creds = resolve_ready("AKID:SECRET", "", &crate::runtime::env::Env::empty()).unwrap();
     assert_eq!(creds.access_key, "AKID");
     assert_eq!(creds.secret_key, "SECRET");
 }
@@ -383,9 +359,9 @@ fn test_resolve_credentials_token_format() {
 #[test]
 fn test_resolve_credentials_empty_parts() {
     // Empty access key
-    assert!(resolve_credentials(":SECRET", "", &crate::runtime::env::Env::empty()).is_err());
+    assert!(resolve_ready(":SECRET", "", &crate::runtime::env::Env::empty()).is_err());
     // Empty secret key
-    assert!(resolve_credentials("AKID:", "", &crate::runtime::env::Env::empty()).is_err());
+    assert!(resolve_ready("AKID:", "", &crate::runtime::env::Env::empty()).is_err());
 }
 
 #[test]
@@ -393,7 +369,7 @@ fn test_resolve_credentials_nothing_configured_names_the_sources() {
     // The config saves without a token and without a profile, so the sync-time
     // failure has to say where credentials can come from.
     // `AwsCredentials` has no Debug on purpose, so unwrap the error side.
-    let err = resolve_credentials("", "", &crate::runtime::env::Env::empty())
+    let err = resolve_ready("", "", &crate::runtime::env::Env::empty())
         .err()
         .expect("no token, no profile and no environment must fail");
     let msg = err.to_string();
@@ -416,7 +392,7 @@ fn test_resolve_credentials_missing_profile_names_the_profile() {
     )
     .expect("write");
     let env = crate::runtime::env::Env::for_test(home.path());
-    let err = resolve_credentials("AKID:SECRET", "missing", &env)
+    let err = resolve_ready("AKID:SECRET", "missing", &env)
         .err()
         .expect("a profile that is not in the file must fail");
     let msg = err.to_string();
@@ -427,7 +403,7 @@ fn test_resolve_credentials_missing_profile_names_the_profile() {
 #[test]
 fn test_resolve_credentials_malformed_token_still_blames_the_token() {
     // A token that was set but cannot be parsed keeps the auth error.
-    let err = resolve_credentials("AKID:", "", &crate::runtime::env::Env::empty())
+    let err = resolve_ready("AKID:", "", &crate::runtime::env::Env::empty())
         .err()
         .expect("a malformed token must fail");
     assert!(
@@ -440,7 +416,7 @@ fn test_resolve_credentials_malformed_token_still_blames_the_token() {
 fn test_resolve_credentials_no_colon() {
     // No colon in token: split_once fails, falls through to env vars
     // Token-only (no colon) should not produce valid credentials from token path
-    let result = resolve_credentials("just-a-token", "", &crate::runtime::env::Env::empty());
+    let result = resolve_ready("just-a-token", "", &crate::runtime::env::Env::empty());
     // Result depends on env vars. Verify token path was skipped by
     // confirming credentials (if any) don't contain the raw token string.
     if let Ok(ref creds) = result {
@@ -731,6 +707,7 @@ fn test_aws_provider_name() {
     let aws = Aws {
         regions: vec![],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     assert_eq!(aws.name(), "aws");
     assert_eq!(aws.short_label(), "aws");
@@ -741,6 +718,7 @@ fn test_aws_no_regions_error() {
     let aws = Aws {
         regions: vec![],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let result = aws.fetch_hosts("fake", &crate::runtime::env::Env::empty());
     match result {
@@ -769,6 +747,7 @@ fn test_aws_invalid_region_error() {
     let aws = Aws {
         regions: vec!["xx-invalid-1".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let result = aws.fetch_hosts("AKID:SECRET", &crate::runtime::env::Env::empty());
     match result {
@@ -782,6 +761,7 @@ fn test_aws_mixed_valid_invalid_region_error() {
     let aws = Aws {
         regions: vec!["us-east-1".to_string(), "xx-fake-9".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let result = aws.fetch_hosts("AKID:SECRET", &crate::runtime::env::Env::empty());
     match result {
@@ -793,50 +773,6 @@ fn test_aws_mixed_valid_invalid_region_error() {
 // =========================================================================
 // Profile credential errors return AuthFailed
 // =========================================================================
-
-#[test]
-fn test_read_credentials_file_without_a_home_returns_auth_failed() {
-    // No paths means no ~/.aws/credentials to look in. Distinct from the
-    // profile-shaped failures below, which name what went wrong.
-    let result = read_credentials_file(
-        "nonexistent-profile-xyz",
-        &crate::runtime::env::Env::empty(),
-    );
-    assert!(matches!(result, Err(ProviderError::AuthFailed)));
-}
-
-#[test]
-fn test_read_credentials_file_separates_missing_profile_from_missing_keys() {
-    // An SSO profile has its section in the file but keeps the key pair in
-    // the SSO cache. Telling the user it is "not in the file" while they are
-    // looking straight at it is the misdirection worth avoiding.
-    let home = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(home.path().join(".aws")).expect("mkdir");
-    std::fs::write(
-        home.path().join(".aws").join("credentials"),
-        "[sso-profile]\nregion = eu-central-1\n",
-    )
-    .expect("write");
-    let env = crate::runtime::env::Env::for_test(home.path());
-
-    let present = read_credentials_file("sso-profile", &env)
-        .err()
-        .expect("a profile without keys must fail")
-        .to_string();
-    assert!(
-        present.contains("no key pair"),
-        "should say the keys are missing: {present}"
-    );
-
-    let absent = read_credentials_file("not-there", &env)
-        .err()
-        .expect("a profile that is absent must fail")
-        .to_string();
-    assert!(
-        absent.contains("is not in"),
-        "should say the profile is absent: {absent}"
-    );
-}
 
 // =========================================================================
 // AMI batch constant
@@ -1116,11 +1052,16 @@ fn fetch_from_drives_full_pipeline_against_mock() {
     let aws = Aws {
         regions: vec!["us-east-1".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let url = server.url();
     let hosts = aws
         .fetch_with_endpoint(
-            |_region| url.clone(),
+            &Endpoints {
+                ec2: &|_region: &str| url.clone(),
+                ssm: &|_region: &str| url.clone(),
+                sts: &|_region: &str| url.clone(),
+            },
             "AKID:SECRET",
             &AtomicBool::new(false),
             &crate::runtime::env::Env::empty(),
@@ -1160,10 +1101,15 @@ fn fetch_from_maps_auth_failure_to_provider_error() {
     let aws = Aws {
         regions: vec!["us-east-1".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let url = server.url();
     let result = aws.fetch_with_endpoint(
-        |_region| url.clone(),
+        &Endpoints {
+            ec2: &|_region: &str| url.clone(),
+            ssm: &|_region: &str| url.clone(),
+            sts: &|_region: &str| url.clone(),
+        },
         "AKID:SECRET",
         &AtomicBool::new(false),
         &crate::runtime::env::Env::empty(),
@@ -1221,11 +1167,16 @@ fn fetch_sends_security_token_header_for_temporary_credentials() {
     let aws = Aws {
         regions: vec!["us-east-1".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let url = server.url();
     let hosts = aws
         .fetch_with_endpoint(
-            |_region| url.clone(),
+            &Endpoints {
+                ec2: &|_region: &str| url.clone(),
+                ssm: &|_region: &str| url.clone(),
+                sts: &|_region: &str| url.clone(),
+            },
             "ASIAEXAMPLE:SECRET:TOKEN",
             &AtomicBool::new(false),
             &crate::runtime::env::Env::empty(),
@@ -1257,11 +1208,16 @@ fn fetch_omits_security_token_header_for_static_credentials() {
     let aws = Aws {
         regions: vec!["us-east-1".to_string()],
         profile: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let url = server.url();
     let hosts = aws
         .fetch_with_endpoint(
-            |_region| url.clone(),
+            &Endpoints {
+                ec2: &|_region: &str| url.clone(),
+                ssm: &|_region: &str| url.clone(),
+                sts: &|_region: &str| url.clone(),
+            },
             "AKID:SECRET",
             &AtomicBool::new(false),
             &crate::runtime::env::Env::empty(),
@@ -1270,4 +1226,815 @@ fn fetch_omits_security_token_header_for_static_credentials() {
         .expect("static credentials must reach the mock without a token header");
     instances.assert();
     assert!(hosts.is_empty());
+}
+
+// =========================================================================
+// Session Manager routing
+// =========================================================================
+
+/// Two instances: one with a public address, one with none at all. The second
+/// is the case only Session Manager can reach.
+const TWO_INSTANCES_XML: &str = r#"<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+  <reservationSet><item><instancesSet>
+    <item>
+      <instanceId>i-public</instanceId>
+      <instanceState><name>running</name></instanceState>
+      <ipAddress>54.1.2.3</ipAddress>
+      <instanceType>t3.micro</instanceType>
+      <tagSet><item><key>Name</key><value>web</value></item></tagSet>
+    </item>
+    <item>
+      <instanceId>i-private</instanceId>
+      <instanceState><name>running</name></instanceState>
+      <instanceType>t3.micro</instanceType>
+      <tagSet><item><key>Name</key><value>worker</value></item></tagSet>
+    </item>
+  </instancesSet></item></reservationSet>
+</DescribeInstancesResponse>"#;
+
+fn aws_with_ssm(mode: crate::providers::aws_ssm::SsmMode, profile: &str) -> Aws {
+    Aws {
+        regions: vec!["us-east-1".to_string()],
+        profile: profile.to_string(),
+        ssm: mode,
+    }
+}
+
+fn host<'a>(hosts: &'a [ProviderHost], server_id: &str) -> &'a ProviderHost {
+    hosts
+        .iter()
+        .find(|h| h.server_id == server_id)
+        .unwrap_or_else(|| panic!("no host {server_id}"))
+}
+
+/// An `Env` whose `~/.aws/credentials` holds `profile` with static keys, so a
+/// config that names a profile can resolve credentials from it.
+fn env_with_profile(dir: &std::path::Path, profile: &str) -> crate::runtime::env::Env {
+    let aws = dir.join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::write(
+        aws.join("credentials"),
+        format!("[\"{profile}\"]\naws_access_key_id = AKID\naws_secret_access_key = SECRET\n"),
+    )
+    .expect("write credentials");
+    crate::runtime::env::Env::for_test(dir)
+}
+
+/// Serve EC2 on one mock and Session Manager on another, so the two endpoints
+/// are told apart the way production tells them apart.
+fn ssm_fetch(
+    aws: &Aws,
+    ec2_body: &str,
+    ssm_body: Option<&str>,
+) -> Result<Vec<ProviderHost>, ProviderError> {
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = if aws.profile.is_empty() {
+        crate::runtime::env::Env::empty()
+    } else {
+        env_with_profile(home.path(), &aws.profile)
+    };
+    let mut ec2_server = mockito::Server::new();
+    let _instances = ec2_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(ec2_body)
+        .create();
+
+    let mut ssm_server = mockito::Server::new();
+    let _nodes = ssm_server
+        .mock("POST", "/")
+        .with_status(if ssm_body.is_some() { 200 } else { 403 })
+        .with_body(ssm_body.unwrap_or(
+            r#"{"__type":"AccessDeniedException","message":"User: arn:aws:iam::1:user/eric is not authorized to perform: ssm:DescribeInstanceInformation on resource: *"}"#,
+        ))
+        .create();
+
+    let ec2_url = ec2_server.url();
+    let ssm_url = ssm_server.url();
+    aws.fetch_with_endpoint(
+        &Endpoints {
+            ec2: &|_region: &str| ec2_url.clone(),
+            ssm: &|_region: &str| ssm_url.clone(),
+            sts: &|_region: &str| ec2_url.clone(),
+        },
+        "AKID:SECRET",
+        &AtomicBool::new(false),
+        &env,
+        &|_| {},
+    )
+}
+
+#[test]
+fn ssm_off_keeps_the_ip_address_and_reports_an_instance_without_one_as_addressless() {
+    // An instance with no address is reported with an empty one rather than
+    // dropped, so it stays in the remote set. Dropping it would let sync read
+    // a running instance as gone and `--remove` delete its host block. Same
+    // contract Proxmox uses for a stopped VM.
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, ""),
+        TWO_INSTANCES_XML,
+        None,
+    )
+    .expect("fetch succeeds");
+    assert_eq!(hosts.len(), 2);
+    assert_eq!(host(&hosts, "i-public").ip, "54.1.2.3");
+    assert!(host(&hosts, "i-public").directives.is_empty());
+    assert_eq!(host(&hosts, "i-private").ip, "");
+}
+
+#[test]
+fn an_addressless_instance_keeps_its_proxy_command() {
+    // Turning Session Manager off cannot put this host back on an address,
+    // because it has none. Withdrawing the command would leave a host that
+    // reaches nothing, so purple leaves it alone.
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, ""),
+        TWO_INSTANCES_XML,
+        None,
+    )
+    .expect("fetch succeeds");
+    let addressless = host(&hosts, "i-private");
+    assert!(
+        addressless.retract_directives.is_empty(),
+        "an unreachable host must not have its only route withdrawn"
+    );
+    // A host that does have an address is put back on it, so the withdrawal
+    // still happens where purple has something to fall back to.
+    assert_eq!(host(&hosts, "i-public").retract_directives.len(), 1);
+}
+
+#[test]
+fn ssm_off_still_withdraws_a_proxy_command_purple_wrote_before() {
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, ""),
+        TWO_INSTANCES_XML,
+        None,
+    )
+    .expect("fetch succeeds");
+    let retract = &host(&hosts, "i-public").retract_directives;
+    // Scoped to the host that has an address to return to, and claiming the
+    // whole command rather than its opening: a prefix would also match the
+    // line a user wrote from AWS's own documentation.
+    assert_eq!(retract.len(), 1);
+    assert_eq!(retract[0].key, "ProxyCommand");
+    assert!(retract[0].claims(&crate::providers::aws_ssm::proxy_command("", "us-east-1")));
+    // The profile is the one segment the config can change between syncs, so
+    // the line purple wrote under a different profile is still its own.
+    assert!(retract[0].claims(&crate::providers::aws_ssm::proxy_command(
+        "org-prod",
+        "us-east-1"
+    )));
+    // Another region's line belongs to another config.
+    assert!(!retract[0].claims(&crate::providers::aws_ssm::proxy_command("", "eu-west-1")));
+    // The line AWS publishes, typed by hand against a fixed instance.
+    assert!(!retract[0].claims(
+        "sh -c \"aws ssm start-session --target i-0abc --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1\""
+    ));
+}
+
+#[test]
+fn ssm_always_routes_every_instance_without_asking_the_service() {
+    // No SSM mock is reachable here, which is the point: `always` must not
+    // call DescribeInstanceInformation at all.
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Always, ""),
+        TWO_INSTANCES_XML,
+        None,
+    )
+    .expect("fetch succeeds without an SSM lookup");
+    assert_eq!(hosts.len(), 2, "the address-less instance is reachable now");
+    for id in ["i-public", "i-private"] {
+        let h = host(&hosts, id);
+        assert_eq!(h.ip, id, "HostName must be the instance ID");
+        assert_eq!(h.directives.len(), 1);
+        assert_eq!(h.directives[0].0, "ProxyCommand");
+        assert!(h.directives[0].1.contains("--target %h"));
+        assert!(h.retract_directives.is_empty());
+    }
+}
+
+#[test]
+fn ssm_always_carries_the_profile_and_region_into_the_command() {
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Always, "org-prod"),
+        TWO_INSTANCES_XML,
+        None,
+    )
+    .expect("fetch succeeds");
+    let command = &host(&hosts, "i-public").directives[0].1;
+    assert!(command.contains("--profile org-prod"), "{command}");
+    assert!(command.contains("--region us-east-1"), "{command}");
+}
+
+#[test]
+fn ssm_auto_routes_only_the_nodes_the_service_reports_online() {
+    let hosts = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Auto, ""),
+        TWO_INSTANCES_XML,
+        Some(r#"{"InstanceInformationList":[{"InstanceId":"i-private","PingStatus":"Online"}],"NextToken":""}"#),
+    )
+    .expect("fetch succeeds");
+    assert_eq!(hosts.len(), 2);
+
+    // Managed: reached by instance ID through the proxy command.
+    let managed = host(&hosts, "i-private");
+    assert_eq!(managed.ip, "i-private");
+    assert_eq!(managed.directives.len(), 1);
+    assert!(
+        managed
+            .metadata
+            .contains(&("via".to_string(), "Session Manager".to_string()))
+    );
+
+    // Not managed: untouched, its old command withdrawn.
+    let plain = host(&hosts, "i-public");
+    assert_eq!(plain.ip, "54.1.2.3");
+    assert!(plain.directives.is_empty());
+    assert_eq!(plain.retract_directives.len(), 1);
+}
+
+#[test]
+fn ssm_auto_reports_a_denied_lookup_instead_of_silently_routing_nothing() {
+    // Without this the sync would look successful while every host quietly
+    // stayed on its IP address, which is the failure the user cannot see.
+    let result = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Auto, ""),
+        TWO_INSTANCES_XML,
+        None,
+    );
+    let err = result.expect_err("a denied lookup must fail the region");
+    let msg = err.to_string();
+    assert!(msg.contains("No instances"), "unexpected error: {msg}");
+    // The region's own reason travels into the summary, and the assertion is
+    // on a phrase only the service's body can supply: a mapping built from
+    // the status alone would pass a check on purple's own static hint.
+    assert!(
+        msg.contains("is not authorized to perform"),
+        "the body was dropped on the way to the summary: {msg}"
+    );
+    assert!(
+        !msg.contains("API token"),
+        "AWS has no API token, so the credentials must not be blamed: {msg}"
+    );
+    // An EC2 read-only policy does not carry this action, so naming it is the
+    // whole diagnosis.
+    assert!(
+        msg.contains("ssm:DescribeInstanceInformation"),
+        "the missing action is not named: {msg}"
+    );
+    assert!(
+        !msg.contains("Check your credentials"),
+        "one missing IAM action is not a credential problem: {msg}"
+    );
+}
+
+#[test]
+fn a_region_that_fails_on_ec2_carries_its_own_reason_into_the_summary() {
+    // Nothing to do with Session Manager: the same rule has to hold for the
+    // listing call, or the summary invents a credential problem out of an
+    // unreachable service.
+    let mut ec2_server = mockito::Server::new();
+    let _mock = ec2_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .with_status(503)
+        .with_body("service unavailable")
+        .create();
+
+    let url = ec2_server.url();
+    let err = aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, "")
+        .fetch_with_endpoint(
+            &Endpoints {
+                ec2: &|_region: &str| url.clone(),
+                ssm: &|_region: &str| url.clone(),
+                sts: &|_region: &str| url.clone(),
+            },
+            "AKID:SECRET",
+            &AtomicBool::new(false),
+            &crate::runtime::env::Env::empty(),
+            &|_| {},
+        )
+        .expect_err("a failed listing must fail the region");
+    let msg = err.to_string();
+    assert!(msg.contains("us-east-1"), "region not named: {msg}");
+    assert!(msg.contains("503"), "the status is the reason: {msg}");
+    assert!(
+        !msg.contains("Check your credentials"),
+        "an unreachable service is not a credential problem: {msg}"
+    );
+}
+
+#[test]
+fn an_unsafe_profile_name_is_refused_before_any_request() {
+    // The check runs ahead of credential resolution, so an empty environment
+    // is enough: the name never reaches a request.
+    let aws = aws_with_ssm(
+        crate::providers::aws_ssm::SsmMode::Always,
+        "bad name\"; rm -rf /",
+    );
+    let err = aws
+        .fetch_with_endpoint(
+            &Endpoints {
+                ec2: &|_region: &str| "http://127.0.0.1:1".to_string(),
+                ssm: &|_region: &str| "http://127.0.0.1:1".to_string(),
+                sts: &|_region: &str| "http://127.0.0.1:1".to_string(),
+            },
+            "AKID:SECRET",
+            &AtomicBool::new(false),
+            &crate::runtime::env::Env::empty(),
+            &|_| {},
+        )
+        .expect_err("an unsafe profile name must fail");
+    assert!(err.to_string().contains("ProxyCommand"), "got: {err}");
+}
+
+#[test]
+fn an_unsafe_profile_name_is_allowed_when_session_manager_is_off() {
+    // The name only has to be shell-safe because it goes into a command; with
+    // Session Manager off it never does, so the sync must not be blocked.
+    let result = ssm_fetch(
+        &aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, "odd name"),
+        TWO_INSTANCES_XML,
+        None,
+    );
+    match result {
+        Ok(_) => {}
+        Err(e) => panic!("off must not validate the profile name, got: {e}"),
+    }
+}
+
+// =========================================================================
+// Assume role, end to end
+// =========================================================================
+
+/// The AssumeRole response shape AWS documents, with the credentials filled in.
+fn assume_role_body(access: &str, secret: &str, token: &str) -> String {
+    format!(
+        r#"<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <AssumeRoleResult>
+    <AssumedRoleUser>
+      <Arn>arn:aws:sts::1:assumed-role/Admin/purple</Arn>
+      <AssumedRoleId>AROA:purple</AssumedRoleId>
+    </AssumedRoleUser>
+    <Credentials>
+      <AccessKeyId>{}</AccessKeyId>
+      <SecretAccessKey>{}</SecretAccessKey>
+      <SessionToken>{}</SessionToken>
+      <Expiration>2026-01-01T00:00:00Z</Expiration>
+    </Credentials>
+  </AssumeRoleResult>
+</AssumeRoleResponse>"#,
+        access, secret, token
+    )
+}
+
+/// An `Env` whose `~/.aws` describes `org-prod` assuming a role from `base`.
+fn env_with_role_chain(dir: &std::path::Path) -> crate::runtime::env::Env {
+    let aws = dir.join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::write(
+        aws.join("config"),
+        "[profile org-prod]\nrole_arn = arn:aws:iam::1:role/Admin\nsource_profile = base\n",
+    )
+    .expect("write config");
+    std::fs::write(
+        aws.join("credentials"),
+        "[base]\naws_access_key_id = AKIABASE\naws_secret_access_key = BASESECRET\n",
+    )
+    .expect("write credentials");
+    crate::runtime::env::Env::for_test(dir)
+}
+
+#[test]
+fn a_role_profile_reports_the_chain_rather_than_following_it() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = env_with_role_chain(home.path());
+    match resolve_credentials("", "org-prod", &env).expect("the chain resolves") {
+        CredentialSource::AssumeRole { base, roles } => {
+            assert_eq!(base.access_key, "AKIABASE");
+            assert_eq!(roles.len(), 1);
+            assert_eq!(roles[0].role_arn, "arn:aws:iam::1:role/Admin");
+            assert_eq!(roles[0].profile, "org-prod");
+        }
+        CredentialSource::Ready(_) => panic!("a role_arn profile must report its chain"),
+    }
+}
+
+#[test]
+fn a_nested_chain_is_reported_innermost_first() {
+    // The order the caller assumes them in: the base's own role first, then
+    // the one that role may take.
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws = home.path().join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::write(
+        aws.join("config"),
+        "[profile outer]\nrole_arn = arn:outer\nsource_profile = inner\n\
+         [profile inner]\nrole_arn = arn:inner\nsource_profile = base\n",
+    )
+    .expect("write config");
+    std::fs::write(
+        aws.join("credentials"),
+        "[base]\naws_access_key_id = AKIABASE\naws_secret_access_key = BASESECRET\n",
+    )
+    .expect("write credentials");
+    let env = crate::runtime::env::Env::for_test(home.path());
+    match resolve_credentials("", "outer", &env).expect("the chain resolves") {
+        CredentialSource::AssumeRole { roles, .. } => {
+            let arns: Vec<&str> = roles.iter().map(|r| r.role_arn.as_str()).collect();
+            assert_eq!(arns, ["arn:inner", "arn:outer"]);
+        }
+        CredentialSource::Ready(_) => panic!("a role_arn profile must report its chain"),
+    }
+}
+
+#[test]
+fn an_assumed_role_signs_the_ec2_call_with_the_credentials_it_returned() {
+    // The seam between the profile chain and the API calls. Signing the
+    // listing with the base key pair instead would silently sync the wrong
+    // account's instances, and nothing else in the suite reaches this path.
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = env_with_role_chain(home.path());
+
+    let mut sts_server = mockito::Server::new();
+    let assume = sts_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "Action".into(),
+            "AssumeRole".into(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(assume_role_body(
+            "ASIAASSUMED",
+            "ASSUMEDSECRET",
+            "ASSUMEDTOKEN",
+        ))
+        .create();
+
+    let mut ec2_server = mockito::Server::new();
+    let instances = ec2_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .match_header(
+            "authorization",
+            mockito::Matcher::Regex("Credential=ASIAASSUMED/".to_string()),
+        )
+        .match_header("x-amz-security-token", "ASSUMEDTOKEN")
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(TWO_INSTANCES_XML)
+        .create();
+
+    let sts_url = sts_server.url();
+    let ec2_url = ec2_server.url();
+    let hosts = aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, "org-prod")
+        .fetch_with_endpoint(
+            &Endpoints {
+                ec2: &|_region: &str| ec2_url.clone(),
+                ssm: &|_region: &str| ec2_url.clone(),
+                sts: &|_region: &str| sts_url.clone(),
+            },
+            "",
+            &AtomicBool::new(false),
+            &env,
+            &|_| {},
+        )
+        .expect("the assumed credentials must reach EC2");
+
+    assume.assert();
+    instances.assert();
+    assert_eq!(hosts.len(), 2);
+}
+
+#[test]
+fn the_sts_call_is_scoped_to_the_first_configured_region() {
+    // The credential scope has to match the endpoint the request went to, so
+    // one regional endpoint is picked and pinned rather than resolved per
+    // region alongside EC2.
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = env_with_role_chain(home.path());
+
+    let mut sts_server = mockito::Server::new();
+    let assume = sts_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .match_header(
+            "authorization",
+            mockito::Matcher::Regex("/eu-west-1/sts/aws4_request".to_string()),
+        )
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(assume_role_body(
+            "ASIAASSUMED",
+            "ASSUMEDSECRET",
+            "ASSUMEDTOKEN",
+        ))
+        .create();
+
+    let mut ec2_server = mockito::Server::new();
+    let _instances = ec2_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "text/xml")
+        .with_body(TWO_INSTANCES_XML)
+        .create();
+
+    let sts_url = sts_server.url();
+    let ec2_url = ec2_server.url();
+    let aws = Aws {
+        regions: vec!["eu-west-1".to_string(), "us-east-1".to_string()],
+        profile: "org-prod".to_string(),
+        ssm: crate::providers::aws_ssm::SsmMode::Off,
+    };
+    aws.fetch_with_endpoint(
+        &Endpoints {
+            ec2: &|_region: &str| ec2_url.clone(),
+            ssm: &|_region: &str| ec2_url.clone(),
+            sts: &|_region: &str| sts_url.clone(),
+        },
+        "",
+        &AtomicBool::new(false),
+        &env,
+        &|_| {},
+    )
+    .expect("fetch succeeds");
+    assume.assert();
+}
+
+#[test]
+fn a_refused_assume_role_stops_the_sync_before_any_region_is_listed() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = env_with_role_chain(home.path());
+
+    let mut sts_server = mockito::Server::new();
+    let _assume = sts_server
+        .mock("GET", "/")
+        .match_query(mockito::Matcher::Any)
+        .with_status(403)
+        .with_body("<ErrorResponse><Error><Code>AccessDenied</Code><Message>User: arn:aws:iam::1:user/eric is not authorized to perform: sts:AssumeRole</Message></Error></ErrorResponse>")
+        .create();
+
+    let sts_url = sts_server.url();
+    let err = aws_with_ssm(crate::providers::aws_ssm::SsmMode::Off, "org-prod")
+        .fetch_with_endpoint(
+            &Endpoints {
+                // Unreachable on purpose: a refused role must not get this far.
+                ec2: &|_region: &str| "http://127.0.0.1:1".to_string(),
+                ssm: &|_region: &str| "http://127.0.0.1:1".to_string(),
+                sts: &|_region: &str| sts_url.clone(),
+            },
+            "",
+            &AtomicBool::new(false),
+            &env,
+            &|_| {},
+        )
+        .expect_err("a refused role must fail the sync");
+    let msg = err.to_string();
+    assert!(msg.contains("arn:aws:iam::1:role/Admin"), "{msg}");
+    assert!(msg.contains("sts:AssumeRole"), "{msg}");
+}
+
+// =========================================================================
+// Profile failure wording
+// =========================================================================
+
+#[test]
+fn every_profile_failure_gets_its_own_wording() {
+    // One fixture per ChainError, asserted on the phrase that tells it apart.
+    // Troubleshooting.md quotes some of these verbatim, and two arms swapped
+    // would otherwise ship unnoticed.
+    let cases: &[(&str, &str, &str, &str)] = &[
+        // (profile asked for, ~/.aws/config, ~/.aws/credentials, phrase)
+        ("ghost", "", "", "is in neither"),
+        (
+            "p",
+            "[profile p]\nregion = eu-west-1\n",
+            "",
+            "has no credentials",
+        ),
+        (
+            "p",
+            "[profile p]\nrole_arn = arn:r\n",
+            "",
+            "no source_profile",
+        ),
+        (
+            "p",
+            "[profile p]\nrole_arn = arn:r\nsource_profile = b\ncredential_source = Ec2InstanceMetadata\n",
+            "",
+            "credential_source",
+        ),
+        (
+            "p",
+            "[profile p]\ncredential_process = /usr/bin/creds\n",
+            "",
+            "credential_process",
+        ),
+        (
+            "p",
+            "[profile p]\nsso_start_url = https://x.awsapps.com/start\n",
+            "",
+            "IAM Identity Center",
+        ),
+        (
+            "p",
+            "[profile p]\nrole_arn = arn:r\nweb_identity_token_file = /var/run/token\n",
+            "",
+            "web_identity_token_file",
+        ),
+        (
+            "p",
+            "[profile p]\nrole_arn = arn:r\nsource_profile = b\nmfa_serial = arn:mfa\n",
+            "",
+            "mfa_serial",
+        ),
+        (
+            "a",
+            "[profile a]\nrole_arn = arn:a\nsource_profile = b\n[profile b]\nrole_arn = arn:b\nsource_profile = a\n",
+            "",
+            "reaches itself",
+        ),
+        (
+            "p",
+            "",
+            "[p]\naws_access_key_id = AKIA\n",
+            "aws_secret_access_key",
+        ),
+    ];
+
+    for (profile, config, credentials, phrase) in cases {
+        let home = tempfile::tempdir().expect("tempdir");
+        let aws = home.path().join(".aws");
+        std::fs::create_dir_all(&aws).expect("create .aws");
+        std::fs::write(aws.join("config"), config).expect("write config");
+        std::fs::write(aws.join("credentials"), credentials).expect("write credentials");
+        let env = crate::runtime::env::Env::for_test(home.path());
+        let err = resolve_credentials("AKID:SECRET", profile, &env)
+            .err()
+            .unwrap_or_else(|| panic!("profile '{profile}' must fail for: {config}{credentials}"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains(phrase),
+            "expected '{phrase}' in the message for '{profile}', got: {msg}"
+        );
+        assert!(
+            !msg.contains("API token"),
+            "a profile failure must not blame the token: {msg}"
+        );
+    }
+}
+
+#[test]
+fn a_chain_deeper_than_the_cap_says_so() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws = home.path().join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    let mut config = String::new();
+    for i in 0..12 {
+        config.push_str(&format!(
+            "[profile p{}]\nrole_arn = arn:{}\nsource_profile = p{}\n",
+            i,
+            i,
+            i + 1
+        ));
+    }
+    std::fs::write(aws.join("config"), config).expect("write config");
+    std::fs::write(aws.join("credentials"), "").expect("write credentials");
+    let env = crate::runtime::env::Env::for_test(home.path());
+    let err = resolve_credentials("", "p0", &env)
+        .err()
+        .expect("a chain past the cap must fail");
+    assert!(err.to_string().contains("too long to follow"), "{err}");
+}
+
+#[test]
+fn a_credentials_file_purple_cannot_open_is_named_instead_of_the_profile() {
+    // The profile is sitting in a file purple could not read, so telling the
+    // user to add it sends them after something that is already there.
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws = home.path().join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::create_dir(aws.join("credentials")).expect("a directory where a file is expected");
+    let env = crate::runtime::env::Env::for_test(home.path());
+    let err = resolve_credentials("AKID:SECRET", "prod", &env)
+        .err()
+        .expect("an unreadable file must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("Can't read"), "{msg}");
+    assert!(msg.contains("credentials"), "the path is not named: {msg}");
+}
+
+#[test]
+fn every_profile_failure_gets_its_own_picker_note() {
+    // The row a user reads before picking. The full sentence has its own
+    // table above; this pins the few words that stand in for it, so two arms
+    // swapped cannot ship as "source_profile chain does not end" on a profile
+    // that simply wants an MFA code.
+    use crate::providers::aws_profile::ChainError;
+    let name = || "p".to_string();
+    let cases: &[(ChainError, &str)] = &[
+        (
+            ChainError::SsoNotSupported(name()),
+            crate::messages::PROFILE_NOTE_SSO,
+        ),
+        (
+            ChainError::WebIdentity(name()),
+            crate::messages::PROFILE_NOTE_WEB_IDENTITY,
+        ),
+        (
+            ChainError::CredentialProcess(name()),
+            crate::messages::PROFILE_NOTE_CREDENTIAL_PROCESS,
+        ),
+        (
+            ChainError::CredentialSource(name()),
+            crate::messages::PROFILE_NOTE_CREDENTIAL_SOURCE,
+        ),
+        (
+            ChainError::MfaRequired(name()),
+            crate::messages::PROFILE_NOTE_MFA,
+        ),
+        (
+            ChainError::Loop(name()),
+            crate::messages::PROFILE_NOTE_CHAIN,
+        ),
+        (
+            ChainError::TooDeep(name()),
+            crate::messages::PROFILE_NOTE_CHAIN,
+        ),
+        (
+            ChainError::RoleWithoutSource(name()),
+            crate::messages::PROFILE_NOTE_NO_SOURCE,
+        ),
+        (
+            ChainError::Missing(name()),
+            crate::messages::PROFILE_NOTE_MISSING_SOURCE,
+        ),
+        (
+            ChainError::FileUnreadable("/tmp/creds".to_string()),
+            crate::messages::PROFILE_NOTE_UNREADABLE,
+        ),
+        (
+            ChainError::NoKeys(name()),
+            crate::messages::PROFILE_NOTE_NO_KEYS,
+        ),
+        (
+            ChainError::PartialCredentials(name(), "aws_secret_access_key"),
+            crate::messages::PROFILE_NOTE_NO_KEYS,
+        ),
+    ];
+    for (error, expected) in cases {
+        assert_eq!(chain_error_note(error), *expected, "for {error:?}");
+    }
+    // Every note is short enough to sit behind a name on one picker row.
+    let mut seen: Vec<&str> = cases.iter().map(|(_, note)| *note).collect();
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen.len(), 10, "two variants share a note by accident");
+}
+
+#[test]
+fn a_relocated_profile_file_is_named_in_the_message_that_sends_you_to_it() {
+    // AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE move the files, so a
+    // message naming ~/.aws would send the user to one purple never read.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = dir.path().join("conf");
+    let credentials = dir.path().join("creds");
+    std::fs::write(&config, "[profile other]\nregion = eu-west-1\n").expect("write config");
+    std::fs::write(&credentials, "").expect("write credentials");
+    let env = crate::runtime::env::Env::for_test(dir.path())
+        .with_var("AWS_CONFIG_FILE", config.display().to_string())
+        .with_var(
+            "AWS_SHARED_CREDENTIALS_FILE",
+            credentials.display().to_string(),
+        );
+
+    let err = resolve_credentials("AKID:SECRET", "ghost", &env)
+        .err()
+        .expect("a missing profile must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(&config.display().to_string()),
+        "the relocated config file is not named: {msg}"
+    );
+    assert!(
+        !msg.contains("~/.aws"),
+        "a file purple never read is named: {msg}"
+    );
+}
+
+#[test]
+fn the_default_files_are_named_when_nothing_relocates_them() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let env = crate::runtime::env::Env::for_test(home.path());
+    let err = resolve_credentials("AKID:SECRET", "ghost", &env)
+        .err()
+        .expect("a missing profile must fail");
+    let msg = err.to_string();
+    assert!(msg.contains(".aws"), "{msg}");
+    assert!(msg.contains("config"), "{msg}");
+    assert!(msg.contains("credentials"), "{msg}");
 }

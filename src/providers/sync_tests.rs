@@ -36,6 +36,7 @@ fn make_section() -> ProviderSection {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     }
 }
 
@@ -1033,6 +1034,7 @@ fn test_sync_rename_skips_included_host() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     // Remote has the included host's server_id with a different prefix
@@ -3295,6 +3297,7 @@ fn test_sync_two_providers_independent() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     // Sync DO hosts
@@ -3358,6 +3361,7 @@ fn test_sync_remove_only_affects_own_provider() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     // Add hosts from both providers
@@ -6827,6 +6831,7 @@ fn make_section_with_provider(name: &str) -> ProviderSection {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     }
 }
 
@@ -7069,6 +7074,7 @@ fn proxied_host(proxy_cmd: &str, port: u16) -> ProviderHost {
                 "/home/alice/.tsh/known_hosts".to_string(),
             ),
         ],
+        retract_directives: Vec::new(),
     }
 }
 
@@ -7203,4 +7209,443 @@ fn test_sync_leaves_hosts_without_port_or_directives_alone() {
     let out = config.serialize();
     assert!(out.contains("Port 2222"), "got:\n{out}");
     assert!(out.contains("ProxyCommand nc %h %p"), "got:\n{out}");
+}
+
+// =========================================================================
+// Directive retraction
+// =========================================================================
+
+/// A host whose provider withdraws the proxy command it once wrote. The rule
+/// claims exactly the value passed as `context`, which is the narrowest shape
+/// a provider can express and keeps these tests about the sync side.
+fn retracting_host(written: &str) -> ProviderHost {
+    fn claims_exactly(value: &str, context: &str) -> bool {
+        value == context
+    }
+    ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: "10.0.0.1".to_string(),
+        tags: Vec::new(),
+        metadata: Vec::new(),
+        port: None,
+        directives: Vec::new(),
+        retract_directives: vec![crate::providers::RetractDirective {
+            key: "ProxyCommand".to_string(),
+            owns: claims_exactly,
+            context: written.to_string(),
+        }],
+    }
+}
+
+#[test]
+fn test_sync_removes_a_proxy_command_the_provider_wrote() {
+    // Turning a transport off has to take its command with it, or the host
+    // keeps dialing through something that is no longer configured.
+    let mut config = empty_config();
+    let section = make_section();
+    let generated = "sh -c \"aws ssm start-session --target %h\"";
+    let added = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(generated, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(added.added, 1);
+    assert!(config.serialize().contains("ProxyCommand sh -c"));
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[retracting_host(generated)],
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(result.updated, 1);
+    let out = config.serialize();
+    assert!(
+        !out.contains("ProxyCommand"),
+        "command not withdrawn:\n{out}"
+    );
+    assert!(out.contains("HostName 10.0.0.1"), "got:\n{out}");
+}
+
+#[test]
+fn test_sync_leaves_a_hand_written_proxy_command_alone() {
+    // The user's own command does not carry the provider's prefix, so a
+    // retraction must not touch it. Losing it would be data loss.
+    let mut config = empty_config();
+    let section = make_section();
+    let manual = "ssh -W %h:%p bastion.example.com";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(manual, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[retracting_host(
+            "sh -c \"aws ssm start-session --target %h\"",
+        )],
+        &section,
+        false,
+        false,
+        false,
+    );
+    let out = config.serialize();
+    assert!(
+        out.contains(&format!("ProxyCommand {manual}")),
+        "hand-written command was removed:\n{out}"
+    );
+    assert_eq!(
+        result.updated, 1,
+        "the IP still changed, so it is an update"
+    );
+}
+
+#[test]
+fn test_sync_with_nothing_to_retract_reports_no_change() {
+    // A host that never had the command must not read as changed every run.
+    let mut config = empty_config();
+    let section = make_section();
+    let remote = vec![retracting_host(
+        "sh -c \"aws ssm start-session --target %h\"",
+    )];
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    let before = config.serialize();
+
+    let again = sync_provider(
+        &mut config,
+        &MockProvider,
+        &remote,
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(
+        again.updated, 0,
+        "a no-op retraction must not churn the file"
+    );
+    assert_eq!(again.unchanged, 1);
+    assert_eq!(config.serialize(), before);
+}
+
+/// A host that exists at the provider but has no address purple can use.
+fn addressless_host() -> ProviderHost {
+    ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: String::new(),
+        tags: Vec::new(),
+        metadata: Vec::new(),
+        port: None,
+        directives: Vec::new(),
+        retract_directives: Vec::new(),
+    }
+}
+
+#[test]
+fn test_sync_remove_keeps_a_host_that_exists_but_has_no_address() {
+    // The case an SSM host lands in the moment the mode is turned off: the
+    // instance is still running, so --remove must not delete its block.
+    // Reported empty rather than omitted, which is what keeps it out of the
+    // removal path.
+    let mut config = empty_config();
+    let section = make_section();
+    let generated = "sh -c \"aws ssm start-session --target %h\"";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(generated, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+    let before = config.serialize();
+    assert!(before.contains("Host do-node1"));
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[addressless_host()],
+        &section,
+        true, // --remove
+        false,
+        false,
+    );
+    assert_eq!(result.removed, 0, "a live host must not be removed");
+    let out = config.serialize();
+    assert!(out.contains("Host do-node1"), "host block deleted:\n{out}");
+    assert!(
+        out.contains("ProxyCommand sh -c"),
+        "the only working route was withdrawn:\n{out}"
+    );
+}
+
+#[test]
+fn test_sync_does_not_mark_an_addressless_host_stale() {
+    // Stale means "gone from the provider". This host is not gone, so the
+    // marker would lie and the purge flow would offer to delete it.
+    let mut config = empty_config();
+    let section = make_section();
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(
+            "sh -c \"aws ssm start-session --target %h\"",
+            22,
+        )],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let result = sync_provider(
+        &mut config,
+        &MockProvider,
+        &[addressless_host()],
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert_eq!(result.stale, 0, "a live host must not be marked stale");
+    assert!(
+        !config.serialize().contains("purple:stale"),
+        "stale marker written:\n{}",
+        config.serialize()
+    );
+}
+
+#[test]
+fn test_sync_keeps_a_hand_written_command_that_opens_like_the_generated_one() {
+    // The regression this contract exists for. AWS publishes the Session
+    // Manager proxy command, so a user who set it up by hand has the same
+    // opening as the one purple generates. Matching on a prefix would delete
+    // their line on the first sync after the feature shipped.
+    let mut config = empty_config();
+    let section = make_section();
+    let by_hand = "sh -c \"aws ssm start-session --target i-0abc \
+                   --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --profile work\"";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(by_hand, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    // purple would write a different value for this host, so nothing matches.
+    let generated = "sh -c \"aws ssm start-session --target %h \
+                     --document-name AWS-StartSSHSession --parameters 'portNumber=%p'\"";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[retracting_host(generated)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let out = config.serialize();
+    assert!(
+        out.contains(&format!("ProxyCommand {by_hand}")),
+        "a hand-written command sharing the published opening was deleted:\n{out}"
+    );
+}
+
+#[test]
+fn test_sync_withdraws_a_proxy_command_written_under_an_earlier_profile() {
+    // Session Manager off and the profile cleared in one save. The line on
+    // disk names the old profile, so a rule pinned to one exact value would
+    // leave it behind: HostName back on the address with a command still
+    // dialing through Session Manager, and the host stops connecting.
+    let mut config = empty_config();
+    let section = make_section();
+    let under_old_profile = crate::providers::aws_ssm::proxy_command("org-prod", "eu-west-1");
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(&under_old_profile, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+    assert!(config.serialize().contains("--profile org-prod"));
+
+    // The config now carries no profile, so this is the line purple writes.
+    let host = ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: "10.0.0.1".to_string(),
+        tags: vec!["env:prod".to_string()],
+        metadata: Vec::new(),
+        port: Some(22),
+        directives: Vec::new(),
+        retract_directives: vec![crate::providers::RetractDirective {
+            key: "ProxyCommand".to_string(),
+            owns: crate::providers::aws_ssm::is_generated_proxy_command,
+            context: "eu-west-1".to_string(),
+        }],
+    };
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[host],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let out = config.serialize();
+    assert!(
+        !out.contains("aws ssm start-session"),
+        "the command purple wrote under the old profile was left behind:\n{out}"
+    );
+    assert!(
+        out.contains("HostName 10.0.0.1"),
+        "the host must be back on its address:\n{out}"
+    );
+}
+
+#[test]
+fn test_sync_leaves_a_directive_the_provider_does_not_claim() {
+    // The guard on the retraction loop itself, reached the only way it can be
+    // reached while a rule claims nothing: another directive drifted, so the
+    // write block runs and the loop walks a rule that must take nothing.
+    let mut config = empty_config();
+    let section = make_section();
+    let by_hand = "ssh -W %h:%p bastion";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(by_hand, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    fn claims_exactly(value: &str, context: &str) -> bool {
+        value == context
+    }
+    let drifting = ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: "node1".to_string(),
+        tags: vec!["env:prod".to_string()],
+        metadata: Vec::new(),
+        port: Some(22),
+        // Drifts, so the write block runs.
+        directives: vec![(
+            "UserKnownHostsFile".to_string(),
+            "/home/alice/.tsh/known_hosts2".to_string(),
+        )],
+        // Claims a value the host does not carry.
+        retract_directives: vec![crate::providers::RetractDirective {
+            key: "ProxyCommand".to_string(),
+            owns: claims_exactly,
+            context: "sh -c \"something else entirely\"".to_string(),
+        }],
+    };
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[drifting],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let out = config.serialize();
+    assert!(
+        out.contains("UserKnownHostsFile /home/alice/.tsh/known_hosts2"),
+        "the drifting directive did not reach the write block:\n{out}"
+    );
+    assert!(
+        out.contains(&format!("ProxyCommand {by_hand}")),
+        "a directive no rule claims was removed:\n{out}"
+    );
+}
+
+#[test]
+fn test_sync_keeps_a_directive_the_provider_writes_and_withdraws_at_once() {
+    // A key in both lists is one the provider wants. Withdrawing it after
+    // writing it would delete the line in the same sync that created it.
+    let mut config = empty_config();
+    let section = make_section();
+    fn claims_anything(_value: &str, _context: &str) -> bool {
+        true
+    }
+    // The host has to exist first: the retraction loop lives in the update
+    // branch, so an add alone would never reach it.
+    let first = "sh -c \"aws ssm start-session --target %h\"";
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[proxied_host(first, 22)],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let wanted = "sh -c \"aws ssm start-session --target %h --region eu-west-1\"";
+    let host = ProviderHost {
+        server_id: "uuid-1".to_string(),
+        name: "node1".to_string(),
+        ip: "node1".to_string(),
+        tags: vec!["env:prod".to_string()],
+        metadata: Vec::new(),
+        port: Some(22),
+        directives: vec![("ProxyCommand".to_string(), wanted.to_string())],
+        retract_directives: vec![crate::providers::RetractDirective {
+            key: "ProxyCommand".to_string(),
+            owns: claims_anything,
+            context: String::new(),
+        }],
+    };
+    sync_provider(
+        &mut config,
+        &MockProvider,
+        &[host],
+        &section,
+        false,
+        false,
+        false,
+    );
+
+    let out = config.serialize();
+    assert!(
+        out.contains(&format!("ProxyCommand {wanted}")),
+        "the directive was written and then taken straight back out:\n{out}"
+    );
 }

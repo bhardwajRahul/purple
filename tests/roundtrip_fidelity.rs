@@ -4011,6 +4011,7 @@ fn test_section(provider: &str, prefix: &str) -> ProviderSection {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: purple_ssh::providers::aws_ssm::SsmMode::default(),
     }
 }
 

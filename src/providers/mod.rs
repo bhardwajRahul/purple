@@ -1,4 +1,7 @@
 pub mod aws;
+pub mod aws_profile;
+pub mod aws_ssm;
+pub mod aws_sts;
 pub mod azure;
 pub mod config;
 mod digitalocean;
@@ -45,6 +48,38 @@ pub struct ProviderHost {
     /// Extra ssh_config directives the provider manages on this host, such as
     /// a `ProxyCommand`. Written on add and kept current on later syncs.
     pub directives: Vec<(String, String)>,
+    /// Directives the provider once wrote here and now wants gone.
+    pub retract_directives: Vec<RetractDirective>,
+}
+
+/// A directive the provider once wrote on a host and now withdraws.
+///
+/// A key the same host also lists in `directives` is written rather than
+/// withdrawn: the provider wants that value, so the rule is skipped.
+///
+/// The provider decides whether the value on disk is one of its own, because
+/// only it knows the shape it writes. A transport's command usually follows
+/// the vendor's published line, so its opening is exactly what a user who set
+/// the same thing up by hand would have typed; recognizing one by its opening
+/// would delete the other. A value the provider does not claim is left alone,
+/// so the worst case is a stale line the user can see and delete, never a line
+/// silently removed.
+#[derive(Debug, Clone)]
+pub struct RetractDirective {
+    /// The directive keyword, e.g. `ProxyCommand`.
+    pub key: String,
+    /// Whether `value` is one this provider wrote. `context` carries whatever
+    /// the decision needs, which for AWS is the region. A plain function
+    /// pointer rather than a closure, so `ProviderHost` stays `Clone`.
+    pub owns: fn(value: &str, context: &str) -> bool,
+    pub context: String,
+}
+
+impl RetractDirective {
+    /// Whether this rule claims the value currently on the host.
+    pub fn claims(&self, value: &str) -> bool {
+        (self.owns)(value, &self.context)
+    }
 }
 
 impl ProviderHost {
@@ -277,6 +312,7 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
             Box::new(aws::Aws {
                 regions: parse_csv(&s.regions),
                 profile: s.profile,
+                ssm: s.ssm,
             })
         },
     },
@@ -566,6 +602,11 @@ pub(crate) fn epoch_to_date(epoch_secs: u64) -> EpochDate {
     }
 }
 
+/// The one status a caller reads rather than reports. A provider that takes
+/// the status as data instead of letting ureq raise it still has to map this
+/// one, because back-off depends on it.
+pub(crate) const HTTP_TOO_MANY_REQUESTS: u16 = 429;
+
 /// Map a ureq error to a ProviderError.
 fn map_ureq_error(err: ureq::Error) -> ProviderError {
     match err {
@@ -574,7 +615,7 @@ fn map_ureq_error(err: ureq::Error) -> ProviderError {
                 error!("[external] HTTP {code}: authentication failed");
                 ProviderError::AuthFailed
             }
-            429 => {
+            HTTP_TOO_MANY_REQUESTS => {
                 warn!("[external] HTTP 429: rate limited");
                 ProviderError::RateLimited
             }

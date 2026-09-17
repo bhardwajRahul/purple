@@ -19,7 +19,7 @@
 │                   │  legacy-prod  203.0.113.45                               │                   │
 │                   │  aws-api-prod  52.47.100.23                              │                   │
 │                   │  aws-api-staging  52.47.100.24                           │                   │
-│                   │  aws-worker-eu  3.120.55.17                              │                   │
+│                   │  aws-worker-eu  i-0a1b2c3d4e5f60003                      │                   │
 │                   │  aws-batch-us  52.47.100.25                              │                   │
 │                   │  aws-ml-eu  3.120.55.18                                  │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
@@ -1725,6 +1725,14 @@
 (46,21) fg=Reset bg=Reset mod=DIM
 (47,21) fg=Reset bg=Reset mod=DIM
 (48,21) fg=Reset bg=Reset mod=DIM
+(49,21) fg=Reset bg=Reset mod=DIM
+(50,21) fg=Reset bg=Reset mod=DIM
+(51,21) fg=Reset bg=Reset mod=DIM
+(52,21) fg=Reset bg=Reset mod=DIM
+(53,21) fg=Reset bg=Reset mod=DIM
+(54,21) fg=Reset bg=Reset mod=DIM
+(55,21) fg=Reset bg=Reset mod=DIM
+(56,21) fg=Reset bg=Reset mod=DIM
 (79,21) fg=Reset bg=Reset mod=DIM
 (80,21) fg=DarkGray bg=Reset mod=DIM
 (81,21) fg=DarkGray bg=Reset mod=DIM

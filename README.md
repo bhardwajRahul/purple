@@ -75,7 +75,7 @@ I wanted one place for all of that. So I built it.
 
 ### Your ssh config tracks your infra
 
-Drop in one API token per provider. New machines land in `~/.ssh/config` the moment they boot, IPs follow instances as they move and decommissioned hosts grey out instead of lingering. 18 providers including AWS, GCP, Azure, Hetzner, DigitalOcean, Proxmox, Teleport and NetBox, multiple accounts each. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
+Drop in one API token per provider. New machines land in `~/.ssh/config` the moment they boot, IPs follow instances as they move and decommissioned hosts gray out instead of lingering. 18 providers including AWS, GCP, Azure, Hetzner, DigitalOcean, Proxmox, Teleport and NetBox, multiple accounts each. On AWS that means a role per account and, with Session Manager on, even the instances with no public address. See the [wiki](https://github.com/erickochen/purple/wiki/Cloud-Providers) for the full list.
 
 ![purple cloud provider list close-up: per-provider sync status with host counts and stale markers](assets/png/zoom-providers.png)
 
@@ -147,7 +147,7 @@ purple keeps your SSH config local and editable: it edits `~/.ssh/config` in pla
 
 purple reads `~/.ssh/config` directly. No database, no daemon, no account. Comments, indentation, include files, unknown directives: all preserved through every edit, so the config you wrote stays the config you have.
 
-Written in Rust. Single binary. 7300+ tests. MIT license.
+Written in Rust. Single binary. 6700+ tests. MIT license.
 
 ## Links
 
@@ -155,7 +155,7 @@ Written in Rust. Single binary. 7300+ tests. MIT license.
 
 ## Credits
 
-Screenshots and the demo are generated from the live TUI in [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by [U.S. Graphics Company](https://usgraphics.com/), recorded with [VHS](https://github.com/charmbracelet/vhs). They regenerate on release, so what you see here always matches the current build.
+Screenshots and the demo are generated from the live TUI in [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by [U.S. Graphics Company](https://usgraphics.com/), recorded with [VHS](https://github.com/charmbracelet/vhs). They regenerate whenever the UI changes on master, so what you see here always matches the current build.
 
 ## Feedback
 

@@ -510,6 +510,7 @@ impl Teleport {
                 metadata: metadata.finish(),
                 port: Some(port),
                 directives,
+                retract_directives: Vec::new(),
             });
         }
         hosts

@@ -19,7 +19,7 @@
 │   ● aws-worker-eu │ [ ] AWS EC2 (6)                                          │▁▁ ▅  ▂▄▃▃  ▄ ▁    │
 │   ● aws-batch-us  │   [ ] aws-api-prod  52.47.100.23                         │██▆██▇████▇██▆█▇▄▂ │
 │   ● aws-ml-eu     │   [ ] aws-api-staging  52.47.100.24                      │o              now │
-│   ● do-work-web-am│   [ ] aws-worker-eu  3.120.55.17                         │───────────────────╯
+│   ● do-work-web-am│   [ ] aws-worker-eu  i-0a1b2c3d4e5f60003                 │───────────────────╯
 │   ● do-work-stagin│   [ ] aws-batch-us  52.47.100.25                         │───────────────────╮
 │   ● do-work-worker╰──────────────────────────────────────────────────────────╯                   │
 │   ● do-work-ci-run Enter  confirm    /  search    Space  toggle    Esc  cancel───────────────────╯
@@ -1752,6 +1752,14 @@
 (51,21) fg=Reset bg=Reset mod=DIM
 (52,21) fg=Reset bg=Reset mod=DIM
 (53,21) fg=Reset bg=Reset mod=DIM
+(54,21) fg=Reset bg=Reset mod=DIM
+(55,21) fg=Reset bg=Reset mod=DIM
+(56,21) fg=Reset bg=Reset mod=DIM
+(57,21) fg=Reset bg=Reset mod=DIM
+(58,21) fg=Reset bg=Reset mod=DIM
+(59,21) fg=Reset bg=Reset mod=DIM
+(60,21) fg=Reset bg=Reset mod=DIM
+(61,21) fg=Reset bg=Reset mod=DIM
 (79,21) fg=Reset bg=Reset mod=DIM
 (80,21) fg=DarkGray bg=Reset mod=DIM
 (81,21) fg=DarkGray bg=Reset mod=DIM

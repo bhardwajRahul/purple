@@ -362,6 +362,104 @@ pub fn handle_sync(
     Ok(())
 }
 
+/// Fill every `provider add` field the caller left out from the config already
+/// stored under the same id.
+///
+/// Matched on the exact id being written: a lookup by provider name alone
+/// returns the first section, which would carry one account's token into
+/// another account's config.
+#[allow(clippy::too_many_arguments)]
+fn apply_stored_provider_defaults(
+    existing: &providers::config::ProviderSection,
+    kind: Option<ProviderKind>,
+    env: &crate::runtime::env::Env,
+    token: &mut Option<String>,
+    token_stdin: bool,
+    prefix: &mut Option<String>,
+    user: &mut Option<String>,
+    key: &mut Option<String>,
+    url: &mut Option<String>,
+    no_verify_tls: &mut bool,
+    verify_tls: bool,
+    profile: &mut Option<String>,
+    ssm: &mut Option<String>,
+    regions: &mut Option<String>,
+    project: &mut Option<String>,
+    compartment: &mut Option<String>,
+    filter: &mut Option<String>,
+) {
+    // URL fallback only applies to providers that use the url field
+    if kind.is_some_and(ProviderKind::requires_url) && url.is_none() && !existing.url.is_empty() {
+        *url = Some(existing.url.clone());
+    }
+    if token.is_none() && !token_stdin && env.purple_token().is_none() && !existing.token.is_empty()
+    {
+        *token = Some(existing.token.clone());
+    }
+    if prefix.is_none() {
+        *prefix = Some(existing.alias_prefix.clone());
+    }
+    if user.is_none() {
+        *user = Some(existing.user.clone());
+    }
+    if key.is_none() && !existing.identity_file.is_empty() {
+        *key = Some(existing.identity_file.clone());
+    }
+    // Preserve verify_tls=false unless the user explicitly overrides it either way
+    if !*no_verify_tls && !verify_tls && !existing.verify_tls {
+        *no_verify_tls = true;
+    }
+    // AWS: fall back to stored profile/regions
+    if kind == Some(ProviderKind::Aws) && profile.is_none() && !existing.profile.is_empty() {
+        *profile = Some(existing.profile.clone());
+    }
+    // AWS: fall back to the stored Session Manager mode
+    if kind == Some(ProviderKind::Aws) && ssm.is_none() && existing.ssm.is_enabled() {
+        *ssm = Some(existing.ssm.to_string());
+    }
+    // Providers that accept --regions: fall back to stored regions
+    if kind.is_some_and(ProviderKind::accepts_cli_regions)
+        && regions.is_none()
+        && !existing.regions.is_empty()
+    {
+        *regions = Some(existing.regions.clone());
+    }
+    // GCP: fall back to stored project
+    if kind == Some(ProviderKind::Gcp) && project.is_none() && !existing.project.is_empty() {
+        *project = Some(existing.project.clone());
+    }
+    // Oracle: fall back to stored compartment
+    if kind == Some(ProviderKind::Oracle)
+        && compartment.is_none()
+        && !existing.compartment.is_empty()
+    {
+        *compartment = Some(existing.compartment.clone());
+    }
+    // NetBox: fall back to stored filter
+    if kind == Some(ProviderKind::NetBox) && filter.is_none() && !existing.filter.is_empty() {
+        *filter = Some(existing.filter.clone());
+    }
+}
+
+/// The `--ssm` value as a mode. An unknown value is refused rather than
+/// silently read as off: a typo would quietly leave every host on its IP
+/// address.
+fn resolve_ssm_mode(raw: Option<&str>) -> providers::aws_ssm::SsmMode {
+    let Some(raw) = raw else {
+        return providers::aws_ssm::SsmMode::default();
+    };
+    match providers::aws_ssm::SsmMode::ALL
+        .iter()
+        .find(|m| m.as_str().eq_ignore_ascii_case(raw.trim()))
+    {
+        Some(mode) => *mode,
+        None => {
+            eprintln!("{}", crate::messages::cli::ssm_mode_invalid(raw));
+            std::process::exit(1);
+        }
+    }
+}
+
 pub fn handle_provider_command(
     env: &crate::runtime::env::Env,
     command: ProviderCommands,
@@ -377,6 +475,7 @@ pub fn handle_provider_command(
             mut key,
             url,
             mut profile,
+            ssm,
             mut regions,
             mut project,
             mut compartment,
@@ -417,10 +516,16 @@ pub fn handle_provider_command(
                     verify_tls = false;
                 }
             }
-            // --profile is AWS-only, --regions is AWS/Scaleway/GCP/Azure, --project is GCP-only
+            // --profile and --ssm are AWS-only, --regions is AWS/Scaleway/GCP/Azure,
+            // --project is GCP-only
+            let mut ssm = ssm;
             if kind != Some(ProviderKind::Aws) && profile.is_some() {
                 eprintln!("{}", crate::messages::cli::WARN_PROFILE_NOT_USED);
                 profile = None;
+            }
+            if kind != Some(ProviderKind::Aws) && ssm.is_some() {
+                eprintln!("{}", crate::messages::cli::WARN_SSM_NOT_USED);
+                ssm = None;
             }
             if !kind.is_some_and(ProviderKind::accepts_cli_regions) && regions.is_some() {
                 eprintln!("{}", crate::messages::cli::WARN_REGIONS_NOT_USED);
@@ -454,68 +559,25 @@ pub fn handle_provider_command(
                 .cloned();
 
             if let Some(ref existing) = existing_section {
-                // URL fallback only applies to providers that use the url field
-                if kind.is_some_and(ProviderKind::requires_url)
-                    && url.is_none()
-                    && !existing.url.is_empty()
-                {
-                    url = Some(existing.url.clone());
-                }
-                if token.is_none()
-                    && !token_stdin
-                    && env.purple_token().is_none()
-                    && !existing.token.is_empty()
-                {
-                    token = Some(existing.token.clone());
-                }
-                if prefix.is_none() {
-                    prefix = Some(existing.alias_prefix.clone());
-                }
-                if user.is_none() {
-                    user = Some(existing.user.clone());
-                }
-                if key.is_none() && !existing.identity_file.is_empty() {
-                    key = Some(existing.identity_file.clone());
-                }
-                // Preserve verify_tls=false unless the user explicitly overrides it either way
-                if !no_verify_tls && !verify_tls && !existing.verify_tls {
-                    no_verify_tls = true;
-                }
-                // AWS: fall back to stored profile/regions
-                if kind == Some(ProviderKind::Aws)
-                    && profile.is_none()
-                    && !existing.profile.is_empty()
-                {
-                    profile = Some(existing.profile.clone());
-                }
-                // Providers that accept --regions: fall back to stored regions
-                if kind.is_some_and(ProviderKind::accepts_cli_regions)
-                    && regions.is_none()
-                    && !existing.regions.is_empty()
-                {
-                    regions = Some(existing.regions.clone());
-                }
-                // GCP: fall back to stored project
-                if kind == Some(ProviderKind::Gcp)
-                    && project.is_none()
-                    && !existing.project.is_empty()
-                {
-                    project = Some(existing.project.clone());
-                }
-                // Oracle: fall back to stored compartment
-                if kind == Some(ProviderKind::Oracle)
-                    && compartment.is_none()
-                    && !existing.compartment.is_empty()
-                {
-                    compartment = Some(existing.compartment.clone());
-                }
-                // NetBox: fall back to stored filter
-                if kind == Some(ProviderKind::NetBox)
-                    && filter.is_none()
-                    && !existing.filter.is_empty()
-                {
-                    filter = Some(existing.filter.clone());
-                }
+                apply_stored_provider_defaults(
+                    existing,
+                    kind,
+                    env,
+                    &mut token,
+                    token_stdin,
+                    &mut prefix,
+                    &mut user,
+                    &mut key,
+                    &mut url,
+                    &mut no_verify_tls,
+                    verify_tls,
+                    &mut profile,
+                    &mut ssm,
+                    &mut regions,
+                    &mut project,
+                    &mut compartment,
+                    &mut filter,
+                );
             }
 
             // Providers with a self-hosted endpoint require --url
@@ -593,7 +655,16 @@ pub fn handle_provider_command(
                 std::process::exit(1);
             }
 
-            let alias_prefix = prefix.unwrap_or_else(|| p.short_label().to_string());
+            let ssm_mode = resolve_ssm_mode(ssm.as_deref());
+
+            // A labeled config defaults to `<short>-<label>`, matching what the
+            // TUI suggests and what the parser derives. Without it a second
+            // account for the same provider collides on the bare prefix and
+            // the save is refused.
+            let alias_prefix = prefix.unwrap_or_else(|| match label.as_deref() {
+                Some(l) => format!("{}-{}", p.short_label(), l),
+                None => p.short_label().to_string(),
+            });
             if crate::ssh_config::model::is_host_pattern(&alias_prefix) {
                 eprintln!("{}", crate::messages::cli::ALIAS_PREFIX_INVALID);
                 std::process::exit(1);
@@ -643,6 +714,22 @@ pub fn handle_provider_command(
             };
 
             let resolved_profile = profile.unwrap_or_default();
+            // Captured before the section takes the profile: Session Manager
+            // can only hand the aws CLI a --profile, never the inline key
+            // pair, so this is worth saying once at save time.
+            let ssm_without_profile = ssm_mode.is_enabled() && resolved_profile.trim().is_empty();
+            // The profile goes into a shell line purple writes, so a name it
+            // cannot quote is refused here rather than at the next sync.
+            if ssm_mode.is_enabled()
+                && !resolved_profile.trim().is_empty()
+                && !providers::aws_ssm::is_safe_profile_name(resolved_profile.trim())
+            {
+                eprintln!(
+                    "{}",
+                    crate::messages::cli::aws_ssm_profile_unsafe(resolved_profile.trim())
+                );
+                std::process::exit(1);
+            }
             let resolved_regions = regions.unwrap_or_default();
             let resolved_project = project.unwrap_or_default();
             let resolved_compartment = compartment.unwrap_or_default();
@@ -737,6 +824,7 @@ pub fn handle_provider_command(
                 filter: filter.unwrap_or_default(),
                 vault_role: String::new(),
                 vault_addr: String::new(),
+                ssm: ssm_mode,
             };
 
             // Captured before the section moves into the config.
@@ -748,6 +836,18 @@ pub fn handle_provider_command(
             })?;
             log::debug!("[purple] provider saved: [{}] {}", id, saved_record);
             println!("{}", crate::messages::cli::saved_config(&id.to_string()));
+            // Replacing a bare config in place is the documented behavior but
+            // it reads as data loss, so say once how to end up with two
+            // configs instead.
+            if existing_section.is_some() && id.label.is_none() {
+                println!(
+                    "{}",
+                    crate::messages::cli::provider_replaced_hint(&provider)
+                );
+            }
+            if ssm_without_profile {
+                eprintln!("{}", crate::messages::cli::AWS_SSM_WITHOUT_PROFILE);
+            }
             Ok(())
         }
         ProviderCommands::List => {

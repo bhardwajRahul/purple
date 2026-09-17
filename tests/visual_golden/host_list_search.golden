@@ -6,7 +6,7 @@
 │──────────────────────────────────────────────────────────││ ● online (89ms)  checked just now    │
 │▌  ● aws-api-prod       52.47.100.23 ↗                    │╰──────────────────────────────────────╯
 │   ● aws-api-staging    52.47.100.24                      │╭─ CONNECTION ─────────────────────────╮
-│   ● aws-worker-eu      3.120.55.17                       ││ Host          52.47.100.23           │
+│   ● aws-worker-eu      i-0a1b2c3d4e5f60003               ││ Host          52.47.100.23           │
 │   ● aws-batch-us       52.47.100.25                      ││ User          ec2-user               │
 │   ● aws-ml-eu          3.120.55.18                       ││ Key           id_ed25519             │
 │   ✖ aws-cache-eu       3.120.55.19                       ││ Ping          89ms                   │
@@ -410,6 +410,13 @@
 (36,4) fg=Reset bg=Reset mod=BOLD
 (37,4) fg=Reset bg=Reset mod=BOLD
 (38,4) fg=Reset bg=Reset mod=BOLD
+(39,4) fg=Reset bg=Reset mod=BOLD
+(40,4) fg=Reset bg=Reset mod=BOLD
+(41,4) fg=Reset bg=Reset mod=BOLD
+(42,4) fg=Reset bg=Reset mod=BOLD
+(43,4) fg=Reset bg=Reset mod=BOLD
+(44,4) fg=Reset bg=Reset mod=BOLD
+(45,4) fg=Reset bg=Reset mod=BOLD
 (59,4) fg=Magenta bg=Reset mod=-
 (60,4) fg=Reset bg=Reset mod=DIM
 (61,4) fg=Reset bg=Reset mod=DIM
@@ -742,6 +749,14 @@
 (33,8) fg=Reset bg=Reset mod=DIM
 (34,8) fg=Reset bg=Reset mod=DIM
 (35,8) fg=Reset bg=Reset mod=DIM
+(36,8) fg=Reset bg=Reset mod=DIM
+(37,8) fg=Reset bg=Reset mod=DIM
+(38,8) fg=Reset bg=Reset mod=DIM
+(39,8) fg=Reset bg=Reset mod=DIM
+(40,8) fg=Reset bg=Reset mod=DIM
+(41,8) fg=Reset bg=Reset mod=DIM
+(42,8) fg=Reset bg=Reset mod=DIM
+(43,8) fg=Reset bg=Reset mod=DIM
 (59,8) fg=Magenta bg=Reset mod=-
 (60,8) fg=Reset bg=Reset mod=DIM
 (61,8) fg=Reset bg=Reset mod=DIM

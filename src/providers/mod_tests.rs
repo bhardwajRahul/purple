@@ -184,6 +184,7 @@ fn test_get_provider_with_config_proxmox_uses_url() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let p = get_provider_with_config(&section).unwrap();
     assert_eq!(p.name(), "proxmox");
@@ -207,6 +208,7 @@ fn test_get_provider_with_config_non_proxmox_delegates() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let p = get_provider_with_config(&section).unwrap();
     assert_eq!(p.name(), "digitalocean");
@@ -230,6 +232,7 @@ fn test_get_provider_with_config_gcp_uses_project_and_zones() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let p = get_provider_with_config(&section).unwrap();
     assert_eq!(p.name(), "gcp");
@@ -253,6 +256,7 @@ fn test_get_provider_with_config_unknown_returns_none() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     assert!(get_provider_with_config(&section).is_none());
 }
@@ -284,6 +288,7 @@ fn test_get_provider_with_config_labeled_section() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     // Pre-fix this missed because the now-removed `name` parameter received
     // `section.id.to_string()` (= `"proxmox:server1"`) and the descriptor table
@@ -311,6 +316,7 @@ fn test_get_provider_with_config_labeled_unknown_returns_none() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     assert!(get_provider_with_config(&section).is_none());
 }
@@ -596,6 +602,7 @@ fn test_get_provider_with_config_all_providers() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         };
         let p = get_provider_with_config(&section);
         assert!(

@@ -653,6 +653,12 @@ pub(super) fn handle_provider_form_key(
         return;
     }
 
+    // Dispatch to the AWS profile picker if open
+    if app.ui.profile_picker().open {
+        handle_profile_picker(app, key);
+        return;
+    }
+
     let provider_name = match &app.screen {
         Screen::ProviderForm { id } => id.provider.clone(),
         _ => return,
@@ -669,6 +675,83 @@ pub(super) fn handle_provider_form_key(
         ctx.effects
     };
     effects.apply(app);
+}
+
+/// Keys for the AWS profile picker. Same shape as the sibling pickers: Esc
+/// closes, j/k and the arrows move, Enter takes the row.
+///
+/// Takes the whole `App` because picking a profile also fills the Regions
+/// field when that profile names a region and the field is still empty. That
+/// is the one setting a profile carries which purple would otherwise ask for
+/// twice.
+fn handle_profile_picker(app: &mut App, key: KeyEvent) {
+    // The rows the overlay was opened with, so walking and picking agree with
+    // what is on screen even if `~/.aws` changes underneath.
+    let candidates: Vec<(String, String)> = app
+        .ui
+        .aws_profile_rows()
+        .iter()
+        .map(|row| (row.name.clone(), row.region.clone()))
+        .collect();
+    match key.code {
+        KeyCode::Esc => {
+            log::debug!("[purple] close_profile_picker");
+            app.ui.profile_picker_mut().close();
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            crate::app::cycle_selection(
+                &mut app.ui.profile_picker_mut().list,
+                candidates.len(),
+                true,
+            );
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            crate::app::cycle_selection(
+                &mut app.ui.profile_picker_mut().list,
+                candidates.len(),
+                false,
+            );
+        }
+        KeyCode::Enter => {
+            if let Some(index) = app.ui.profile_picker().list.selected()
+                && let Some((name, region)) = candidates.get(index)
+            {
+                app.providers.form_mut().profile = name.clone();
+                app.providers.form_mut().cursor_pos = name.chars().count();
+                prefill_region_from_profile(app, name, region);
+                log::debug!("[purple] provider form: profile set to '{}'", name);
+            }
+            app.ui.profile_picker_mut().close();
+        }
+        _ => {}
+    }
+}
+
+/// Copy the chosen profile's `region` into the still-empty Regions field.
+///
+/// Only when the field is empty, so a region set by hand or by the region
+/// picker is never overwritten, and only when purple knows the code, so a
+/// region it cannot sync never lands in the form. The value comes off the row
+/// the picker was opened with, so picking reads no file.
+fn prefill_region_from_profile(app: &mut App, profile: &str, region: &str) {
+    if !app.providers.form_mut().regions.trim().is_empty() {
+        return;
+    }
+    if region.is_empty() {
+        return;
+    }
+    if !crate::providers::aws::AWS_REGIONS
+        .iter()
+        .any(|(code, _)| *code == region)
+    {
+        return;
+    }
+    log::debug!(
+        "[purple] provider form: regions prefilled with '{}' from profile '{}'",
+        region,
+        profile
+    );
+    app.providers.form_mut().regions = region.to_string();
 }
 
 fn provider_form_key(
@@ -833,6 +916,12 @@ fn provider_form_key(
         {
             ctx.providers.form_mut().auto_sync = !ctx.providers.form_mut().auto_sync;
         }
+        KeyCode::Char(' ')
+            if ctx.providers.form_mut().focused_field == crate::app::ProviderFormField::Ssm =>
+        {
+            let next = ctx.providers.form_mut().ssm.next();
+            ctx.providers.form_mut().ssm = next;
+        }
         // Empty-field gate: same rationale as host_form — once the user
         // has typed anything, Space inserts a literal space so custom
         // identity paths (e.g. `~/My Keys/id_rsa`) and free-form region
@@ -849,6 +938,11 @@ fn provider_form_key(
                     app.open_key_picker();
                 } else if f == crate::app::ProviderFormField::Regions {
                     app.open_region_picker();
+                } else if f == crate::app::ProviderFormField::Profile && !app.open_profile_picker()
+                {
+                    // An empty picker reads as a bug, so say why it did not
+                    // open and name the field that works instead.
+                    app.notify_warning(crate::messages::PICKER_NO_AWS_PROFILES);
                 }
             });
         }
@@ -1054,6 +1148,16 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         return;
     }
 
+    // The profile goes into a shell line purple writes, so a name it cannot
+    // quote is refused here rather than at the next sync.
+    if kind == Some(ProviderKind::Aws) && app.providers.form().ssm.is_enabled() {
+        let profile = app.providers.form().profile.trim().to_string();
+        if !profile.is_empty() && !crate::providers::aws_ssm::is_safe_profile_name(&profile) {
+            app.notify_error(crate::messages::aws_ssm_profile_unsafe(&profile));
+            return;
+        }
+    }
+
     let vault_role_trimmed = app.providers.form_mut().vault_role.trim();
     if !vault_role_trimmed.is_empty() && !crate::vault_ssh::is_valid_role(vault_role_trimmed) {
         app.notify_warning(crate::messages::VAULT_ROLE_FORMAT);
@@ -1076,6 +1180,7 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         filter: app.providers.form_mut().filter.trim().to_string(),
         vault_role: app.providers.form_mut().vault_role.trim().to_string(),
         vault_addr: app.providers.form_mut().vault_addr.trim().to_string(),
+        ssm: app.providers.form_mut().ssm,
     };
 
     // Captured before the section moves into the config.
@@ -1204,6 +1309,15 @@ fn submit_provider_form(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
     } else {
         app.notify(crate::messages::provider_saved(display_name));
     }
+    // Said after the save toast, which a warning outranks, so the one fact
+    // that decides whether a routed host still connects is the one left on
+    // screen.
+    if kind == Some(ProviderKind::Aws)
+        && app.providers.form().ssm.is_enabled()
+        && app.providers.form().profile.trim().is_empty()
+    {
+        app.notify_warning(crate::messages::AWS_SSM_WITHOUT_PROFILE);
+    }
     app.close_provider_form();
 }
 
@@ -1323,6 +1437,7 @@ mod labeled_add_tests {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         }
     }
 

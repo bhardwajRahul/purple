@@ -262,9 +262,17 @@ pub enum ProviderCommands {
         #[arg(long)]
         url: Option<String>,
 
-        /// AWS credential profile from ~/.aws/credentials
+        /// AWS credential profile from ~/.aws/config or ~/.aws/credentials.
+        /// A profile with role_arn and source_profile is assumed via STS, so
+        /// one key pair reaches several accounts.
         #[arg(long)]
         profile: Option<String>,
+
+        /// Reach AWS instances through Systems Manager Session Manager:
+        /// `off` (default), `auto` to route only the nodes Session Manager
+        /// reports online or `always` to route every instance without asking
+        #[arg(long, value_name = "MODE")]
+        ssm: Option<String>,
 
         /// Comma-separated regions, zones or subscription IDs (e.g. us-east-1,eu-west-1 for AWS, fr-par-1,nl-ams-1 for Scaleway, us-central1-a for GCP zones or subscription UUIDs for Azure)
         #[arg(long)]

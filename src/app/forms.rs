@@ -570,6 +570,7 @@ pub enum ProviderFormField {
     Compartment,
     Regions,
     Filter,
+    Ssm,
     AliasPrefix,
     User,
     IdentityFile,
@@ -619,6 +620,7 @@ impl ProviderFormField {
         ProviderFormField::Token,
         ProviderFormField::Profile,
         ProviderFormField::Regions,
+        ProviderFormField::Ssm,
         ProviderFormField::AliasPrefix,
         ProviderFormField::User,
         ProviderFormField::IdentityFile,
@@ -820,6 +822,7 @@ impl ProviderFormField {
             ProviderFormField::Compartment => "Compartment",
             ProviderFormField::Regions => "Regions",
             ProviderFormField::Filter => "Filter",
+            ProviderFormField::Ssm => "Session Manager",
             ProviderFormField::AliasPrefix => "Alias Prefix",
             ProviderFormField::User => "User",
             ProviderFormField::IdentityFile => "Identity File",
@@ -830,11 +833,13 @@ impl ProviderFormField {
         }
     }
 
-    /// Whether this field is a boolean toggle (Space flips the value).
+    /// Whether Space activates this field in place instead of typing into it.
+    /// Most such fields hold a yes/no and flip; `Ssm` steps through three
+    /// values. Same element, same key, same footer.
     pub fn is_toggle(self) -> bool {
         matches!(
             self,
-            ProviderFormField::VerifyTls | ProviderFormField::AutoSync
+            ProviderFormField::VerifyTls | ProviderFormField::AutoSync | ProviderFormField::Ssm
         )
     }
 
@@ -843,10 +848,13 @@ impl ProviderFormField {
     /// `IdentityFile` always opens the SSH key picker. `Regions` opens a
     /// region picker only for providers with structured region lists
     /// (aws/scaleway/gcp/oracle/ovh). Other providers (azure, proxmox, ...)
-    /// take Regions as free-form text input — Space inserts a literal space.
+    /// take Regions as free-form text input, so Space inserts a literal space.
+    /// `Profile` lists the profiles found in `~/.aws`, so the name never has
+    /// to be typed from memory.
     pub fn is_picker(self, provider: &str) -> bool {
         match self {
             ProviderFormField::IdentityFile => true,
+            ProviderFormField::Profile => provider.parse::<ProviderKind>() == Ok(ProviderKind::Aws),
             ProviderFormField::Regions => provider
                 .parse::<ProviderKind>()
                 .ok()
@@ -894,6 +902,8 @@ pub struct ProviderFormFields {
     pub verify_tls: bool,
     pub auto_sync: bool,
     pub vault_role: String,
+    /// Whether synced AWS hosts route through Session Manager.
+    pub ssm: crate::providers::aws_ssm::SsmMode,
     /// Optional `VAULT_ADDR` override. Empty = inherit parent env. The
     /// rendered input is progressively disclosed: the field is only visible
     /// in the provider form when `vault_role` is non-empty.
@@ -923,6 +933,7 @@ impl ProviderFormFields {
             verify_tls: true,
             auto_sync: true,
             vault_role: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
             vault_addr: String::new(),
             focused_field: ProviderFormField::Token,
             cursor_pos: 0,
@@ -945,6 +956,7 @@ impl ProviderFormFields {
             ProviderFormField::IdentityFile => &self.identity_file,
             ProviderFormField::VaultRole => &self.vault_role,
             ProviderFormField::VaultAddr => &self.vault_addr,
+            ProviderFormField::Ssm => self.ssm.as_str(),
             ProviderFormField::VerifyTls | ProviderFormField::AutoSync => "",
         }
     }
@@ -964,7 +976,10 @@ impl ProviderFormFields {
             ProviderFormField::IdentityFile => Some(&mut self.identity_file),
             ProviderFormField::VaultRole => Some(&mut self.vault_role),
             ProviderFormField::VaultAddr => Some(&mut self.vault_addr),
-            ProviderFormField::VerifyTls | ProviderFormField::AutoSync => None,
+            // Ssm steps through a fixed list rather than being typed into.
+            ProviderFormField::Ssm | ProviderFormField::VerifyTls | ProviderFormField::AutoSync => {
+                None
+            }
         }
     }
 

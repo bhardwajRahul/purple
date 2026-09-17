@@ -9,6 +9,8 @@ use super::{Provider, ProviderError, ProviderHost};
 pub struct Aws {
     pub regions: Vec<String>,
     pub profile: String,
+    /// Whether synced hosts reach their instance through Session Manager.
+    pub ssm: super::aws_ssm::SsmMode,
 }
 
 /// All commonly available AWS regions with display names.
@@ -64,24 +66,41 @@ pub const AWS_REGION_GROUPS: &[(&str, usize, usize)] = &[
 
 // --- Credentials ---
 
-struct AwsCredentials {
-    access_key: String,
-    secret_key: String,
+pub(super) struct AwsCredentials {
+    pub(super) access_key: String,
+    pub(super) secret_key: String,
     /// `aws_session_token` / `AWS_SESSION_TOKEN`. Present for temporary
     /// credentials (access key IDs starting with `ASIA`) issued by STS via
     /// AssumeRole, IAM Identity Center (SSO) or GetSessionToken. Must be sent
     /// as a signed `x-amz-security-token` header or AWS rejects the request.
-    session_token: Option<String>,
+    pub(super) session_token: Option<String>,
 }
 
+/// Credentials, or what still has to happen before there are any.
+pub(super) enum CredentialSource {
+    /// Usable as they are.
+    Ready(AwsCredentials),
+    /// A base key pair plus the roles to assume from it, innermost first.
+    AssumeRole {
+        base: AwsCredentials,
+        roles: Vec<super::aws_profile::RoleStep>,
+    },
+}
+
+/// Work out where this config's credentials come from, without making a
+/// network call. A profile that assumes a role reports the chain instead of
+/// following it, so the caller decides when to spend an STS request.
+///
+/// Order: a configured profile wins outright, then the token field, then the
+/// environment. A profile is used on its own so a failure there never reads as
+/// a token problem.
 fn resolve_credentials(
     token: &str,
     profile: &str,
     env: &crate::runtime::env::Env,
-) -> Result<AwsCredentials, ProviderError> {
-    // Profile takes priority: read from ~/.aws/credentials
+) -> Result<CredentialSource, ProviderError> {
     if !profile.is_empty() {
-        return read_credentials_file(profile, env);
+        return resolve_profile(profile, env);
     }
     // Token field: ACCESS_KEY_ID:SECRET_ACCESS_KEY[:SESSION_TOKEN]
     if let Some((ak, rest)) = token.split_once(':') {
@@ -91,11 +110,11 @@ fn resolve_credentials(
             None => (rest, None),
         };
         if !ak.is_empty() && !sk.is_empty() {
-            return Ok(AwsCredentials {
+            return Ok(CredentialSource::Ready(AwsCredentials {
                 access_key: ak.to_string(),
                 secret_key: sk.to_string(),
                 session_token: st,
-            });
+            }));
         }
     }
     // Environment variables, from the injected snapshot.
@@ -103,11 +122,11 @@ fn resolve_credentials(
         && !ak.is_empty()
         && !sk.is_empty()
     {
-        return Ok(AwsCredentials {
+        return Ok(CredentialSource::Ready(AwsCredentials {
             access_key: ak.to_string(),
             secret_key: sk.to_string(),
             session_token: env.aws_session_token().map(str::to_string),
-        });
+        }));
     }
     // A config saved without a token and without a profile is valid, so name
     // the three sources here rather than point at a token that was never set.
@@ -119,86 +138,97 @@ fn resolve_credentials(
     Err(ProviderError::AuthFailed)
 }
 
-/// The INI section header for a profile. One definition so the parser and
-/// the error path agree on what counts as present.
-fn profile_header(profile: &str) -> String {
-    format!("[{}]", profile)
-}
-
-/// Whether the file carries the profile's section at all. Separates "no such
-/// profile" from "profile is there but holds no key pair", which is what an
-/// IAM Identity Center profile looks like: the keys live in the SSO cache.
-fn has_profile_section(content: &str, profile: &str) -> bool {
-    let header = profile_header(profile);
-    content.lines().any(|line| line.trim() == header)
-}
-
-/// Parse AWS credentials from INI content (testable without filesystem).
-fn parse_credentials(content: &str, profile: &str) -> Option<AwsCredentials> {
-    let header = profile_header(profile);
-    let mut in_section = false;
-    let mut access_key = String::new();
-    let mut secret_key = String::new();
-    let mut session_token = String::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            in_section = trimmed == header;
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        if let Some((key, value)) = trimmed.split_once('=') {
-            match key.trim() {
-                "aws_access_key_id" => access_key = value.trim().to_string(),
-                "aws_secret_access_key" => secret_key = value.trim().to_string(),
-                "aws_session_token" => session_token = value.trim().to_string(),
-                _ => {}
-            }
-        }
-    }
-
-    if access_key.is_empty() || secret_key.is_empty() {
-        None
-    } else {
-        Some(AwsCredentials {
-            access_key,
-            secret_key,
-            session_token: (!session_token.is_empty()).then_some(session_token),
-        })
-    }
-}
-
-fn read_credentials_file(
+/// Resolve one named profile out of `~/.aws/config` and `~/.aws/credentials`.
+fn resolve_profile(
     profile: &str,
     env: &crate::runtime::env::Env,
-) -> Result<AwsCredentials, ProviderError> {
-    let path = env
-        .paths()
-        .ok_or(ProviderError::AuthFailed)?
-        .aws_credentials_file();
-    let shown = path.display().to_string();
-    let content = std::fs::read_to_string(&path).map_err(|_| {
-        ProviderError::Execute(crate::messages::aws_credentials_file_unreadable(&shown))
-    })?;
-    parse_credentials(&content, profile).ok_or_else(|| {
-        ProviderError::Execute(if has_profile_section(&content, profile) {
-            crate::messages::aws_profile_without_keys(profile, &shown)
-        } else {
-            crate::messages::aws_profile_not_found(profile, &shown)
+) -> Result<CredentialSource, ProviderError> {
+    let profiles = super::aws_profile::AwsProfiles::load(
+        env.aws_config_file().as_deref(),
+        env.aws_credentials_file().as_deref(),
+    );
+    let chain = profiles
+        .resolve_chain(profile)
+        .map_err(|e| ProviderError::Execute(chain_error_message(&e, &profiles)))?;
+    let base = AwsCredentials {
+        access_key: chain.base.access_key_id.clone(),
+        secret_key: chain.base.secret_access_key.clone(),
+        session_token: (!chain.base.session_token.is_empty())
+            .then(|| chain.base.session_token.clone()),
+    };
+    if chain.roles.is_empty() {
+        Ok(CredentialSource::Ready(base))
+    } else {
+        Ok(CredentialSource::AssumeRole {
+            base,
+            roles: chain.roles,
         })
-    })
+    }
+}
+
+/// Picker suffix for a profile purple will refuse, naming the reason in the
+/// few words a row has. The full sentence is `chain_error_message`.
+pub(crate) fn chain_error_note(error: &super::aws_profile::ChainError) -> &'static str {
+    use super::aws_profile::ChainError;
+    match error {
+        ChainError::SsoNotSupported(_) => crate::messages::PROFILE_NOTE_SSO,
+        ChainError::WebIdentity(_) => crate::messages::PROFILE_NOTE_WEB_IDENTITY,
+        ChainError::CredentialProcess(_) => crate::messages::PROFILE_NOTE_CREDENTIAL_PROCESS,
+        ChainError::CredentialSource(_) => crate::messages::PROFILE_NOTE_CREDENTIAL_SOURCE,
+        ChainError::MfaRequired(_) => crate::messages::PROFILE_NOTE_MFA,
+        ChainError::Loop(_) | ChainError::TooDeep(_) => crate::messages::PROFILE_NOTE_CHAIN,
+        ChainError::RoleWithoutSource(_) => crate::messages::PROFILE_NOTE_NO_SOURCE,
+        // Every row the picker draws is a profile that exists, so a missing
+        // one can only be the profile a source_profile points at.
+        ChainError::Missing(_) => crate::messages::PROFILE_NOTE_MISSING_SOURCE,
+        ChainError::FileUnreadable(_) => crate::messages::PROFILE_NOTE_UNREADABLE,
+        ChainError::NoKeys(_) | ChainError::PartialCredentials(..) => {
+            crate::messages::PROFILE_NOTE_NO_KEYS
+        }
+    }
+}
+
+/// User-facing wording for a profile chain that did not resolve.
+fn chain_error_message(
+    error: &super::aws_profile::ChainError,
+    profiles: &super::aws_profile::AwsProfiles,
+) -> String {
+    use super::aws_profile::ChainError;
+    match error {
+        ChainError::Missing(name) => crate::messages::aws_profile_not_found(
+            name,
+            &profiles.sources(),
+            &profiles.names().join(", "),
+        ),
+        ChainError::NoKeys(name) => crate::messages::aws_profile_without_keys(name),
+        ChainError::PartialCredentials(name, missing) => {
+            crate::messages::aws_profile_partial_credentials(name, missing)
+        }
+        ChainError::RoleWithoutSource(name) => crate::messages::aws_role_without_source(name),
+        ChainError::CredentialSource(name) => {
+            crate::messages::aws_credential_source_unsupported(name)
+        }
+        ChainError::CredentialProcess(name) => {
+            crate::messages::aws_credential_process_unsupported(name)
+        }
+        ChainError::WebIdentity(name) => crate::messages::aws_web_identity_unsupported(name),
+        ChainError::SsoNotSupported(name) => crate::messages::aws_sso_unsupported(name),
+        ChainError::MfaRequired(name) => crate::messages::aws_mfa_unsupported(name),
+        ChainError::Loop(name) => crate::messages::aws_profile_loop(name, &profiles.sources()),
+        ChainError::TooDeep(name) => {
+            crate::messages::aws_profile_chain_too_deep(name, &profiles.sources())
+        }
+        ChainError::FileUnreadable(path) => crate::messages::aws_credentials_file_unreadable(path),
+    }
 }
 
 // --- SigV4 signing ---
 
-fn hex_encode(bytes: &[u8]) -> String {
+pub(super) fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-fn sha256_hash(data: &[u8]) -> Vec<u8> {
+pub(super) fn sha256_hash(data: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hasher.finalize().to_vec()
@@ -215,12 +245,12 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 /// RFC 3986 URI encoding (delegates to shared implementation).
-fn uri_encode(s: &str) -> String {
+pub(super) fn uri_encode(s: &str) -> String {
     super::percent_encode(s)
 }
 
 /// Format epoch seconds as (timestamp, datestamp) for SigV4.
-fn format_utc(epoch_secs: u64) -> (String, String) {
+pub(super) fn format_utc(epoch_secs: u64) -> (String, String) {
     let d = super::epoch_to_date(epoch_secs);
     let timestamp = format!(
         "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
@@ -230,38 +260,58 @@ fn format_utc(epoch_secs: u64) -> (String, String) {
     (timestamp, datestamp)
 }
 
+/// One request to sign. The three AWS services purple talks to differ in
+/// method, service name, payload and which headers are covered, so they are
+/// inputs rather than constants: EC2 and STS are GET with an empty body over
+/// the Query API, while Systems Manager is a JSON POST that must also sign
+/// `content-type` and `x-amz-target`.
+pub(super) struct SigV4Request<'a> {
+    pub(super) method: &'a str,
+    pub(super) service: &'a str,
+    pub(super) host: &'a str,
+    pub(super) query_string: &'a str,
+    pub(super) payload: &'a [u8],
+    /// Extra headers to cover, as lowercase name and value. Sorted in with the
+    /// rest, so a caller passes them in any order.
+    pub(super) extra_headers: &'a [(&'a str, &'a str)],
+}
+
 /// Build the SigV4 Authorization header value.
-fn sign_request(
+pub(super) fn sign_request(
     creds: &AwsCredentials,
     region: &str,
-    host: &str,
-    query_string: &str,
+    req: &SigV4Request<'_>,
     timestamp: &str,
     datestamp: &str,
 ) -> String {
-    let payload_hash = hex_encode(&sha256_hash(b""));
-    // Canonical headers must be sorted by lowercase header name. With
-    // temporary credentials `x-amz-security-token` sorts after `x-amz-date`.
-    let (canonical_headers, signed_headers) = match &creds.session_token {
-        Some(token) => (
-            format!(
-                "host:{}\nx-amz-date:{}\nx-amz-security-token:{}\n",
-                host, timestamp, token
-            ),
-            "host;x-amz-date;x-amz-security-token",
-        ),
-        None => (
-            format!("host:{}\nx-amz-date:{}\n", host, timestamp),
-            "host;x-amz-date",
-        ),
-    };
+    let payload_hash = hex_encode(&sha256_hash(req.payload));
+
+    // Canonical headers are sorted by lowercase header name. With temporary
+    // credentials `x-amz-security-token` joins the set and sorts after
+    // `x-amz-date`; for a JSON POST `content-type` sorts before `host`.
+    let mut headers: Vec<(&str, &str)> = vec![("host", req.host), ("x-amz-date", timestamp)];
+    if let Some(token) = &creds.session_token {
+        headers.push(("x-amz-security-token", token));
+    }
+    headers.extend_from_slice(req.extra_headers);
+    headers.sort_by(|a, b| a.0.cmp(b.0));
+
+    let canonical_headers: String = headers
+        .iter()
+        .map(|(name, value)| format!("{}:{}\n", name, value))
+        .collect();
+    let signed_headers = headers
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(";");
 
     let canonical_request = format!(
-        "GET\n/\n{}\n{}\n{}\n{}",
-        query_string, canonical_headers, signed_headers, payload_hash
+        "{}\n/\n{}\n{}\n{}\n{}",
+        req.method, req.query_string, canonical_headers, signed_headers, payload_hash
     );
 
-    let scope = format!("{}/{}/ec2/aws4_request", datestamp, region);
+    let scope = format!("{}/{}/{}/aws4_request", datestamp, region, req.service);
     let string_to_sign = format!(
         "AWS4-HMAC-SHA256\n{}\n{}\n{}",
         timestamp,
@@ -274,7 +324,7 @@ fn sign_request(
         datestamp.as_bytes(),
     );
     let k_region = hmac_sha256(&k_date, region.as_bytes());
-    let k_service = hmac_sha256(&k_region, b"ec2");
+    let k_service = hmac_sha256(&k_region, req.service.as_bytes());
     let k_signing = hmac_sha256(&k_service, b"aws4_request");
     let signature = hex_encode(&hmac_sha256(&k_signing, string_to_sign.as_bytes()));
 
@@ -362,6 +412,13 @@ struct ImageInfo {
 
 // --- EC2 API ---
 
+/// SigV4 service name for the EC2 Query API.
+const EC2_SERVICE: &str = "ec2";
+
+/// EC2 Query API version pinned by the DescribeInstances and DescribeImages
+/// calls below.
+const EC2_API_VERSION: &str = "2016-11-15";
+
 fn param(key: &str, value: &str) -> (String, String) {
     (key.to_string(), value.to_string())
 }
@@ -401,7 +458,20 @@ fn ec2_get(
         .collect::<Vec<_>>()
         .join("&");
 
-    let auth = sign_request(creds, region, &host, &query_string, &timestamp, &datestamp);
+    let auth = sign_request(
+        creds,
+        region,
+        &SigV4Request {
+            method: "GET",
+            service: EC2_SERVICE,
+            host: &host,
+            query_string: &query_string,
+            payload: b"",
+            extra_headers: &[],
+        },
+        &timestamp,
+        &datestamp,
+    );
     let url = format!("{}/?{}", endpoint, query_string);
 
     let mut req = agent
@@ -441,7 +511,7 @@ fn describe_instances(
 
         let mut params = vec![
             param("Action", "DescribeInstances"),
-            param("Version", "2016-11-15"),
+            param("Version", EC2_API_VERSION),
         ];
         if let Some(ref token) = next_token {
             params.push(param("NextToken", token));
@@ -490,7 +560,7 @@ fn fetch_image_names(
     for chunk in image_ids.chunks(AMI_BATCH_SIZE) {
         let mut params = vec![
             param("Action", "DescribeImages"),
-            param("Version", "2016-11-15"),
+            param("Version", EC2_API_VERSION),
         ];
         for (i, id) in chunk.iter().enumerate() {
             params.push(param(&format!("ImageId.{}", i + 1), id));
@@ -527,6 +597,15 @@ fn extract_tags(tag_set: &[Ec2Tag]) -> (String, Vec<String>) {
 
 // --- Provider trait ---
 
+/// Per-region API hosts for one fetch. Production resolves the real AWS
+/// endpoints; tests point both at a mock server so the whole signed pipeline
+/// runs end to end.
+struct Endpoints<'a> {
+    ec2: &'a dyn Fn(&str) -> String,
+    ssm: &'a dyn Fn(&str) -> String,
+    sts: &'a dyn Fn(&str) -> String,
+}
+
 impl Aws {
     /// Real EC2 endpoint for a region. Overridable via `fetch_with_endpoint`
     /// so tests can point the signed request at a mock server.
@@ -540,12 +619,13 @@ impl Aws {
     /// deserialize and `ProviderHost` mapping all run end to end.
     fn fetch_with_endpoint(
         &self,
-        resolve_endpoint: impl Fn(&str) -> String,
+        endpoints: &Endpoints<'_>,
         token: &str,
         cancel: &AtomicBool,
         env: &crate::runtime::env::Env,
         progress: &dyn Fn(&str),
     ) -> Result<Vec<ProviderHost>, ProviderError> {
+        let resolve_endpoint = endpoints.ec2;
         if self.regions.is_empty() {
             return Err(ProviderError::Http(
                 "No AWS regions configured. Add regions in the provider settings.".to_string(),
@@ -562,11 +642,40 @@ impl Aws {
             }
         }
 
-        let creds = resolve_credentials(token, &self.profile, env)?;
+        if self.ssm.is_enabled()
+            && !self.profile.is_empty()
+            && !super::aws_ssm::is_safe_profile_name(&self.profile)
+        {
+            return Err(ProviderError::Execute(
+                crate::messages::aws_ssm_profile_unsafe(&self.profile),
+            ));
+        }
+
         let agent = super::http_agent();
+        // The STS region is the first configured one: it is validated above,
+        // and pinning it keeps every assume-role call on one regional endpoint
+        // instead of the global one.
+        let sts_region = self.regions[0].clone();
+        let creds = match resolve_credentials(token, &self.profile, env)? {
+            CredentialSource::Ready(creds) => creds,
+            CredentialSource::AssumeRole { base, roles } => {
+                progress(&crate::messages::aws_assuming_roles(roles.len()));
+                super::aws_sts::assume_chain_with_endpoint(
+                    &agent,
+                    base,
+                    &roles,
+                    &sts_region,
+                    cancel,
+                    endpoints.sts,
+                )?
+            }
+        };
         let total_regions = self.regions.len();
         let mut all_hosts = Vec::new();
         let mut failed_regions = 0usize;
+        // The first region's own reason, kept for the summary error. Without
+        // it a missing IAM action reads as a credential problem.
+        let mut first_failure: Option<String> = None;
 
         for (i, region) in self.regions.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
@@ -580,13 +689,47 @@ impl Aws {
                 total_regions
             ));
 
+            // `auto` asks Systems Manager which nodes can take a session;
+            // `always` skips the lookup for a caller allowed to open a session
+            // but not to list nodes. A failed lookup fails the region rather
+            // than silently leaving every host on its IP address.
+            let ssm_nodes = match self.ssm {
+                super::aws_ssm::SsmMode::Auto => {
+                    progress(&crate::messages::aws_ssm_checking(region));
+                    match super::aws_ssm::online_nodes_with_endpoint(
+                        &agent,
+                        &creds,
+                        region,
+                        cancel,
+                        &(endpoints.ssm)(region),
+                    ) {
+                        Ok(nodes) => nodes,
+                        Err(ProviderError::Cancelled) => return Err(ProviderError::Cancelled),
+                        Err(e) => {
+                            log::warn!("[external] aws ssm: {} lookup failed: {}", region, e);
+                            let reason =
+                                crate::messages::aws_ssm_lookup_failed(region, &e.to_string());
+                            progress(&reason);
+                            first_failure.get_or_insert(reason);
+                            failed_regions += 1;
+                            continue;
+                        }
+                    }
+                }
+                _ => HashSet::new(),
+            };
+
             let endpoint = resolve_endpoint(region);
             let instances = match describe_instances(&agent, &creds, region, &endpoint, cancel) {
                 Ok(instances) => instances,
                 Err(ProviderError::Cancelled) => return Err(ProviderError::Cancelled),
                 Err(ProviderError::AuthFailed) => return Err(ProviderError::AuthFailed),
                 Err(ProviderError::RateLimited) => return Err(ProviderError::RateLimited),
-                Err(_) => {
+                Err(e) => {
+                    log::warn!("[external] aws ec2: {} listing failed: {}", region, e);
+                    first_failure.get_or_insert_with(|| {
+                        crate::messages::aws_region_failed(region, &e.to_string())
+                    });
                     failed_regions += 1;
                     continue;
                 }
@@ -612,12 +755,69 @@ impl Aws {
             };
 
             for instance in instances {
-                let ip = match instance.ip_address {
-                    Some(ref ip) if !ip.is_empty() => ip.clone(),
-                    _ => match instance.private_ip_address {
+                // Session Manager reaches an instance by ID over a tunnel the
+                // node opens outbound, so an instance with no address at all
+                // is still reachable.
+                let via_ssm = match self.ssm {
+                    super::aws_ssm::SsmMode::Off => false,
+                    super::aws_ssm::SsmMode::Always => true,
+                    super::aws_ssm::SsmMode::Auto => ssm_nodes.contains(&instance.instance_id),
+                };
+
+                // With Session Manager the HostName is the instance ID, which
+                // is what the proxy command's `%h` passes to `--target`.
+                //
+                // An instance with neither routing reports an empty address
+                // rather than being dropped from the result. Empty means "this
+                // exists but purple cannot reach it", which keeps it out of
+                // the stale and `--remove` paths; dropping it would let a
+                // running instance be deleted from the user's config, and an
+                // instance that was reachable over Session Manager a moment
+                // ago lands here the instant the mode is turned off.
+                let ip = if via_ssm {
+                    instance.instance_id.clone()
+                } else {
+                    match instance.ip_address {
                         Some(ref ip) if !ip.is_empty() => ip.clone(),
-                        _ => continue,
-                    },
+                        _ => match instance.private_ip_address {
+                            Some(ref ip) if !ip.is_empty() => ip.clone(),
+                            _ => String::new(),
+                        },
+                    }
+                };
+
+                let (directives, retract_directives) = if via_ssm {
+                    (
+                        vec![(
+                            "ProxyCommand".to_string(),
+                            super::aws_ssm::proxy_command(&self.profile, region),
+                        )],
+                        Vec::new(),
+                    )
+                } else if ip.is_empty() {
+                    // Nothing to fall back to, so nothing is withdrawn: the
+                    // proxy command is the only thing still reaching this
+                    // host. Sync skips a host with no address before it reads
+                    // either list, so this is what keeps the intent true if
+                    // that ever changes.
+                    (Vec::new(), Vec::new())
+                } else {
+                    // Withdraw a proxy command purple generated here, so
+                    // turning Session Manager off puts the host back on its
+                    // address instead of leaving a dead command behind. The
+                    // profile segment is the one part the config can change
+                    // between syncs, so the rule reads the line's shape rather
+                    // than one exact value; a command the user wrote
+                    // themselves, which opens with the same line AWS
+                    // publishes, is not that shape and stays.
+                    (
+                        Vec::new(),
+                        vec![super::RetractDirective {
+                            key: "ProxyCommand".to_string(),
+                            owns: super::aws_ssm::is_generated_proxy_command,
+                            context: region.clone(),
+                        }],
+                    )
                 };
 
                 let (name, tags) = extract_tags(&instance.tag_set.item);
@@ -638,6 +838,9 @@ impl Aws {
                 if !instance.instance_state.name.is_empty() {
                     metadata.push("status", instance.instance_state.name.clone());
                 }
+                if via_ssm {
+                    metadata.push("via", "Session Manager");
+                }
 
                 all_hosts.push(ProviderHost {
                     server_id: instance.instance_id,
@@ -645,6 +848,8 @@ impl Aws {
                     ip,
                     tags,
                     metadata: metadata.finish(),
+                    directives,
+                    retract_directives,
                     ..Default::default()
                 });
             }
@@ -662,10 +867,13 @@ impl Aws {
 
         if failed_regions > 0 {
             if all_hosts.is_empty() {
-                return Err(ProviderError::Http(format!(
-                    "All {} regions failed. Check your credentials and region configuration.",
-                    total_regions,
-                )));
+                return Err(ProviderError::Http(
+                    crate::messages::aws_no_instances_after_failures(
+                        failed_regions,
+                        total_regions,
+                        first_failure.as_deref(),
+                    ),
+                ));
             }
             return Err(ProviderError::PartialResult {
                 hosts: all_hosts,
@@ -703,7 +911,17 @@ impl Provider for Aws {
         env: &crate::runtime::env::Env,
         progress: &dyn Fn(&str),
     ) -> Result<Vec<ProviderHost>, ProviderError> {
-        self.fetch_with_endpoint(Self::region_endpoint, token, cancel, env, progress)
+        self.fetch_with_endpoint(
+            &Endpoints {
+                ec2: &Self::region_endpoint,
+                ssm: &super::aws_ssm::region_endpoint,
+                sts: &super::aws_sts::region_endpoint,
+            },
+            token,
+            cancel,
+            env,
+            progress,
+        )
     }
 }
 

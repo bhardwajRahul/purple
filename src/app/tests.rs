@@ -484,6 +484,7 @@ fn open_provider_form_initializes_state_for_all_modes() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
     app.open_provider_form(ProviderConfigId::bare("digitalocean"));
     assert_eq!(app.providers.form.token, "secret-token");
@@ -2157,6 +2158,7 @@ fn make_provider_app() -> App {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
     app
 }
@@ -2254,6 +2256,7 @@ fn test_apply_sync_result_unknown_provider() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
     let (msg, is_err, total, _, _, _) = app.apply_sync_result("nonexistent", vec![], false);
     assert!(is_err);
@@ -2288,6 +2291,7 @@ fn test_apply_sync_result_labeled_provider_resolves() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
     let (msg, is_err, total, _, _, _) = app.apply_sync_result("digitalocean:work", vec![], false);
     assert!(!is_err, "labeled provider lookup must not error: {msg}");
@@ -2507,6 +2511,7 @@ fn make_section(provider: &str, auto_sync: bool) -> crate::providers::config::Pr
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     }
 }
 
@@ -4239,6 +4244,7 @@ Host do-db
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
 
     // First sync adds both hosts

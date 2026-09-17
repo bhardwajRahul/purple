@@ -523,7 +523,7 @@ pub mod hints {
     pub const PROVIDER_TOKEN_TELEPORT: &str = "not used (tsh login holds the session)";
     pub const PROVIDER_TOKEN_ORACLE: &str = "~/.oci/config";
     pub const PROVIDER_TOKEN_OVH: &str = "app_key:app_secret:consumer_key";
-    pub const PROVIDER_PROFILE: &str = "Name from ~/.aws/credentials (or use Token)";
+    pub const PROVIDER_PROFILE: &str = "Space to select a profile (or use Token)";
     pub const PROVIDER_PROJECT_DEFAULT: &str = "my-gcp-project-id";
     pub const PROVIDER_PROJECT_OVH: &str = "Public Cloud project ID";
     pub const PROVIDER_COMPARTMENT: &str = "ocid1.compartment.oc1..aaaa...";
@@ -534,6 +534,17 @@ pub mod hints {
     pub const PROVIDER_REGIONS_AZURE: &str = "comma-separated subscription IDs";
     pub const PROVIDER_REGIONS_OVH: &str = "Space to select endpoint (default: EU)";
     pub const PROVIDER_FILTER_NETBOX: &str = "status=active&tag=ssh (NetBox query params)";
+
+    /// The Session Manager mode as the form shows it. Each reads as the
+    /// outcome rather than the setting name, the way the other toggles do.
+    pub fn ssm_mode_value(mode: crate::providers::aws_ssm::SsmMode) -> &'static str {
+        use crate::providers::aws_ssm::SsmMode;
+        match mode {
+            SsmMode::Off => "off (connect to the IP address)",
+            SsmMode::Auto => "auto (route the nodes SSM reports online)",
+            SsmMode::Always => "always (route every instance)",
+        }
+    }
     pub const PROVIDER_USER_AWS: &str = "ec2-user";
     pub const PROVIDER_USER_GCP: &str = "ubuntu";
     pub const PROVIDER_USER_AZURE: &str = "azureuser";
@@ -582,6 +593,7 @@ mod hints_tests {
             hints::PROVIDER_REGIONS_GCP,
             hints::PROVIDER_REGIONS_SCALEWAY,
             hints::PROVIDER_REGIONS_OVH,
+            hints::PROVIDER_PROFILE,
         ] {
             assert!(
                 s.starts_with("Space "),

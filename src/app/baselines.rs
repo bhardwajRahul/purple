@@ -63,6 +63,7 @@ pub struct ProviderFormBaseline {
     pub auto_sync: bool,
     pub vault_role: String,
     pub vault_addr: String,
+    pub ssm: crate::providers::aws_ssm::SsmMode,
 }
 
 impl App {
@@ -349,6 +350,7 @@ impl App {
                 verify_tls: section.verify_tls,
                 auto_sync: section.auto_sync,
                 vault_role: section.vault_role.clone(),
+                ssm: section.ssm,
                 vault_addr: section.vault_addr.clone(),
                 focused_field: first_field,
                 cursor_pos,
@@ -381,6 +383,7 @@ impl App {
                     .kind()
                     .is_none_or(crate::providers::ProviderKind::default_auto_sync),
                 vault_role: String::new(),
+                ssm: crate::providers::aws_ssm::SsmMode::default(),
                 vault_addr: String::new(),
                 focused_field: first_field,
                 cursor_pos: 0,
@@ -440,6 +443,7 @@ impl App {
             auto_sync: self.providers.form.auto_sync,
             vault_role: self.providers.form.vault_role.clone(),
             vault_addr: self.providers.form.vault_addr.clone(),
+            ssm: self.providers.form.ssm,
         });
     }
 

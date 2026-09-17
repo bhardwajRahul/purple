@@ -516,9 +516,10 @@ pub fn render_provider_form(frame: &mut Frame, app: &mut App, provider_name: &st
         );
     }
 
-    // Footer below the block. Discard prompt takes precedence; otherwise
-    // dynamic save footer reflects the focused field's kind so users discover
-    // Space-toggle (VerifyTls/AutoSync) and Space-pick (IdentityFile/Regions).
+    // Footer below the block. Discard prompt takes precedence; otherwise the
+    // save footer reflects the focused field's kind so users discover
+    // Space-toggle and Space-pick. Which field is which comes from
+    // `ProviderFormField::kind`, so the footer and the arrow never disagree.
     let footer_area = design::render_overlay_footer(frame, block_area);
     if app.forms.is_discard_pending() {
         design::render_discard_prompt(frame, footer_area, app);
@@ -540,6 +541,49 @@ pub fn render_provider_form(frame: &mut Frame, app: &mut App, provider_name: &st
     if app.ui.region_picker().open {
         render_region_picker_overlay(frame, app);
     }
+
+    // AWS profile picker popup overlay
+    if app.ui.profile_picker().open {
+        render_profile_picker_overlay(frame, app);
+    }
+}
+
+/// The profiles found in `~/.aws`, so the name is picked rather than typed.
+/// A profile that assumes a role is labeled, because that is the one fact that
+/// decides whether purple will reach a second account with it. A profile whose
+/// shape purple refuses says so in the warning color, so the row is not a
+/// choice that only fails on the next sync.
+fn render_profile_picker_overlay(frame: &mut Frame, app: &mut App) {
+    let width = super::picker_overlay_width(frame);
+    let max_name = (width as usize).saturating_sub(6);
+    let items: Vec<ListItem> = app
+        .ui
+        .aws_profile_rows()
+        .iter()
+        .map(|row| {
+            let mut spans = vec![Span::styled(
+                format!("  {}", super::truncate(&row.name, max_name)),
+                theme::bold(),
+            )];
+            if let Some(note) = &row.note {
+                let style = if note.usable {
+                    theme::muted()
+                } else {
+                    theme::warning()
+                };
+                spans.push(Span::styled(format!("  {}", note.text), style));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+
+    super::render_picker_overlay(
+        frame,
+        "AWS Profile",
+        None,
+        items,
+        &mut app.ui.profile_picker_mut().list,
+    );
 }
 
 fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static str {
@@ -653,7 +697,8 @@ fn placeholder_for(field: ProviderFormField, provider_name: &str) -> &'static st
         ProviderFormField::IdentityFile => hints::IDENTITY_FILE_PICK,
         ProviderFormField::VaultRole => hints::PROVIDER_VAULT_ROLE,
         ProviderFormField::VaultAddr => hints::PROVIDER_VAULT_ADDR,
-        ProviderFormField::VerifyTls | ProviderFormField::AutoSync => "",
+        // Toggles render their current value, never a placeholder.
+        ProviderFormField::Ssm | ProviderFormField::VerifyTls | ProviderFormField::AutoSync => "",
     }
 }
 
@@ -685,6 +730,15 @@ fn render_field_content(
         render_toggle_content(frame, area, value_text, is_focused);
         return;
     }
+    if field == ProviderFormField::Ssm {
+        render_toggle_content(
+            frame,
+            area,
+            crate::messages::hints::ssm_mode_value(form.ssm),
+            is_focused,
+        );
+        return;
+    }
 
     let value = match field {
         ProviderFormField::Label => &form.label,
@@ -700,7 +754,7 @@ fn render_field_content(
         ProviderFormField::IdentityFile => &form.identity_file,
         ProviderFormField::VaultRole => &form.vault_role,
         ProviderFormField::VaultAddr => &form.vault_addr,
-        ProviderFormField::VerifyTls | ProviderFormField::AutoSync => {
+        ProviderFormField::Ssm | ProviderFormField::VerifyTls | ProviderFormField::AutoSync => {
             debug_assert!(
                 false,
                 "toggle fields must be handled by the early-return branches above"
@@ -723,18 +777,9 @@ fn render_field_content(
             value.clone()
         };
 
-    let provider_supports_region_picker = matches!(
-        provider_name.parse::<ProviderKind>().ok(),
-        Some(
-            ProviderKind::Aws
-                | ProviderKind::Scaleway
-                | ProviderKind::Gcp
-                | ProviderKind::Oracle
-                | ProviderKind::Ovh
-        )
-    );
-    let is_picker = matches!(field, ProviderFormField::IdentityFile)
-        || (field == ProviderFormField::Regions && provider_supports_region_picker);
+    // The same rule the footer and the key handler read, so a field that
+    // advertises "Space pick" also draws the arrow.
+    let is_picker = field.is_picker(provider_name);
 
     let content = if value.is_empty() && is_focused && !is_picker {
         Line::from(Span::styled(
@@ -950,6 +995,7 @@ mod tests {
             ProviderFormField::Compartment,
             ProviderFormField::Regions,
             ProviderFormField::Filter,
+            ProviderFormField::Ssm,
             ProviderFormField::AliasPrefix,
             ProviderFormField::User,
             ProviderFormField::IdentityFile,
@@ -978,7 +1024,8 @@ mod tests {
                 | ProviderFormField::VerifyTls
                 | ProviderFormField::VaultRole
                 | ProviderFormField::VaultAddr
-                | ProviderFormField::AutoSync => {}
+                | ProviderFormField::AutoSync
+                | ProviderFormField::Ssm => {}
             }
         }
 

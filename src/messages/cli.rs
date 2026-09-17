@@ -15,6 +15,11 @@ pub use super::SNIPPET_DESCRIPTION_CONTROL_CHARS as DESCRIPTION_CONTROL_CHARS;
 
 pub use super::contains_control_chars as control_chars;
 
+// Session Manager copy: one string each for the form and for `provider add`,
+// since the consequence is the same on both routes.
+pub use super::AWS_SSM_WITHOUT_PROFILE;
+pub use super::aws_ssm_profile_unsafe;
+
 pub use super::welcome_aboard as welcome;
 
 // ── Asset generation (internal) ─────────────────────────────────
@@ -349,10 +354,34 @@ pub const AZURE_REGIONS_REQUIRED: &str =
 pub const GCP_PROJECT_REQUIRED: &str = "GCP requires --project (e.g. --project my-gcp-project-id).";
 pub use super::ALIAS_PREFIX_INVALID;
 
+/// An unknown `--ssm` value. Refused rather than read as off, because a typo
+/// would otherwise leave every host on its IP address without saying so.
+pub fn ssm_mode_invalid(value: &str) -> String {
+    format!(
+        "Unknown --ssm value '{}'. Use off, auto or always.",
+        value.trim()
+    )
+}
+
+/// One line after a bare config is updated, naming the route that keeps a
+/// second account alongside it instead of replacing this one.
+///
+/// Not `--label`: a labeled add is refused while a bare config exists, because
+/// the two spellings cannot be mixed. Labeling the existing config renames it
+/// and rewrites its host markers, which the TUI asks about and a one-shot CLI
+/// add cannot.
+pub fn provider_replaced_hint(provider: &str) -> String {
+    format!(
+        "Updated the existing [{}] config in place. To keep two side by side, add the second one from the TUI with 'a' in the provider list, which names this config first.",
+        provider
+    )
+}
+
 pub const WARN_URL_NOT_USED: &str =
     "Warning: --url is only used by self-hosted providers (Proxmox, NetBox). Ignoring.";
 pub const WARN_PROFILE_NOT_USED: &str =
     "Warning: --profile is only used by the AWS provider. Ignoring.";
+pub const WARN_SSM_NOT_USED: &str = "Warning: --ssm is only used by the AWS provider. Ignoring.";
 pub const WARN_PROJECT_NOT_USED: &str =
     "Warning: --project is only used by the GCP provider. Ignoring.";
 pub const WARN_COMPARTMENT_NOT_USED: &str =

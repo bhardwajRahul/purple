@@ -116,11 +116,12 @@ Host aws-api-staging
   # purple:meta region=us-east-1,instance=t3.small,os=Amazon Linux 2023,status=running
 
 Host aws-worker-eu
-  HostName 3.120.55.17
+  HostName i-0a1b2c3d4e5f60003
   User ec2-user
+  ProxyCommand sh -c \"aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --profile production --region eu-central-1\"
   # purple:tags production,worker
   # purple:provider aws:i-0a1b2c3d4e5f60003
-  # purple:meta region=eu-central-1,instance=c6i.large,os=Ubuntu 22.04,status=running
+  # purple:meta region=eu-central-1,instance=c6i.large,os=Ubuntu 22.04,status=running,via=Session Manager
 
 Host aws-batch-us
   HostName 52.47.100.25
@@ -362,6 +363,7 @@ alias_prefix=aws
 user=ec2-user
 profile=production
 regions=us-east-1,eu-central-1
+ssm=auto
 auto_sync=true
 vault_role=ssh-client-signer/sign/engineer
 

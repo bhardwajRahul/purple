@@ -51,6 +51,7 @@ fn vault_role_roundtrip_preserves_value() {
             vault_role: "ssh-client-signer/sign/engineer".to_string(),
             vault_addr: String::new(),
             auto_sync: true,
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         }],
     };
     config.save().expect("save failed");
@@ -162,6 +163,7 @@ fn test_set_section_add() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     assert_eq!(config.sections.len(), 1);
 }
@@ -185,6 +187,7 @@ fn test_set_section_replace() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     assert_eq!(config.sections.len(), 1);
     assert_eq!(config.sections[0].token, "new");
@@ -339,6 +342,7 @@ fn test_non_proxmox_url_not_written() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let mut config = ProviderConfig::default();
     config.set_section(section);
@@ -377,6 +381,7 @@ fn test_proxmox_url_fallback_in_section() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     assert_eq!(config.sections[0].token, "new");
     assert_eq!(config.sections[0].url, "https://pve.local:8006");
@@ -427,6 +432,7 @@ fn test_auto_sync_not_written_when_default() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     // Re-parse: auto_sync should still be true (default)
     assert!(config.sections[0].auto_sync);
@@ -449,6 +455,7 @@ fn test_auto_sync_not_written_when_default() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     assert!(!config2.sections[0].auto_sync);
 }
@@ -511,6 +518,7 @@ fn test_auto_sync_written_only_when_non_default() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     // Simulate save by rebuilding content string (same logic as save())
     let content =
@@ -760,6 +768,7 @@ fn test_set_section_adds_new() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     config.set_section(section);
     assert_eq!(config.sections.len(), 1);
@@ -786,6 +795,7 @@ fn test_set_section_replaces_existing() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     config.set_section(section);
     assert_eq!(config.sections.len(), 1);
@@ -1104,6 +1114,7 @@ fn test_set_section_multiple_adds() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         });
     }
     assert_eq!(config.sections.len(), 3);
@@ -1188,6 +1199,7 @@ fn test_save_sanitizes_token_with_newline() {
             compartment: String::new(),
             vault_role: String::new(),
             vault_addr: String::new(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         }],
         path_override: Some(path.clone()),
     };

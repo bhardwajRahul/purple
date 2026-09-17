@@ -1,3 +1,12 @@
+## 3.28.0 - 2026-09-17
+
+- feat: Every AWS account, every instance, one host list.
+- feat: Reach EC2 instances that have no public address. Set Session Manager to `auto` on your AWS provider and purple asks AWS which instances are reachable, then writes the proxy command for each one. `ssh`, `scp` and the file browser work as they always did, over a tunnel the instance opens outbound, with no inbound port and no bastion. Instances AWS does not report keep their IP address, so nothing you already use changes.
+- feat: Run several AWS accounts side by side. Give each one a label and a profile, and purple keeps them in their own lanes with their own alias prefixes. A profile with `role_arn` and `source_profile` is assumed for you, so one key pair reaches every account under your Organization.
+- feat: purple now reads `~/.aws/config`, not just `~/.aws/credentials`. Press Space on the Profile field to pick from the profiles you actually have, with the ones that reach another account marked and the ones purple cannot use saying why before you pick them. Picking one fills in that profile's region too.
+- change: Adding a provider that already has a config updates it in place and names the route that keeps a second account beside it.
+- fix: A second labeled config for the same provider saves on the first try, with its own alias prefix.
+
 ## 3.27.0 - 2026-08-26
 
 - feat: Your NetBox inventory becomes your SSH host list.

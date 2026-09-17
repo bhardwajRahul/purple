@@ -42,7 +42,7 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-/// App met een geconfigureerde DigitalOcean (auto_sync=true) en een nieuw Proxmox.
+/// App with a configured DigitalOcean (auto_sync=true) and a fresh Proxmox.
 fn make_providers_app_with_do() -> App {
     let mut app = make_app("Host test\n  HostName test.com\n");
     app.screen = Screen::Providers;
@@ -63,6 +63,7 @@ fn make_providers_app_with_do() -> App {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     app
 }
@@ -87,6 +88,7 @@ fn make_providers_app_with_proxmox() -> App {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     app
 }
@@ -144,6 +146,7 @@ fn test_provider_form_init_existing_do_explicit_false_preserved() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     open_provider_form(&mut app, "digitalocean");
     assert!(
@@ -201,6 +204,7 @@ fn make_form_app_focused_on(provider: &str, field: ProviderFormField) -> App {
         auto_sync: true,
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
         focused_field: field,
         cursor_pos: 0,
         expanded: true, // Tests assume all fields visible
@@ -340,6 +344,7 @@ fn test_submit_provider_form_persists_auto_sync_false() {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     let (tx, _rx) = mpsc::channel();
@@ -385,6 +390,7 @@ fn test_submit_provider_form_persists_auto_sync_true() {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     let (tx, _rx) = mpsc::channel();
@@ -429,6 +435,7 @@ fn test_submit_provider_form_persists_vault_role() {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: true,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
 
     let (tx, _rx) = mpsc::channel();
@@ -693,6 +700,7 @@ fn make_gcp_form_app() -> App {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     app
 }
@@ -795,6 +803,7 @@ fn make_azure_form_app() -> App {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     app
 }
@@ -879,6 +888,7 @@ fn make_ovh_form_app() -> App {
         focused_field: ProviderFormField::Token,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     app
 }
@@ -4948,6 +4958,7 @@ fn test_provider_x_key_opens_scoped_purge() {
         compartment: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     });
     // Select the DigitalOcean provider in the list
     let sorted = app.sorted_provider_names();
@@ -13789,4 +13800,281 @@ fn palette_container_hit_auto_queues_shell_exec() {
         .expect("Container hit must auto-queue a shell exec request");
     assert_eq!(queued.alias, "web");
     assert_eq!(queued.container_id, "c1");
+}
+
+// ── AWS profile picker ──────────────────────────────────────────
+
+/// App on the AWS provider form with a `~/.aws` holding the given files. The
+/// returned `TempDir` owns the home directory, so the caller keeps it alive.
+fn make_aws_form_app(config: &str, credentials: &str) -> (App, tempfile::TempDir) {
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws = home.path().join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::write(aws.join("config"), config).expect("write config");
+    std::fs::write(aws.join("credentials"), credentials).expect("write credentials");
+
+    let scratch = tempfile::tempdir().expect("tempdir").keep();
+    let ssh = SshConfigFile {
+        elements: SshConfigFile::parse_content(""),
+        path: scratch.join("test_config"),
+        crlf: false,
+        bom: false,
+    };
+    let env = Arc::new(crate::runtime::env::Env::for_test(home.path()));
+    let mut app = App::with_env(ssh, env);
+    *app.providers.config_mut() = test_provider_config();
+    app.screen = Screen::ProviderForm {
+        id: crate::providers::config::ProviderConfigId::bare("aws"),
+    };
+    *app.providers.form_mut() = ProviderFormFields {
+        filter: String::new(),
+        label: String::new(),
+        label_entry: false,
+        url: String::new(),
+        token: String::new(),
+        profile: String::new(),
+        project: String::new(),
+        compartment: String::new(),
+        regions: String::new(),
+        alias_prefix: "aws".to_string(),
+        user: "ec2-user".to_string(),
+        identity_file: String::new(),
+        verify_tls: true,
+        auto_sync: true,
+        vault_role: String::new(),
+        vault_addr: String::new(),
+        focused_field: ProviderFormField::Profile,
+        cursor_pos: 0,
+        expanded: true,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
+    };
+    (app, home)
+}
+
+const TWO_PROFILES: &str = "[profile alpha]\nregion = eu-west-1\n[profile beta]\nrole_arn = arn:r\nsource_profile = alpha\n";
+const ALPHA_KEYS: &str = "[alpha]\naws_access_key_id = AKIA\naws_secret_access_key = S\n";
+
+#[test]
+fn test_aws_space_on_profile_opens_the_picker() {
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert!(app.ui.profile_picker().open, "Space must open the picker");
+    assert_eq!(app.ui.profile_picker().list.selected(), Some(0));
+}
+
+#[test]
+fn test_aws_space_on_profile_says_why_it_did_not_open() {
+    // An empty picker reads as a bug, so the warning explains the absence.
+    let (mut app, _home) = make_aws_form_app("", "");
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert!(!app.ui.profile_picker().open);
+    assert_eq!(
+        app.status_center.toast().map(|t| t.text.as_str()),
+        Some(crate::messages::PICKER_NO_AWS_PROFILES)
+    );
+}
+
+#[test]
+fn test_aws_profile_picker_walks_and_takes_the_row() {
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    // Sorted: alpha, beta.
+    let _ = handle_key_event(&mut app, key(KeyCode::Char('j')), &tx);
+    assert_eq!(app.ui.profile_picker().list.selected(), Some(1));
+    let _ = handle_key_event(&mut app, key(KeyCode::Char('k')), &tx);
+    assert_eq!(app.ui.profile_picker().list.selected(), Some(0));
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert!(!app.ui.profile_picker().open, "Enter must close the picker");
+    assert_eq!(app.providers.form().profile, "alpha");
+    assert_eq!(app.providers.form().cursor_pos, "alpha".chars().count());
+    // The profile names a region purple knows, and Regions was empty.
+    assert_eq!(app.providers.form().regions, "eu-west-1");
+}
+
+#[test]
+fn test_aws_profile_picker_esc_leaves_the_field_alone() {
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Esc), &tx);
+    assert!(!app.ui.profile_picker().open);
+    assert_eq!(app.providers.form().profile, "");
+    assert_eq!(app.providers.form().regions, "");
+}
+
+#[test]
+fn test_aws_profile_picker_keeps_a_region_the_user_already_chose() {
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    app.providers.form_mut().regions = "us-east-1".to_string();
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert_eq!(app.providers.form().profile, "alpha");
+    assert_eq!(app.providers.form().regions, "us-east-1");
+}
+
+#[test]
+fn test_aws_profile_picker_leaves_regions_empty_when_the_profile_names_none() {
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    // Row 1 is `beta`, which carries a role but no region.
+    let _ = handle_key_event(&mut app, key(KeyCode::Char('j')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert_eq!(app.providers.form().profile, "beta");
+    assert_eq!(app.providers.form().regions, "");
+}
+
+#[test]
+fn test_aws_profile_picker_skips_a_region_purple_cannot_sync() {
+    // The sync refuses any region outside AWS_REGIONS, so prefilling one
+    // would hand the user a config that fails on save.
+    let (mut app, _home) =
+        make_aws_form_app("[profile alpha]\nregion = xx-nowhere-1\n", ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert_eq!(app.providers.form().profile, "alpha");
+    assert_eq!(app.providers.form().regions, "");
+}
+
+#[test]
+fn test_aws_profile_picker_marks_roles_and_refusals() {
+    // The picker offers every profile it found, so the two facts that decide
+    // what happens next have to be on the row: a role reaches another
+    // account, and a shape purple cannot use will fail on the next sync.
+    let (mut app, _home) = make_aws_form_app(
+        "[profile alpha]\nregion = eu-west-1\n\
+         [profile beta]\nrole_arn = arn:r\nsource_profile = alpha\n\
+         [profile sso-dev]\nsso_start_url = https://x.awsapps.com/start\n",
+        ALPHA_KEYS,
+    );
+    assert!(app.open_profile_picker(), "three profiles must open it");
+    let rows = app.ui.aws_profile_rows();
+    let note = |name: &str| {
+        rows.iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("no row for {name}"))
+            .note
+            .clone()
+    };
+    assert!(note("alpha").is_none(), "a plain profile needs no note");
+    let role = note("beta").expect("a role profile is marked");
+    assert!(role.usable);
+    assert_eq!(role.text, crate::messages::PROFILE_ASSUMES_ROLE);
+    let refused = note("sso-dev").expect("an unusable profile is marked");
+    assert!(!refused.usable);
+    assert_eq!(refused.text, crate::messages::PROFILE_NOTE_SSO);
+}
+
+#[test]
+fn test_aws_profile_picker_rows_are_read_once_when_it_opens() {
+    // Every sibling picker scans on open. The overlay redraws on every tick,
+    // and a row costs two file reads plus a chain resolution, so deriving it
+    // per frame would read a file holding secret material dozens of times a
+    // second.
+    let (mut app, home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert_eq!(app.ui.aws_profile_rows().len(), 2);
+
+    std::fs::write(
+        home.path().join(".aws").join("config"),
+        "[profile gamma]\nregion = eu-west-1\n",
+    )
+    .expect("rewrite config");
+    assert_eq!(
+        app.ui
+            .aws_profile_rows()
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
+        ["alpha", "beta"],
+        "the open overlay keeps the rows it was opened with"
+    );
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Esc), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert!(
+        app.ui.aws_profile_rows().iter().any(|r| r.name == "gamma"),
+        "reopening picks up a profile added since"
+    );
+}
+
+#[test]
+fn test_aws_form_refuses_a_profile_name_it_cannot_put_in_a_proxy_command() {
+    // The name goes into a shell line purple writes, so the form refuses it
+    // rather than letting the next sync fail on it.
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    app.providers.form_mut().profile = "my work".to_string();
+    app.providers.form_mut().regions = "eu-central-1".to_string();
+    app.providers.form_mut().ssm = crate::providers::aws_ssm::SsmMode::Auto;
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+
+    assert!(
+        matches!(app.screen, Screen::ProviderForm { .. }),
+        "the form must stay open on a refusal"
+    );
+    let toast = app.status_center.toast().map(|t| t.text.clone());
+    assert!(
+        toast.as_deref().is_some_and(|t| t.contains("ProxyCommand")),
+        "no refusal toast: {toast:?}"
+    );
+    assert!(
+        app.providers
+            .config()
+            .section_by_id(&crate::providers::config::ProviderConfigId::bare("aws"))
+            .is_none(),
+        "nothing may be saved"
+    );
+}
+
+#[test]
+fn test_aws_form_allows_the_same_name_with_session_manager_off() {
+    // The name only has to be shell-safe because it goes into a command; with
+    // Session Manager off it never does.
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    app.providers.form_mut().profile = "my work".to_string();
+    app.providers.form_mut().regions = "eu-central-1".to_string();
+    app.providers.form_mut().ssm = crate::providers::aws_ssm::SsmMode::Off;
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert!(
+        app.providers
+            .config()
+            .section_by_id(&crate::providers::config::ProviderConfigId::bare("aws"))
+            .is_some(),
+        "off must not validate the profile name"
+    );
+}
+
+#[test]
+fn test_aws_form_warns_when_session_manager_has_no_profile() {
+    // The proxy command can carry a --profile and nothing else, so the aws
+    // CLI falls back to its own credentials for the session. Saving is still
+    // allowed, and the warning outranks the save toast.
+    let (mut app, _home) = make_aws_form_app(TWO_PROFILES, ALPHA_KEYS);
+    app.providers.form_mut().profile = String::new();
+    app.providers.form_mut().token = "AKIAAAAAAAAAAAAAAAAA:secret".to_string();
+    app.providers.form_mut().regions = "eu-central-1".to_string();
+    app.providers.form_mut().ssm = crate::providers::aws_ssm::SsmMode::Auto;
+    let (tx, _rx) = mpsc::channel();
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+
+    assert!(
+        app.providers
+            .config()
+            .section_by_id(&crate::providers::config::ProviderConfigId::bare("aws"))
+            .is_some(),
+        "the save must still go through"
+    );
+    assert_eq!(
+        app.status_center.toast().map(|t| t.text.as_str()),
+        Some(crate::messages::AWS_SSM_WITHOUT_PROFILE)
+    );
 }

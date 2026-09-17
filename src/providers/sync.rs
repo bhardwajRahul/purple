@@ -172,6 +172,10 @@ pub fn sync_provider(
                 let port_changed = remote.port.is_some_and(|p| p != entry.port);
                 let directives_changed = remote.directives.iter().any(|(k, v)| {
                     config.host_directive(existing_alias, k).as_deref() != Some(v.as_str())
+                }) || remote.retract_directives.iter().any(|rule| {
+                    config
+                        .host_directive(existing_alias, &rule.key)
+                        .is_some_and(|local| rule.claims(&local))
                 });
                 let meta_changed = {
                     let mut local: Vec<(&str, &str)> = entry
@@ -407,6 +411,33 @@ pub fn sync_provider(
                             if directives_changed {
                                 for (key, value) in &remote.directives {
                                     let _ = config.set_host_directive(tags_alias, key, value);
+                                }
+                                // An empty value removes the directive, and
+                                // only a value the provider claims as its own
+                                // is removed, so a line the user wrote or
+                                // edited survives. Logged on the write's own
+                                // result: this is a destructive edit to the
+                                // user's config that leaves no other trace,
+                                // and a multi-alias block refuses the write.
+                                for rule in &remote.retract_directives {
+                                    // A key the provider also writes above is
+                                    // one it wants, so a rule that would take
+                                    // that line straight back out is skipped.
+                                    let also_written =
+                                        remote.directives.iter().any(|(key, _)| key == &rule.key);
+                                    let claimed = !also_written
+                                        && config
+                                            .host_directive(tags_alias, &rule.key)
+                                            .is_some_and(|local| rule.claims(&local));
+                                    if claimed
+                                        && config.set_host_directive(tags_alias, &rule.key, "")
+                                    {
+                                        log::debug!(
+                                            "[purple] sync withdrew {} from '{}'",
+                                            rule.key,
+                                            tags_alias
+                                        );
+                                    }
                                 }
                             }
                             result.updated += 1;

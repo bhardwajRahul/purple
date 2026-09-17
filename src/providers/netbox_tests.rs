@@ -451,6 +451,7 @@ fn hostile_netbox_payloads_cannot_corrupt_the_ssh_config() {
         filter: String::new(),
         vault_role: String::new(),
         vault_addr: String::new(),
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let result = sync_provider(
         &mut config,

@@ -1847,9 +1847,57 @@ fn visual_provider_form_label_entry() {
         focused_field: crate::app::ProviderFormField::Label,
         cursor_pos: 0,
         expanded: false,
+        ssm: crate::providers::aws_ssm::SsmMode::default(),
     };
     let actual = render_screen(&mut app);
     assert_golden("provider_form_label_entry", &actual);
+}
+
+#[test]
+fn visual_provider_form_aws_expanded() {
+    // The collapsed golden never showed Profile or Session Manager. Expanded,
+    // Profile has to draw the picker arrow its footer advertises, the way
+    // Identity File and Regions do.
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.open_provider_form(crate::providers::config::ProviderConfigId::bare("aws"));
+    app.providers.form_mut().expanded = true;
+    app.providers.form_mut().profile = String::new();
+    app.providers.form_mut().focused_field = crate::app::ProviderFormField::Profile;
+    app.providers.form_mut().cursor_pos = 0;
+    let actual = render_screen(&mut app);
+    assert_golden("provider_form_aws_expanded", &actual);
+}
+
+#[test]
+fn visual_aws_profile_picker() {
+    // Three rows, three outcomes: plain, reaches another account and one
+    // purple will refuse at sync time.
+    let _g = setup();
+    let home = tempfile::tempdir().expect("tempdir");
+    let aws = home.path().join(".aws");
+    std::fs::create_dir_all(&aws).expect("create .aws");
+    std::fs::write(
+        aws.join("config"),
+        "[profile alpha]\nregion = eu-west-1\n\
+         [profile org-prod]\nrole_arn = arn:aws:iam::1:role/Admin\nsource_profile = alpha\n\
+         [profile sso-dev]\nsso_start_url = https://x.awsapps.com/start\n",
+    )
+    .expect("write config");
+    std::fs::write(
+        aws.join("credentials"),
+        "[alpha]\naws_access_key_id = AKIA\naws_secret_access_key = S\n",
+    )
+    .expect("write credentials");
+
+    let mut app = demo::build_demo_app();
+    app.env = std::sync::Arc::new(crate::runtime::env::Env::for_test(home.path()));
+    app.open_provider_form(crate::providers::config::ProviderConfigId::bare("aws"));
+    app.providers.form_mut().expanded = true;
+    app.providers.form_mut().focused_field = crate::app::ProviderFormField::Profile;
+    app.open_profile_picker();
+    let actual = render_screen(&mut app);
+    assert_golden("aws_profile_picker", &actual);
 }
 
 #[test]

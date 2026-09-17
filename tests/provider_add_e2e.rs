@@ -455,3 +455,273 @@ fn e2e_provider_add_still_requires_a_token_elsewhere() {
         "a rejected add must not write a provider config"
     );
 }
+
+// ── Session Manager and the multi-account hint ───────────────────────
+
+#[test]
+fn e2e_provider_add_aws_saves_the_ssm_mode() {
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &["aws", "--regions", "eu-central-1", "--ssm", "auto"],
+    );
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let saved = saved_config(&fixture);
+    assert!(saved.contains("ssm=auto"), "mode not saved: {saved:?}");
+    // The mode is part of what a save changed, so it lands in the record.
+    assert!(
+        read_log(&fixture).contains("ssm=auto"),
+        "mode not recorded in the log"
+    );
+}
+
+#[test]
+fn e2e_provider_add_aws_ssm_off_is_not_written() {
+    // Off is the default, so writing it would put a line in every AWS config
+    // that says nothing.
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &["aws", "--regions", "eu-central-1", "--ssm", "off"],
+    );
+    assert!(output.status.success());
+    let saved = saved_config(&fixture);
+    assert!(
+        !saved.contains("ssm="),
+        "off should not be written: {saved:?}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_rejects_an_unknown_ssm_mode() {
+    // A typo must not read as off, which would quietly leave every host on
+    // its IP address.
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &["aws", "--regions", "eu-central-1", "--ssm", "enabled"],
+    );
+    assert!(!output.status.success(), "a typo must not save");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("off, auto or always"), "stderr: {stderr}");
+    assert!(saved_config(&fixture).is_empty(), "nothing should be saved");
+}
+
+#[test]
+fn e2e_provider_add_ssm_mode_survives_an_update_that_omits_it() {
+    let fixture = setup();
+    provider_add(
+        &fixture,
+        &["aws", "--regions", "eu-central-1", "--ssm", "always"],
+    );
+    let output = provider_add(&fixture, &["aws", "--user", "ubuntu"]);
+    assert!(output.status.success());
+    let saved = saved_config(&fixture);
+    assert!(
+        saved.contains("ssm=always"),
+        "mode lost on update: {saved:?}"
+    );
+    assert!(
+        saved.contains("user=ubuntu"),
+        "update not applied: {saved:?}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_warns_that_ssm_is_aws_only() {
+    let fixture = setup();
+    let output = provider_add(
+        &fixture,
+        &["digitalocean", "--token", "dop_v1_x", "--ssm", "auto"],
+    );
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--ssm is only used by the AWS provider"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !saved_config(&fixture).contains("ssm="),
+        "mode must be dropped"
+    );
+}
+
+#[test]
+fn e2e_provider_add_names_a_route_that_works_when_it_replaces_a_config() {
+    // Replacing in place is the documented behavior but it reads as data
+    // loss, which is what issue #138 reported. The second add says once how
+    // to keep both, and the route it names has to be one the CLI accepts:
+    // `--label` on a provider that still has a bare config is refused two
+    // guards later, so pointing at it would advise a command that cannot run.
+    let fixture = setup();
+    let first = provider_add(&fixture, &["aws", "--regions", "eu-central-1"]);
+    assert!(first.status.success());
+    assert!(
+        !String::from_utf8_lossy(&first.stdout).contains("keep two side by side"),
+        "a first add has nothing to replace, so it must stay quiet"
+    );
+
+    let second = provider_add(&fixture, &["aws", "--regions", "us-east-1"]);
+    assert!(second.status.success());
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(
+        stdout.contains("keep two side by side"),
+        "hint missing: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--label"),
+        "the hint must not name a flag this config refuses: {stdout}"
+    );
+
+    // The refusal the old hint walked into, asserted so the two stay aligned.
+    let labeled = provider_add(
+        &fixture,
+        &["aws", "--label", "second", "--regions", "us-east-1"],
+    );
+    assert!(
+        !labeled.status.success(),
+        "a labeled add must still be refused while a bare config exists"
+    );
+    let stderr = String::from_utf8_lossy(&labeled.stderr);
+    assert!(stderr.contains("bare config"), "stderr: {stderr}");
+}
+
+#[test]
+fn e2e_provider_add_warns_when_session_manager_has_no_profile() {
+    // The proxy command can carry a --profile and nothing else, so an inline
+    // key pair never reaches the session. Saving is still allowed: the aws
+    // CLI may well find credentials of its own.
+    let fixture = setup();
+    let out = provider_add(
+        &fixture,
+        &[
+            "aws",
+            "--token",
+            "AKIAAAAAAAAAAAAAAAAA:secret",
+            "--regions",
+            "eu-central-1",
+            "--ssm",
+            "auto",
+        ],
+    );
+    assert!(out.status.success(), "the save must still go through");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Session Manager is on without a profile"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_stays_quiet_when_session_manager_has_a_profile() {
+    let fixture = setup();
+    let out = provider_add(
+        &fixture,
+        &[
+            "aws",
+            "--profile",
+            "default",
+            "--regions",
+            "eu-central-1",
+            "--ssm",
+            "auto",
+        ],
+    );
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("Session Manager is on without a profile"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn e2e_provider_add_keeps_two_aws_accounts_apart() {
+    // The multi-account shape issue #138 asked for, end to end.
+    let fixture = setup();
+    let prod = provider_add(
+        &fixture,
+        &[
+            "aws",
+            "--label",
+            "prod",
+            "--profile",
+            "org-prod",
+            "--regions",
+            "eu-west-1",
+        ],
+    );
+    assert!(
+        prod.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&prod.stderr)
+    );
+    let dev = provider_add(
+        &fixture,
+        &[
+            "aws",
+            "--label",
+            "dev",
+            "--profile",
+            "org-dev",
+            "--regions",
+            "eu-west-1",
+        ],
+    );
+    assert!(
+        dev.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&dev.stderr)
+    );
+
+    let saved = saved_config(&fixture);
+    assert!(saved.contains("[aws:prod]"), "got: {saved}");
+    assert!(saved.contains("[aws:dev]"), "got: {saved}");
+    assert!(saved.contains("profile=org-prod"), "got: {saved}");
+    assert!(saved.contains("profile=org-dev"), "got: {saved}");
+    // Distinct prefixes keep the two accounts' aliases apart.
+    assert!(saved.contains("alias_prefix=aws-prod"), "got: {saved}");
+    assert!(saved.contains("alias_prefix=aws-dev"), "got: {saved}");
+}
+
+#[test]
+fn e2e_provider_add_refuses_a_profile_name_it_cannot_put_in_a_proxy_command() {
+    // The name goes into a shell line purple writes, so it is refused at save
+    // time rather than on the next sync.
+    let fixture = setup();
+    let out = provider_add(
+        &fixture,
+        &[
+            "aws",
+            "--profile",
+            "my work",
+            "--regions",
+            "eu-central-1",
+            "--ssm",
+            "auto",
+        ],
+    );
+    assert!(!out.status.success(), "an unsafe name must be refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("ProxyCommand"), "stderr: {stderr}");
+    assert!(
+        !saved_config(&fixture).contains("my work"),
+        "nothing may be written"
+    );
+}
+
+#[test]
+fn e2e_provider_add_allows_the_same_name_with_session_manager_off() {
+    // The name only has to be shell-safe because it goes into a command; with
+    // Session Manager off it never does.
+    let fixture = setup();
+    let out = provider_add(
+        &fixture,
+        &["aws", "--profile", "my work", "--regions", "eu-central-1"],
+    );
+    assert!(out.status.success(), "off must not validate the name");
+}

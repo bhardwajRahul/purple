@@ -12,7 +12,7 @@
 │   ● prod-eu1      │ /  aws_                                                  │hain               │
 │   ● prod-eu2      │ [ ] aws-api-prod  52.47.100.23                           │                   │
 │   ● customer-jump │ [ ] aws-api-staging  52.47.100.24                        │───────────────────╯
-│   ● customer-db-1 │ [ ] aws-worker-eu  3.120.55.17                           │───────────────────╮
+│   ● customer-db-1 │ [ ] aws-worker-eu  i-0a1b2c3d4e5f60003                   │───────────────────╮
 │   ✖ legacy-prod   │ [ ] aws-batch-us  52.47.100.25                           │ago                │
 │   ● aws-api-prod ↗│ [ ] aws-ml-eu  3.120.55.18                               │                   │
 │   ● aws-api-stagin│ [ ] aws-cache-eu  3.120.55.19                            │                   │
@@ -1395,6 +1395,14 @@
 (49,14) fg=Reset bg=Reset mod=DIM
 (50,14) fg=Reset bg=Reset mod=DIM
 (51,14) fg=Reset bg=Reset mod=DIM
+(52,14) fg=Reset bg=Reset mod=DIM
+(53,14) fg=Reset bg=Reset mod=DIM
+(54,14) fg=Reset bg=Reset mod=DIM
+(55,14) fg=Reset bg=Reset mod=DIM
+(56,14) fg=Reset bg=Reset mod=DIM
+(57,14) fg=Reset bg=Reset mod=DIM
+(58,14) fg=Reset bg=Reset mod=DIM
+(59,14) fg=Reset bg=Reset mod=DIM
 (79,14) fg=Reset bg=Reset mod=DIM
 (80,14) fg=DarkGray bg=Reset mod=DIM
 (81,14) fg=DarkGray bg=Reset mod=DIM

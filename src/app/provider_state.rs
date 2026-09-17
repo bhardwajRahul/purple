@@ -417,6 +417,7 @@ impl ProviderState {
                     || self.form.auto_sync != b.auto_sync
                     || self.form.vault_role != b.vault_role
                     || self.form.vault_addr != b.vault_addr
+                    || self.form.ssm != b.ssm
             }
             None => false,
         }
@@ -797,6 +798,7 @@ mod tests {
             auto_sync: false,
             vault_role: "role".into(),
             vault_addr: "https://vault".into(),
+            ssm: crate::providers::aws_ssm::SsmMode::default(),
         };
         let mut s = ProviderState::default();
         s.form.url = b.url.clone();
@@ -851,5 +853,6 @@ mod tests {
         assert_field_change_is_dirty("vault_role", |f| f.vault_role.push('x'));
         assert_field_change_is_dirty("vault_addr", |f| f.vault_addr.push('x'));
         assert_field_change_is_dirty("filter", |f| f.filter.push('x'));
+        assert_field_change_is_dirty("ssm", |f| f.ssm = f.ssm.next());
     }
 }
