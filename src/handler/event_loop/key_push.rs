@@ -1,9 +1,13 @@
 //! Key-push run accumulation. Each completed host pushes a `KeyPushResult`;
 //! once `expected_count` has landed, `finalize_key_push` collapses them into
 //! a single summary toast and refreshes the key list. Stale-run results
-//! (after a cancel) are dropped before they touch the accumulator.
+//! (after an abort) are dropped before they touch the accumulator.
+//!
+//! A host that ended in `Permission denied` on a password-taking server, or
+//! that is not in `known_hosts` yet, is not a finished result: it joins the
+//! prompt queue and the user answers one dialog per host, in picker order.
 
-use crate::app::App;
+use crate::app::{App, KeyPushPrompt};
 
 /// Handle `AppEvent::KeyPushResult`. Accumulates per-host outcomes and
 /// fires the run-completion summary exactly once.
@@ -41,48 +45,131 @@ pub(crate) fn handle_key_push_result(
 }
 
 /// Compute the summary toast / sticky overlay from the accumulated
-/// `KeyPushResult` entries and clear the run state. Pure-ish given the
-/// app reference; called from `handle_key_push_result` once the expected
-/// count is reached.
+/// `KeyPushResult` entries, queue the hosts that still need an answer, then
+/// clear the run state. Called from `handle_key_push_result` once the
+/// expected count is reached.
 fn finalize_key_push(app: &mut App) {
     use crate::key_push::KeyPushOutcome;
     let mut appended = 0usize;
     let mut already = 0usize;
     let mut failed: Vec<(String, String)> = Vec::new();
-    for r in &app.keys.push().results {
+    let mut prompts: Vec<KeyPushPrompt> = Vec::new();
+
+    let results = app.keys.push().results.clone();
+    // Stamped onto every question this run leaves behind, so a later run
+    // pushing a different key cannot answer for the wrong one.
+    let run_key_path = app.keys.push().key_path.clone();
+    for r in &results {
         match &r.outcome {
             KeyPushOutcome::Appended => appended += 1,
             KeyPushOutcome::AlreadyPresent => already += 1,
             KeyPushOutcome::Failed(msg) => failed.push((r.alias.clone(), msg.clone())),
+            KeyPushOutcome::UnknownHostKey { detail, host } => {
+                if app.refusal_is_this_host(&r.alias, host.as_deref()) {
+                    prompts.push(KeyPushPrompt::Trust {
+                        alias: r.alias.clone(),
+                        key_path: run_key_path.clone(),
+                    });
+                } else {
+                    // A jump host on the way there is the one ssh does not
+                    // know. Trusting it under the target's name would record
+                    // the wrong key, so the hop is named instead.
+                    log::debug!(
+                        "[external] key_push: unknown host key came from a hop alias={} hop={:?} err={}",
+                        r.alias,
+                        host,
+                        detail
+                    );
+                    failed.push((
+                        r.alias.clone(),
+                        crate::messages::host_key_trust::hop_is_unknown(
+                            host.as_deref().unwrap_or(&r.alias),
+                        ),
+                    ));
+                }
+            }
+            KeyPushOutcome::NeedsPassword { detail, host } => {
+                let source = app.askpass_source_for(&r.alias);
+                if !app.refusal_is_this_host(&r.alias, host.as_deref()) {
+                    // A jump host refused, not the target. Asking under the
+                    // target's name would store the bastion's password on
+                    // the wrong host and leave the push failing anyway.
+                    log::debug!(
+                        "[external] key_push: a hop refused alias={} hop={:?} err={}",
+                        r.alias,
+                        host,
+                        detail
+                    );
+                    failed.push((
+                        r.alias.clone(),
+                        crate::messages::askpass::hop_refused(host.as_deref().unwrap_or(&r.alias)),
+                    ));
+                } else if crate::app::source_allows_prompt(source.as_deref()) {
+                    prompts.push(KeyPushPrompt::Password {
+                        alias: r.alias.clone(),
+                        key_path: run_key_path.clone(),
+                    });
+                } else {
+                    // A configured vault or command answered and the server
+                    // still said no, so the source itself did not deliver.
+                    // Typing a password would neither unlock the vault nor
+                    // correct the stored entry.
+                    let label = crate::askpass::describe_source(source.as_deref().unwrap_or(""));
+                    log::debug!(
+                        "[external] key_push: source did not deliver alias={} source={} err={}",
+                        r.alias,
+                        label,
+                        detail
+                    );
+                    failed.push((
+                        r.alias.clone(),
+                        crate::messages::askpass::source_did_not_deliver(&r.alias, label),
+                    ));
+                }
+            }
         }
     }
 
-    let total = app.keys.push().results.len();
+    let done = appended + already;
     // Drop the "Pushing X to N hosts..." sticky progress before the
     // outcome toast lands; otherwise the footer would keep advertising
     // a push that already finished.
     app.status_center.clear_sticky_status();
-    if failed.is_empty() {
-        app.notify(crate::messages::key_push_success(appended, already));
-    } else if failed.len() == total {
-        app.notify_sticky_error(crate::messages::key_push_all_failed(total));
-    } else {
-        // Partial-failure: name up to five failed aliases inline so the
-        // user can act on the outcome without grepping the log file. The
-        // toast goes sticky because the headline number alone hides which
-        // hosts need follow-up.
-        let mut body = crate::messages::key_push_partial_failure(appended + already, failed.len());
-        let preview: Vec<&str> = failed.iter().take(5).map(|(a, _)| a.as_str()).collect();
-        if !preview.is_empty() {
-            body.push_str(" Failed: ");
-            body.push_str(&preview.join(", "));
-            if failed.len() > preview.len() {
-                use std::fmt::Write;
-                let _ = write!(body, ", +{} more", failed.len() - preview.len());
+    if !failed.is_empty() {
+        if failed.len() == 1 && done == 0 && prompts.is_empty() {
+            // One host, one reason. The reason itself says more than a
+            // count plus a pointer at the log file.
+            let (alias, why) = &failed[0];
+            app.notify_sticky_error(crate::messages::key_push_single_failure(alias, why));
+        } else if done == 0 && prompts.is_empty() {
+            app.notify_sticky_error(crate::messages::key_push_all_failed(failed.len()));
+        } else {
+            // Partial-failure: name up to five failed aliases inline so the
+            // user can act on the outcome without grepping the log file. The
+            // toast goes sticky because the headline number alone hides which
+            // hosts need follow-up.
+            let mut body = crate::messages::key_push_partial_failure(done, failed.len());
+            let preview: Vec<&str> = failed.iter().take(5).map(|(a, _)| a.as_str()).collect();
+            if !preview.is_empty() {
+                body.push_str(" Failed: ");
+                body.push_str(&preview.join(", "));
+                if failed.len() > preview.len() {
+                    use std::fmt::Write;
+                    let _ = write!(body, ", +{} more", failed.len() - preview.len());
+                }
+                body.push('.');
             }
-            body.push('.');
+            app.notify_sticky_error(body);
         }
-        app.notify_sticky_error(body);
+    } else if !prompts.is_empty() {
+        // The dialog usually says it too, but it waits while the user is in
+        // a form, so the run always reports what it is waiting on.
+        app.notify(crate::messages::key_push_pending_answers(
+            done,
+            prompts.len(),
+        ));
+    } else {
+        app.notify(crate::messages::key_push_success(appended, already));
     }
 
     for (alias, msg) in &failed {
@@ -90,6 +177,16 @@ fn finalize_key_push(app: &mut App) {
         // not a bug in purple. Tag it as such so log filters can split
         // [external] from [purple] like the rest of the codebase.
         log::warn!("[external] key_push: failed alias={} err={}", alias, msg);
+    }
+    for p in &prompts {
+        log::debug!(
+            "[purple] key_push: queued {} dialog for alias={}",
+            match p {
+                KeyPushPrompt::Trust { .. } => "trust",
+                KeyPushPrompt::Password { .. } => "password",
+            },
+            p.alias()
+        );
     }
 
     // Refresh keys so linked_hosts picks up the newly-authorized aliases.
@@ -114,8 +211,63 @@ fn finalize_key_push(app: &mut App) {
         }
     }
 
-    // Reset push state for the next run.
+    // A terminal ssh run can leave a retry marker behind. This run is over,
+    // so clear them and let the retry plus every later operation start
+    // clean. The helper clears every marker in the state directory whatever
+    // alias it is handed.
+    crate::askpass::cleanup_marker(app.env.paths(), "");
+
+    // Reset push state for the next run, then hand the first waiting host
+    // its dialog. Queueing after `finish_run` matters: the retry it leads to
+    // is refused while a run still looks in flight.
     app.keys.push_mut().finish_run();
+    app.keys.push_mut().pending_prompts.extend(prompts);
+    drain_next_key_push_prompt(app);
+}
+
+/// Open the dialog for the next host waiting on an answer. Returns true when
+/// one opened. Nothing happens while a push is in flight, while another
+/// dialog is waiting or while the user sits in a form: two questions are
+/// never on screen together and neither takes the screen from typing. A
+/// question whose key file disappeared meanwhile is dropped and the next
+/// one is tried.
+pub(crate) fn drain_next_key_push_prompt(app: &mut App) -> bool {
+    if app.keys.push().expected_count > 0 {
+        return false;
+    }
+    // Another dialog is waiting, or the user is somewhere a question must
+    // not appear, such as a form. The queue keeps its order and the tick
+    // drains it once they are back on a page that can carry a dialog.
+    if !app.can_open_dialog() {
+        return false;
+    }
+    while let Some(prompt) = app.keys.push_mut().pending_prompts.pop_front() {
+        let key_path = prompt.key_path().to_string();
+        if !app.keys.list().iter().any(|k| k.display_path == key_path) {
+            // Only this question falls: another host may still be waiting
+            // on a key that is present.
+            log::debug!(
+                "[purple] key_push: dropping queued dialog for alias={}, key {} is gone",
+                prompt.alias(),
+                key_path
+            );
+            continue;
+        }
+        let alias = prompt.alias().to_string();
+        let retry = crate::app::PendingRetry::KeyPush {
+            key_path,
+            alias: alias.clone(),
+        };
+        match prompt {
+            KeyPushPrompt::Trust { .. } => app.open_host_key_trust(&alias, retry),
+            KeyPushPrompt::Password { .. } => {
+                let supplied = app.password_was_supplied_for(&alias);
+                app.open_password_prompt(&alias, retry, supplied);
+            }
+        }
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -126,13 +278,18 @@ mod tests {
     use crate::ssh_config::model::SshConfigFile;
 
     fn make_app() -> App {
-        // App::new auto-sandboxes the in-test env so it never touches the
-        // real ~/.purple/ or ~/.ssh/. Create the sandbox `.ssh` so
-        // finalize_key_push's `discover_keys` refresh runs against an empty
-        // dir and the appended>0 path stays exercisable.
+        make_app_with("")
+    }
+
+    /// An App whose SSH config is `config`. App::new auto-sandboxes the
+    /// in-test env so it never touches the real ~/.purple/ or ~/.ssh/. The
+    /// sandbox `.ssh` is created so finalize_key_push's `discover_keys`
+    /// refresh runs against an empty dir and the appended>0 path stays
+    /// exercisable.
+    fn make_app_with(config: &str) -> App {
         let scratch = tempfile::tempdir().expect("tempdir").keep();
         let config = SshConfigFile {
-            elements: SshConfigFile::parse_content(""),
+            elements: SshConfigFile::parse_content(config),
             path: scratch.join("test_config"),
             crlf: false,
             bom: false,
@@ -147,10 +304,50 @@ mod tests {
         app
     }
 
+    /// An App with one host per alias plus a key in the list, so a queued
+    /// dialog survives the "is the key still there" guard in the drain.
+    fn app_with_hosts(config: &str) -> App {
+        let mut app = make_app_with(config);
+        app.keys.list_mut().push(crate::ssh_keys::SshKeyInfo {
+            name: "id_test".into(),
+            display_path: "~/.ssh/id_test".into(),
+            key_type: "ED25519".into(),
+            bits: "256".into(),
+            fingerprint: String::new(),
+            comment: String::new(),
+            linked_hosts: vec![],
+            bishop_art: String::new(),
+            strength_score: 95,
+            encrypted: false,
+            agent_loaded: false,
+            is_certificate: false,
+            mtime_ts: None,
+        });
+        app
+    }
+
     fn result(alias: &str, outcome: KeyPushOutcome) -> KeyPushResult {
         KeyPushResult {
             alias: alias.to_string(),
             outcome,
+        }
+    }
+
+    /// A refusal ssh attributes to `host`. `None` stands for a refusal that
+    /// names nobody.
+    fn needs_password_from(host: Option<&str>) -> KeyPushOutcome {
+        KeyPushOutcome::NeedsPassword {
+            detail: "Permission denied (password).".into(),
+            host: host.map(str::to_string),
+        }
+    }
+
+    /// An unknown host key ssh attributes to `host`. `None` stands for one
+    /// that names nobody.
+    fn unknown_host_key_from(host: Option<&str>) -> KeyPushOutcome {
+        KeyPushOutcome::UnknownHostKey {
+            detail: "No ED25519 host key is known".into(),
+            host: host.map(str::to_string),
         }
     }
 
@@ -257,6 +454,382 @@ mod tests {
             "failed alias must appear in body: {}",
             status.text
         );
+    }
+
+    // --- prompt queue: a host that needs an answer is not a finished result
+
+    /// Land `results` as one complete run of `results.len()` hosts.
+    fn run_with(app: &mut App, results: Vec<KeyPushResult>) {
+        app.keys.push_mut().expected_count = results.len();
+        app.keys.push_mut().key_path = "~/.ssh/id_test".to_string();
+        let last = results.len().saturating_sub(1);
+        for (i, r) in results.into_iter().enumerate() {
+            if i < last {
+                app.keys.push_mut().results.push(r);
+            } else {
+                handle_key_push_result(app, 1, r);
+            }
+        }
+    }
+
+    #[test]
+    fn a_password_failure_opens_the_prompt_instead_of_reporting_a_failure() {
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        run_with(&mut app, vec![result("h1", needs_password_from(None))]);
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+        assert_eq!(
+            app.password_prompt.as_ref().map(|s| s.alias.as_str()),
+            Some("h1")
+        );
+        // The run says what it is waiting on even when the dialog is up,
+        // because the dialog holds back while the user is in a form.
+        let said = app
+            .status_center
+            .toast()
+            .map(|t| t.text.clone())
+            .or_else(|| app.status_center.status().map(|s| s.text.clone()))
+            .expect("the run reports what it waits on");
+        assert!(said.contains("1 host(s) need an answer"), "got: {said}");
+    }
+
+    #[test]
+    fn an_unknown_host_key_opens_the_trust_dialog() {
+        let mut app = app_with_hosts("Host h1\n  HostName db.example.com\n");
+        run_with(&mut app, vec![result("h1", unknown_host_key_from(None))]);
+        match &app.screen {
+            crate::app::Screen::ConfirmHostKeyTrust {
+                alias, hostname, ..
+            } => {
+                assert_eq!(alias, "h1");
+                assert_eq!(hostname, "db.example.com");
+            }
+            other => panic!("expected the trust dialog, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_jump_host_refusal_does_not_ask_for_the_targets_password() {
+        // ssh authenticates each hop, and the bastion is the one that said
+        // no. A prompt under the target's name would store the bastion's
+        // password on the wrong host and the push would still fail.
+        let mut app = app_with_hosts(
+            "Host bast\n  HostName bastion.example.com\n\
+             Host h1\n  HostName db.example.com\n  ProxyJump bast\n",
+        );
+        run_with(
+            &mut app,
+            vec![result(
+                "h1",
+                needs_password_from(Some("bastion.example.com")),
+            )],
+        );
+        assert_eq!(app.screen, crate::app::Screen::HostList);
+        assert!(app.password_prompt.is_none(), "no dialog for the target");
+        let said = app
+            .status_center
+            .status()
+            .map(|s| s.text.clone())
+            .or_else(|| app.status_center.toast().map(|t| t.text.clone()))
+            .expect("the failure is reported");
+        assert!(said.contains("h1"), "got: {said}");
+    }
+
+    #[test]
+    fn the_targets_own_refusal_behind_a_jump_host_still_asks() {
+        // Same chain, and this time the target itself is the one asking.
+        let mut app = app_with_hosts(
+            "Host bast\n  HostName bastion.example.com\n\
+             Host h1\n  HostName db.example.com\n  ProxyJump bast\n",
+        );
+        run_with(
+            &mut app,
+            vec![result("h1", needs_password_from(Some("db.example.com")))],
+        );
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+        assert_eq!(
+            app.password_prompt.as_ref().map(|s| s.alias.as_str()),
+            Some("h1")
+        );
+    }
+
+    #[test]
+    fn a_refusal_naming_nobody_still_asks_on_a_host_with_no_jump() {
+        // Without a ProxyJump there is only one host that could have
+        // refused, so the name ssh printed does not have to be read.
+        let mut app = app_with_hosts("Host h1\n  HostName db.example.com\n");
+        run_with(&mut app, vec![result("h1", needs_password_from(None))]);
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+    }
+
+    #[test]
+    fn an_unknown_jump_host_key_is_not_trusted_under_the_targets_name() {
+        // Trusting here would record the bastion's key against the target,
+        // so purple names the hop and leaves the choice there.
+        let mut app = app_with_hosts(
+            "Host bast\n  HostName bastion.example.com\n\
+             Host h1\n  HostName db.example.com\n  ProxyJump bast\n",
+        );
+        run_with(
+            &mut app,
+            vec![result(
+                "h1",
+                unknown_host_key_from(Some("bastion.example.com")),
+            )],
+        );
+        assert_eq!(app.screen, crate::app::Screen::HostList);
+        let said = app
+            .status_center
+            .status()
+            .map(|s| s.text.clone())
+            .or_else(|| app.status_center.toast().map(|t| t.text.clone()))
+            .expect("the failure is reported");
+        assert!(said.contains("h1"), "got: {said}");
+    }
+
+    #[test]
+    fn a_bracketed_host_and_port_still_matches_the_target() {
+        // ssh writes `[host]:port` when the port is not 22. The bracketed
+        // form must still read as the target rather than as a hop.
+        let mut app = app_with_hosts(
+            "Host bast\n  HostName bastion.example.com\n\
+             Host h1\n  HostName db.example.com\n  Port 2222\n  ProxyJump bast\n",
+        );
+        run_with(
+            &mut app,
+            vec![result(
+                "h1",
+                unknown_host_key_from(Some("[db.example.com]:2222")),
+            )],
+        );
+        assert!(
+            matches!(app.screen, crate::app::Screen::ConfirmHostKeyTrust { .. }),
+            "got: {:?}",
+            app.screen
+        );
+    }
+
+    #[test]
+    fn a_dialog_waits_while_the_user_is_in_a_form() {
+        // Taking the screen from a form would send the keys they are still
+        // typing into the password field, and Enter would submit them.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        app.set_screen(crate::app::Screen::AddHost);
+        run_with(&mut app, vec![result("h1", needs_password_from(None))]);
+        assert_eq!(app.screen, crate::app::Screen::AddHost, "the form stands");
+        assert!(app.password_prompt.is_none());
+        assert_eq!(
+            app.keys.push().pending_prompts.len(),
+            1,
+            "the host keeps its turn"
+        );
+        // Back on a page that can carry a dialog, the question opens.
+        app.set_screen(crate::app::Screen::HostList);
+        assert!(drain_next_key_push_prompt(&mut app));
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+    }
+
+    #[test]
+    fn a_configured_source_that_did_not_deliver_gets_no_prompt() {
+        // Bitwarden answered and the server still said no, so a typed
+        // password would not unlock the vault or fix the stored entry.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n  # purple:askpass bw:item\n");
+        run_with(&mut app, vec![result("h1", needs_password_from(None))]);
+        assert_eq!(app.screen, crate::app::Screen::HostList);
+        assert!(app.password_prompt.is_none());
+        let status = app.status_center.status().expect("sticky failure");
+        assert!(status.is_error(), "got: {}", status.text);
+    }
+
+    #[test]
+    fn a_keychain_source_still_gets_the_prompt() {
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n  # purple:askpass keychain\n");
+        run_with(&mut app, vec![result("h1", needs_password_from(None))]);
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+        assert!(
+            app.password_prompt.as_ref().unwrap().source_is_keychain,
+            "a keychain host needs no second config write on submit"
+        );
+    }
+
+    #[test]
+    fn hosts_that_landed_are_reported_before_the_dialog_opens() {
+        // `AlreadyPresent` rather than `Appended`: an append rescans the ssh
+        // directory, and the sandbox holds no key file, so the seeded key
+        // would vanish from the list for reasons that have nothing to do
+        // with what this test is about.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\nHost h2\n  HostName 2.2.2.2\n");
+        run_with(
+            &mut app,
+            vec![
+                result("h1", KeyPushOutcome::AlreadyPresent),
+                result("h2", needs_password_from(None)),
+            ],
+        );
+        let toast = app.status_center.toast().expect("summary toast");
+        assert!(toast.text.contains('1'), "got: {}", toast.text);
+        assert_eq!(app.screen, crate::app::Screen::PasswordPrompt);
+    }
+
+    #[test]
+    fn queued_hosts_are_answered_one_at_a_time_in_run_order() {
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\nHost h2\n  HostName 2.2.2.2\n");
+        run_with(
+            &mut app,
+            vec![
+                result("h1", needs_password_from(None)),
+                result("h2", needs_password_from(None)),
+            ],
+        );
+        assert_eq!(
+            app.password_prompt.as_ref().map(|s| s.alias.as_str()),
+            Some("h1"),
+            "the first host of the run asks first"
+        );
+        assert_eq!(app.keys.push().pending_prompts.len(), 1, "h2 still waits");
+        // Answering h1 (here: dismissing it) hands the dialog to h2. The
+        // screen has to come back too: while a dialog is still on screen the
+        // drain deliberately holds the queue.
+        app.password_prompt = None;
+        app.screen = crate::app::Screen::HostList;
+        assert!(drain_next_key_push_prompt(&mut app));
+        assert_eq!(
+            app.password_prompt.as_ref().map(|s| s.alias.as_str()),
+            Some("h2")
+        );
+        assert!(app.keys.push().pending_prompts.is_empty());
+        assert!(!drain_next_key_push_prompt(&mut app), "queue is empty");
+    }
+
+    #[test]
+    fn no_dialog_opens_over_another_one() {
+        // A file-browser prompt is already waiting. Opening the key-push
+        // dialog over it would drop the retry it holds.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        app.keys.push_mut().key_path = "~/.ssh/id_test".to_string();
+        app.open_password_prompt(
+            "h1",
+            crate::app::PendingRetry::FileBrowserListing {
+                alias: "h1".into(),
+                path: "/".into(),
+            },
+            false,
+        );
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h1".into(),
+                key_path: "~/.ssh/id_test".into(),
+            });
+        assert!(!drain_next_key_push_prompt(&mut app));
+        assert_eq!(app.keys.push().pending_prompts.len(), 1, "the host waits");
+        assert!(matches!(
+            app.password_prompt.as_ref().map(|s| s.retry.clone()),
+            Some(crate::app::PendingRetry::FileBrowserListing { .. })
+        ));
+    }
+
+    #[test]
+    fn no_dialog_opens_while_a_run_is_in_flight() {
+        // A retry for one host must not be interrupted by the next host's
+        // dialog; that one opens when the retry finalizes.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h1".into(),
+                key_path: "~/.ssh/id_test".into(),
+            });
+        app.keys.push_mut().expected_count = 1;
+        assert!(!drain_next_key_push_prompt(&mut app));
+        assert_eq!(app.keys.push().pending_prompts.len(), 1);
+    }
+
+    #[test]
+    fn a_vanished_key_drops_only_its_own_question() {
+        // Two hosts wait. Each holds a different key and one of those keys
+        // is gone. Dropping the whole queue would silently lose the host
+        // whose key is still there.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\nHost h2\n  HostName 2.2.2.2\n");
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h1".into(),
+                key_path: "~/.ssh/id_gone".into(),
+            });
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h2".into(),
+                key_path: "~/.ssh/id_test".into(),
+            });
+        assert!(drain_next_key_push_prompt(&mut app), "h2 keeps its turn");
+        assert_eq!(
+            app.password_prompt.as_ref().map(|s| s.alias.as_str()),
+            Some("h2")
+        );
+        assert!(app.keys.push().pending_prompts.is_empty());
+    }
+
+    #[test]
+    fn a_queued_question_is_answered_for_the_key_it_was_queued_for() {
+        // A later run overwrites the state's key_path. A question still
+        // waiting from an earlier run must not be answered for that new key.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        app.keys.list_mut().push(crate::ssh_keys::SshKeyInfo {
+            name: "id_other".into(),
+            display_path: "~/.ssh/id_other".into(),
+            key_type: "ED25519".into(),
+            bits: "256".into(),
+            fingerprint: String::new(),
+            comment: String::new(),
+            linked_hosts: vec![],
+            bishop_art: String::new(),
+            strength_score: 95,
+            encrypted: false,
+            agent_loaded: false,
+            is_certificate: false,
+            mtime_ts: None,
+        });
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h1".into(),
+                key_path: "~/.ssh/id_test".into(),
+            });
+        // The state now points at the other key, as a later run would leave it.
+        app.keys.push_mut().key_path = "~/.ssh/id_other".to_string();
+        assert!(drain_next_key_push_prompt(&mut app));
+        let retry = app.password_prompt.as_ref().map(|s| s.retry.clone());
+        assert!(
+            matches!(
+                retry,
+                Some(crate::app::PendingRetry::KeyPush { ref key_path, .. })
+                    if key_path == "~/.ssh/id_test"
+            ),
+            "got: {retry:?}"
+        );
+    }
+
+    #[test]
+    fn a_changed_host_key_stays_a_plain_failure() {
+        // A changed key is a security event, so it keeps the failure toast
+        // and never gets an automatic retry.
+        let mut app = app_with_hosts("Host h1\n  HostName 1.1.1.1\n");
+        run_with(
+            &mut app,
+            vec![result(
+                "h1",
+                KeyPushOutcome::Failed("Host key verification failed.".into()),
+            )],
+        );
+        assert_eq!(app.screen, crate::app::Screen::HostList);
+        assert!(app.keys.push().pending_prompts.is_empty());
+        assert!(app.status_center.status().expect("sticky").is_error());
     }
 
     #[test]

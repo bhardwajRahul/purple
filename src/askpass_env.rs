@@ -5,6 +5,71 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Alias a one-shot password belongs to. Set on a retry run together with
+/// `ONESHOT_SECRET_VAR`, never in argv. The askpass subprocess hands the
+/// secret out only when the hop it authenticates resolves to this alias, so
+/// a ProxyJump bastion never receives the target's password.
+pub(crate) const ONESHOT_ALIAS_VAR: &str = "PURPLE_ASKPASS_ONESHOT_ALIAS";
+
+/// The one-shot password itself. Lives only in the environment of the ssh
+/// child for one run, following the `PURPLE_BW_MASTER` precedent.
+pub(crate) const ONESHOT_SECRET_VAR: &str = "PURPLE_ASKPASS_ONESHOT";
+
+/// Set on every background ssh, which also carries
+/// `SINGLE_PASSWORD_PROMPT_OPT`. ssh then asks once per hop, so the retry
+/// marker has no loop left to break and arming one would only refuse the
+/// second ssh of a two-step operation, such as the remote home lookup
+/// followed by its listing. The interactive terminal path sets nothing and
+/// keeps the marker.
+pub(crate) const SINGLE_ATTEMPT_VAR: &str = "PURPLE_ASKPASS_SINGLE_ATTEMPT";
+
+/// `-o` value that makes ssh fail at once instead of asking on the tty.
+/// Disables the `password` and `keyboard-interactive` methods, so it is
+/// only set when no password source and no session password is available.
+pub(crate) const BATCH_MODE_OPT: &str = "BatchMode=yes";
+
+/// `-o` value that limits ssh to one password attempt. A background run has
+/// exactly one answer to give: a vault returns the same value each time, and
+/// a password typed in the TUI is handed out once. Asking again only sends
+/// an empty attempt and burns another failed login on a server that counts
+/// them. The interactive terminal path keeps ssh's default of three, where
+/// a person really can type a different password.
+pub(crate) const SINGLE_PASSWORD_PROMPT_OPT: &str = "NumberOfPasswordPrompts=1";
+
+/// True when a background ssh child has no way to answer a password prompt:
+/// no configured source and no password typed earlier this session. The
+/// caller then passes `BATCH_MODE_OPT` so ssh exits with `Permission denied`
+/// instead of blocking on a hidden prompt.
+pub(crate) fn needs_batch_mode(askpass: Option<&str>, session_password: Option<&str>) -> bool {
+    askpass.is_none() && session_password.is_none()
+}
+
+/// Wire every authentication input a background ssh child can use: the
+/// askpass program when a source or a session password exists, the one-shot
+/// variables for a session password and the Bitwarden session token. Every
+/// caller is a background run, so the single-attempt flag rides along with
+/// the askpass program. Args and stdio stay with the caller.
+pub(crate) fn configure_auth(
+    cmd: &mut Command,
+    alias: &str,
+    config_path: &Path,
+    askpass: Option<&str>,
+    session_password: Option<&str>,
+    bw_session: Option<&str>,
+) {
+    if askpass.is_some() || session_password.is_some() {
+        configure_ssh_command(cmd, alias, config_path);
+        cmd.env(SINGLE_ATTEMPT_VAR, "1");
+    }
+    if let Some(secret) = session_password {
+        cmd.env(ONESHOT_ALIAS_VAR, alias)
+            .env(ONESHOT_SECRET_VAR, secret);
+    }
+    if let Some(token) = bw_session {
+        cmd.env("BW_SESSION", token);
+    }
+}
+
 /// Configure an `ssh` or `scp` [`Command`] so the child process invokes purple
 /// as its SSH_ASKPASS program. Sets:
 ///
@@ -118,5 +183,100 @@ mod tests {
         configure_ssh_command(&mut cmd, "myhost", &PathBuf::from("/tmp/cfg"));
         let envs = snapshot_envs(&cmd);
         assert!(!envs.contains_key(&OsString::from("BW_SESSION")));
+    }
+
+    #[test]
+    fn needs_batch_mode_only_without_source_and_session_password() {
+        assert!(needs_batch_mode(None, None));
+        assert!(!needs_batch_mode(Some("keychain"), None));
+        assert!(!needs_batch_mode(None, Some("hunter2")));
+        assert!(!needs_batch_mode(Some("bw:item"), Some("hunter2")));
+    }
+
+    #[test]
+    fn configure_auth_without_inputs_sets_nothing() {
+        let mut cmd = Command::new("ssh");
+        configure_auth(&mut cmd, "h", &PathBuf::from("/tmp/cfg"), None, None, None);
+        assert!(snapshot_envs(&cmd).is_empty());
+    }
+
+    #[test]
+    fn configure_auth_with_source_wires_askpass_only() {
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            Some("keychain"),
+            None,
+            None,
+        );
+        let envs = snapshot_envs(&cmd);
+        assert_eq!(
+            envs.get(&OsString::from("SSH_ASKPASS_REQUIRE")),
+            Some(&OsString::from("force"))
+        );
+        assert!(!envs.contains_key(&OsString::from(ONESHOT_SECRET_VAR)));
+        assert!(!envs.contains_key(&OsString::from(ONESHOT_ALIAS_VAR)));
+    }
+
+    #[test]
+    fn configure_auth_with_session_password_wires_askpass_and_oneshot() {
+        // A session password travels through askpass too, so the askpass
+        // program must be wired even when the host has no source.
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "web1",
+            &PathBuf::from("/tmp/cfg"),
+            None,
+            Some("hunter2"),
+            None,
+        );
+        let envs = snapshot_envs(&cmd);
+        assert_eq!(
+            envs.get(&OsString::from("SSH_ASKPASS_REQUIRE")),
+            Some(&OsString::from("force"))
+        );
+        assert_eq!(
+            envs.get(&OsString::from(ONESHOT_ALIAS_VAR)),
+            Some(&OsString::from("web1"))
+        );
+        assert_eq!(
+            envs.get(&OsString::from(ONESHOT_SECRET_VAR)),
+            Some(&OsString::from("hunter2"))
+        );
+    }
+
+    #[test]
+    fn configure_auth_forwards_bw_session() {
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            Some("bw:item"),
+            None,
+            Some("tok"),
+        );
+        let envs = snapshot_envs(&cmd);
+        assert_eq!(
+            envs.get(&OsString::from("BW_SESSION")),
+            Some(&OsString::from("tok"))
+        );
+    }
+
+    #[test]
+    fn oneshot_secret_never_lands_in_argv() {
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            None,
+            Some("hunter2"),
+            None,
+        );
+        assert!(cmd.get_args().all(|a| a != "hunter2"));
     }
 }

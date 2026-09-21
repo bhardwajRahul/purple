@@ -21,6 +21,9 @@ struct FileBrowserCtx<'a> {
     tunnels: &'a TunnelState,
     screen: &'a mut Screen,
     bw_session: Option<&'a str>,
+    /// Passwords typed in the TUI this session, read so every listing and
+    /// transfer after the prompt reuses the one the user already gave.
+    session_passwords: &'a crate::app::SessionPasswords,
     config_path: &'a std::path::Path,
     env: std::sync::Arc<crate::runtime::env::Env>,
     effects: Effects,
@@ -38,6 +41,31 @@ impl Effectful for FileBrowserCtx<'_> {
     }
 }
 
+/// The SSH context a file-browser listing or transfer runs with. Takes the
+/// slice fields separately rather than the whole `FileBrowserCtx` so it can
+/// be called while the session borrow is live, the way `fb_enter` does.
+#[allow(clippy::too_many_arguments)]
+fn fb_ssh_context(
+    alias: &str,
+    askpass: Option<String>,
+    tunnels: &TunnelState,
+    session_passwords: &crate::app::SessionPasswords,
+    bw_session: Option<&str>,
+    config_path: &std::path::Path,
+    env: &std::sync::Arc<crate::runtime::env::Env>,
+) -> crate::ssh_context::OwnedSshContext {
+    crate::ssh_context::OwnedSshContext {
+        alias: alias.to_string(),
+        config_path: config_path.to_path_buf(),
+        askpass,
+        session_password: session_passwords.get(alias).cloned(),
+        bw_session: bw_session.map(str::to_string),
+        has_tunnel: tunnels.active_contains(alias),
+        trust_new_host_key: false,
+        env: std::sync::Arc::clone(env),
+    }
+}
+
 pub(super) fn handle_key(app: &mut App, key: KeyEvent, events_tx: &mpsc::Sender<AppEvent>) {
     let effects = {
         let mut ctx = FileBrowserCtx {
@@ -45,6 +73,7 @@ pub(super) fn handle_key(app: &mut App, key: KeyEvent, events_tx: &mpsc::Sender<
             tunnels: &app.tunnels,
             screen: &mut app.screen,
             bw_session: app.bw_session.as_deref(),
+            session_passwords: &app.session_passwords,
             config_path: app.reload.config_path(),
             env: std::sync::Arc::clone(&app.env),
             effects: Effects::default(),
@@ -91,7 +120,6 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                 };
                 let alias = fb.alias.clone();
                 let askpass = fb.askpass.clone();
-                let has_active_tunnel = ctx.tunnels.active_contains(&alias);
                 let local_path = fb.local_path.clone();
                 let remote_path = if fb.remote_path.ends_with('/') {
                     fb.remote_path.clone()
@@ -125,25 +153,23 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                     local_path.display(),
                     remote_path
                 );
-                let config_path = ctx.config_path.to_path_buf();
-                let env = std::sync::Arc::clone(&ctx.env);
-                let bw = ctx.bw_session.map(str::to_string);
+                let ssh_ctx = fb_ssh_context(
+                    &alias,
+                    askpass,
+                    ctx.tunnels,
+                    ctx.session_passwords,
+                    ctx.bw_session,
+                    ctx.config_path,
+                    &ctx.env,
+                );
                 let tx = events_tx.clone();
                 let direction_str = direction.to_string();
                 std::thread::spawn(move || {
                     debug!(
                         "[external] SCP command: scp -F {} ...",
-                        config_path.display()
+                        ssh_ctx.config_path.display()
                     );
-                    let result = crate::file_browser::run_scp(
-                        &alias,
-                        &config_path,
-                        &env,
-                        askpass.as_deref(),
-                        bw.as_deref(),
-                        has_active_tunnel,
-                        &scp_args,
-                    );
+                    let result = crate::file_browser::run_scp(&ssh_ctx.borrow(), &scp_args);
                     let (success, message) = match result {
                         Ok(r) if r.status.success() => {
                             info!("[external] SCP transfer completed: {direction_str} {alias}");
@@ -167,7 +193,7 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                         Err(e) => (false, crate::messages::scp_spawn_failed(&e)),
                     };
                     let _ = tx.send(crate::event::AppEvent::ScpComplete {
-                        alias,
+                        alias: ssh_ctx.alias,
                         success,
                         message,
                     });
@@ -242,11 +268,13 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
             let env = std::sync::Arc::clone(&ctx.env);
             let bw_session = ctx.bw_session.map(str::to_string);
             let has_tunnel = ctx.tunnels.active_contains(&fb.alias);
+            let session_password = ctx.session_passwords.get(&fb.alias).cloned();
             fb_enter(
                 fb,
                 &config_path,
                 env,
                 bw_session.as_deref(),
+                session_password.as_deref(),
                 has_tunnel,
                 events_tx,
             );
@@ -294,15 +322,15 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                         fb.remote_selected.clear();
                         fb.remote_error = None;
                         fb.remote_list_state = ratatui::widgets::ListState::default();
-                        let alias = fb.alias.clone();
-                        let ssh_ctx = crate::ssh_context::OwnedSshContext {
-                            alias,
-                            config_path: ctx.config_path.to_path_buf(),
-                            askpass: fb.askpass.clone(),
-                            bw_session: ctx.bw_session.map(str::to_string),
-                            has_tunnel: ctx.tunnels.active_contains(&fb.alias),
-                            env: std::sync::Arc::clone(&ctx.env),
-                        };
+                        let ssh_ctx = fb_ssh_context(
+                            &fb.alias,
+                            fb.askpass.clone(),
+                            ctx.tunnels,
+                            ctx.session_passwords,
+                            ctx.bw_session,
+                            ctx.config_path,
+                            &ctx.env,
+                        );
                         let show_hidden = fb.show_hidden;
                         let sort = fb.sort;
                         crate::file_browser::spawn_remote_listing(
@@ -400,15 +428,15 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                 fb.remote_selected.clear();
                 fb.remote_error = None;
                 fb.remote_list_state = ratatui::widgets::ListState::default();
-                let alias = fb.alias.clone();
-                let ssh_ctx = crate::ssh_context::OwnedSshContext {
-                    alias,
-                    config_path: ctx.config_path.to_path_buf(),
-                    askpass: fb.askpass.clone(),
-                    bw_session: ctx.bw_session.map(str::to_string),
-                    has_tunnel: ctx.tunnels.active_contains(&fb.alias),
-                    env: std::sync::Arc::clone(&ctx.env),
-                };
+                let ssh_ctx = fb_ssh_context(
+                    &fb.alias,
+                    fb.askpass.clone(),
+                    ctx.tunnels,
+                    ctx.session_passwords,
+                    ctx.bw_session,
+                    ctx.config_path,
+                    &ctx.env,
+                );
                 let path = fb.remote_path.clone();
                 let show_hidden = fb.show_hidden;
                 let sort = fb.sort;
@@ -441,15 +469,15 @@ fn file_browser_key(ctx: &mut FileBrowserCtx, key: KeyEvent, events_tx: &mpsc::S
                 fb.remote_selected.clear();
                 fb.remote_error = None;
                 fb.remote_list_state = ratatui::widgets::ListState::default();
-                let alias = fb.alias.clone();
-                let ssh_ctx = crate::ssh_context::OwnedSshContext {
-                    alias,
-                    config_path: ctx.config_path.to_path_buf(),
-                    askpass: fb.askpass.clone(),
-                    bw_session: ctx.bw_session.map(str::to_string),
-                    has_tunnel: ctx.tunnels.active_contains(&fb.alias),
-                    env: std::sync::Arc::clone(&ctx.env),
-                };
+                let ssh_ctx = fb_ssh_context(
+                    &fb.alias,
+                    fb.askpass.clone(),
+                    ctx.tunnels,
+                    ctx.session_passwords,
+                    ctx.bw_session,
+                    ctx.config_path,
+                    &ctx.env,
+                );
                 let path = fb.remote_path.clone();
                 let show_hidden = fb.show_hidden;
                 let sort = fb.sort;
@@ -497,13 +525,15 @@ pub(super) fn fb_send(
 
 /// `Enter` in the file browser: navigate into a directory, ascend via the
 /// `..` row, or stage an scp copy of the selection. `config_path`,
-/// `bw_session` and `has_tunnel` are resolved by the caller because `fb`
-/// borrows the same `App`.
+/// `bw_session`, `session_password` and `has_tunnel` are resolved by the
+/// caller because `fb` borrows the same `App`.
+#[allow(clippy::too_many_arguments)]
 fn fb_enter(
     fb: &mut crate::file_browser::FileBrowserSession,
     config_path: &std::path::Path,
     env: std::sync::Arc<crate::runtime::env::Env>,
     bw_session: Option<&str>,
+    session_password: Option<&str>,
     has_tunnel: bool,
     events_tx: &mpsc::Sender<AppEvent>,
 ) {
@@ -596,13 +626,14 @@ fn fb_enter(
                     fb.remote_selected.clear();
                     fb.remote_error = None;
                     fb.remote_list_state = ratatui::widgets::ListState::default();
-                    let alias = fb.alias.clone();
                     let ctx = crate::ssh_context::OwnedSshContext {
-                        alias,
+                        alias: fb.alias.clone(),
                         config_path: config_path.to_path_buf(),
                         askpass: fb.askpass.clone(),
+                        session_password: session_password.map(str::to_string),
                         bw_session: bw_session.map(str::to_string),
                         has_tunnel,
+                        trust_new_host_key: false,
                         env: std::sync::Arc::clone(&env),
                     };
                     let show_hidden = fb.show_hidden;
@@ -640,13 +671,14 @@ fn fb_enter(
                     fb.remote_selected.clear();
                     fb.remote_error = None;
                     fb.remote_list_state = ratatui::widgets::ListState::default();
-                    let alias = fb.alias.clone();
                     let ctx = crate::ssh_context::OwnedSshContext {
-                        alias,
+                        alias: fb.alias.clone(),
                         config_path: config_path.to_path_buf(),
                         askpass: fb.askpass.clone(),
+                        session_password: session_password.map(str::to_string),
                         bw_session: bw_session.map(str::to_string),
                         has_tunnel,
+                        trust_new_host_key: false,
                         env: std::sync::Arc::clone(&env),
                     };
                     let show_hidden = fb.show_hidden;

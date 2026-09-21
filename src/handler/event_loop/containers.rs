@@ -146,8 +146,10 @@ pub(crate) fn drive_refresh_batch(app: &mut App, alias: &str, events_tx: &mpsc::
             alias: item.alias,
             config_path,
             askpass: item.askpass,
+            session_password: item.session_password,
             bw_session,
             has_tunnel: item.has_tunnel,
+            trust_new_host_key: false,
             env: std::sync::Arc::clone(&app.env),
         };
         let tx = events_tx.clone();
@@ -416,20 +418,12 @@ pub(crate) fn handle_container_action_complete(
     };
     if let Some((refresh_alias, askpass, cached_runtime)) = should_refresh {
         app.notify(crate::messages::container_action_complete(action.as_str()));
-        let has_tunnel = app.tunnels.active_contains(&refresh_alias);
         // Mark in-flight so the scroll-driven auto-refresh does not
         // double-spawn for the same alias while this post-action
         // listing is still pending.
         app.containers_overview
             .mark_auto_list_pending(refresh_alias.clone());
-        let ctx = crate::ssh_context::OwnedSshContext {
-            alias: refresh_alias,
-            config_path: app.reload.config_path().to_path_buf(),
-            askpass,
-            bw_session: app.bw_session.clone(),
-            has_tunnel,
-            env: std::sync::Arc::clone(&app.env),
-        };
+        let ctx = app.ssh_context_for(refresh_alias, askpass);
         let tx = events_tx.clone();
         containers::spawn_container_listing(ctx, cached_runtime, move |a, r| {
             let _ = tx.send(AppEvent::ContainerListing {

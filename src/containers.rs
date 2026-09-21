@@ -501,16 +501,7 @@ pub fn fetch_containers(
     cached_runtime: Option<ContainerRuntime>,
 ) -> Result<ContainerListing, ContainerError> {
     let command = container_list_command(cached_runtime);
-    let result = crate::snippet::run_snippet(
-        ctx.alias,
-        ctx.config_path,
-        ctx.env,
-        &command,
-        ctx.askpass,
-        ctx.bw_session,
-        true,
-        ctx.has_tunnel,
-    );
+    let result = crate::snippet::run_snippet_ctx(ctx, &command, true);
     let alias = ctx.alias;
     match result {
         Ok(r) if r.status.success() => {
@@ -557,15 +548,7 @@ pub fn spawn_container_listing<F>(
     F: FnOnce(String, Result<ContainerListing, ContainerError>) + Send + 'static,
 {
     std::thread::spawn(move || {
-        let borrowed = SshContext {
-            alias: &ctx.alias,
-            config_path: &ctx.config_path,
-            askpass: ctx.askpass.as_deref(),
-            bw_session: ctx.bw_session.as_deref(),
-            has_tunnel: ctx.has_tunnel,
-            env: &ctx.env,
-        };
-        let result = fetch_containers(&borrowed, cached_runtime);
+        let result = fetch_containers(&ctx.borrow(), cached_runtime);
         send(ctx.alias, result);
     });
 }
@@ -598,16 +581,7 @@ pub fn spawn_container_action<F>(
             action.as_str()
         );
         let command = container_action_command(runtime, action, &container_id);
-        let result = crate::snippet::run_snippet(
-            alias,
-            &ctx.config_path,
-            &ctx.env,
-            &command,
-            ctx.askpass.as_deref(),
-            ctx.bw_session.as_deref(),
-            true,
-            ctx.has_tunnel,
-        );
+        let result = crate::snippet::run_snippet_ctx(&ctx.borrow(), &command, true);
         match result {
             Ok(r) if r.status.success() => send(ctx.alias, action, Ok(())),
             Ok(r) => {
@@ -1014,16 +988,7 @@ pub fn fetch_container_inspect(
 ) -> Result<ContainerInspect, String> {
     validate_container_id(container_id)?;
     let command = container_inspect_command(runtime, container_id);
-    let result = crate::snippet::run_snippet(
-        ctx.alias,
-        ctx.config_path,
-        ctx.env,
-        &command,
-        ctx.askpass,
-        ctx.bw_session,
-        true,
-        ctx.has_tunnel,
-    );
+    let result = crate::snippet::run_snippet_ctx(ctx, &command, true);
     match result {
         Ok(r) if r.status.success() => parse_container_inspect(&r.stdout),
         Ok(r) => Err(crate::messages::container_command_failed(
@@ -1044,15 +1009,7 @@ pub fn spawn_container_inspect_listing<F>(
     F: FnOnce(String, String, Result<ContainerInspect, String>) + Send + 'static,
 {
     std::thread::spawn(move || {
-        let borrowed = SshContext {
-            alias: &ctx.alias,
-            config_path: &ctx.config_path,
-            askpass: ctx.askpass.as_deref(),
-            bw_session: ctx.bw_session.as_deref(),
-            has_tunnel: ctx.has_tunnel,
-            env: &ctx.env,
-        };
-        let result = fetch_container_inspect(&borrowed, runtime, &container_id);
+        let result = fetch_container_inspect(&ctx.borrow(), runtime, &container_id);
         send(ctx.alias, container_id, result);
     });
 }
@@ -1079,16 +1036,7 @@ pub fn fetch_container_logs(
 ) -> Result<Vec<String>, String> {
     validate_container_id(container_id)?;
     let command = container_logs_command(runtime, container_id, tail);
-    let result = crate::snippet::run_snippet(
-        ctx.alias,
-        ctx.config_path,
-        ctx.env,
-        &command,
-        ctx.askpass,
-        ctx.bw_session,
-        true,
-        ctx.has_tunnel,
-    );
+    let result = crate::snippet::run_snippet_ctx(ctx, &command, true);
     match result {
         Ok(r) if r.status.success() => Ok(parse_log_output(&r.stdout, &r.stderr)),
         Ok(r) => Err(crate::messages::container_command_failed(
@@ -1144,15 +1092,7 @@ pub fn spawn_container_logs_fetch<F>(
         return;
     }
     std::thread::spawn(move || {
-        let borrowed = SshContext {
-            alias: &ctx.alias,
-            config_path: &ctx.config_path,
-            askpass: ctx.askpass.as_deref(),
-            bw_session: ctx.bw_session.as_deref(),
-            has_tunnel: ctx.has_tunnel,
-            env: &ctx.env,
-        };
-        let result = fetch_container_logs(&borrowed, runtime, &container_id, tail);
+        let result = fetch_container_logs(&ctx.borrow(), runtime, &container_id, tail);
         send(ctx.alias, container_id, container_name, result);
     });
 }

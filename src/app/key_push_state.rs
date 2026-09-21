@@ -10,8 +10,38 @@ use std::sync::atomic::AtomicBool;
 
 use ratatui::widgets::ListState;
 
-use crate::key_push::KeyPushResult;
-use std::collections::HashSet;
+use crate::key_push::{InflightChild, KeyPushResult};
+use std::collections::{HashSet, VecDeque};
+
+/// A question the finished run left for the user, drained one at a time
+/// once no run is in flight. Each entry carries the key its run was
+/// pushing: a later run overwrites `KeyPushState::key_path`, so a host
+/// still waiting here would otherwise be answered for the wrong key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyPushPrompt {
+    /// Strict checking refused a host not in `known_hosts` yet.
+    Trust { alias: String, key_path: String },
+    /// ssh ended with `Permission denied` and the server takes a password.
+    Password { alias: String, key_path: String },
+}
+
+impl KeyPushPrompt {
+    pub fn alias(&self) -> &str {
+        match self {
+            KeyPushPrompt::Trust { alias, .. } | KeyPushPrompt::Password { alias, .. } => alias,
+        }
+    }
+
+    /// Path of the key this question belongs to, as `SshKeyInfo::display_path`
+    /// spells it.
+    pub fn key_path(&self) -> &str {
+        match self {
+            KeyPushPrompt::Trust { key_path, .. } | KeyPushPrompt::Password { key_path, .. } => {
+                key_path
+            }
+        }
+    }
+}
 
 /// Push state owned by `App`. Empty between push runs.
 #[derive(Default)]
@@ -44,16 +74,34 @@ pub struct KeyPushState {
     /// stale `KeyPushResult` events from a previously-cancelled run can
     /// be dropped instead of contaminating the next run's accumulator.
     pub run_id: u64,
+    /// The ssh child the worker is running right now. Cancel and shutdown
+    /// kill it through here instead of waiting for the worker to notice the
+    /// flag between hosts.
+    pub inflight: InflightChild,
+    /// Path of the key the current run pushes, as `SshKeyInfo::display_path`
+    /// spells it. A retry after a dialog looks the key up by this path: the
+    /// list is rebuilt after a successful push, so a position would not
+    /// survive.
+    pub key_path: String,
+    /// True when the current run follows an accepted trust dialog, so its
+    /// ssh may record a host key it has not seen before. Reset by every
+    /// `start_run`, so it never carries into an ordinary push.
+    pub trust_new_host_key: bool,
+    /// Hosts of the finished run that still need an answer, in picker order.
+    /// Drained one dialog at a time, never while a run is in flight.
+    pub pending_prompts: VecDeque<KeyPushPrompt>,
 }
 
 impl KeyPushState {
     /// Drop the worker handle gracefully. Called from `App::drop` so a
     /// panicking unwind cannot leave the push thread running with a
-    /// dangling sender.
+    /// dangling sender. The running child is killed first so the join
+    /// returns within the SIGTERM grace window.
     pub fn shutdown(&mut self) {
         if let Some(ref cancel) = self.cancel {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+        self.inflight.terminate();
         if let Some(handle) = self.worker.take() {
             let _ = handle.join();
         }
@@ -68,17 +116,25 @@ impl KeyPushState {
     }
 
     /// Begin a new push run. Clears the result accumulator, sets the
-    /// expected host count, bumps the monotonic run_id (so any stale
-    /// KeyPushResult events from a cancelled previous run can be dropped),
-    /// constructs a fresh cancel flag and stores it on state. Returns the
-    /// new run_id together with the cancel handle so the spawned worker
-    /// can share it.
-    pub fn start_run(&mut self, expected: usize) -> (u64, Arc<AtomicBool>) {
+    /// expected host count and the path of the key being pushed, bumps the monotonic
+    /// run_id (so any stale KeyPushResult events from an aborted previous
+    /// run can be dropped), constructs a fresh cancel flag and an empty
+    /// inflight slot and stores them on state. Returns the new run_id
+    /// together with the cancel handle so the spawned worker can share it.
+    pub fn start_run(
+        &mut self,
+        expected: usize,
+        key_path: String,
+        trust_new_host_key: bool,
+    ) -> (u64, Arc<AtomicBool>) {
         self.results.clear();
         self.expected_count = expected;
+        self.key_path = key_path;
+        self.trust_new_host_key = trust_new_host_key;
         self.run_id = self.run_id.wrapping_add(1);
         let cancel = Arc::new(AtomicBool::new(false));
         self.cancel = Some(cancel.clone());
+        self.inflight = InflightChild::default();
         (self.run_id, cancel)
     }
 
@@ -95,16 +151,22 @@ impl KeyPushState {
         }
     }
 
-    /// User-cancel path. The cancel flag is dropped, accumulators are
-    /// cleared, and run_id is bumped so in-flight KeyPushResult events
-    /// from the cancelled worker arrive with a stale run_id and are
-    /// dropped. The worker handle is intentionally NOT joined here so
-    /// the UI does not block while the thread observes the cancel flag.
+    /// User-cancel path. The running child is killed and the cancel flag is
+    /// raised for the worker. Accumulators and pending prompts are cleared
+    /// and run_id is bumped so in-flight KeyPushResult events from the
+    /// aborted worker arrive with a stale run_id and are dropped. The worker
+    /// handle is intentionally NOT joined here so the UI does not block
+    /// while the thread reaps the child.
     pub fn cancel_run(&mut self) {
+        if let Some(ref cancel) = self.cancel {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.inflight.terminate();
         self.results.clear();
         self.expected_count = 0;
         self.cancel = None;
         self.selected.clear();
+        self.pending_prompts.clear();
         self.run_id = self.run_id.wrapping_add(1);
     }
 
@@ -208,7 +270,7 @@ mod tests {
             outcome: crate::key_push::KeyPushOutcome::Appended,
         });
 
-        let (_run_id, cancel) = s.start_run(4);
+        let (_run_id, cancel) = s.start_run(4, "~/.ssh/id_a".into(), false);
 
         assert!(s.results.is_empty());
         assert_eq!(s.expected_count, 4);
@@ -224,9 +286,25 @@ mod tests {
             run_id: 41,
             ..Default::default()
         };
-        let (run_id, _cancel) = s.start_run(1);
+        let (run_id, _cancel) = s.start_run(1, "~/.ssh/id_a".into(), false);
         assert_eq!(run_id, 42);
         assert_eq!(s.run_id, 42);
+    }
+
+    #[test]
+    fn start_run_records_the_key_path_for_retries() {
+        let mut s = KeyPushState::default();
+        let _ = s.start_run(1, "~/.ssh/id_ed25519".into(), false);
+        assert_eq!(s.key_path, "~/.ssh/id_ed25519");
+    }
+
+    #[test]
+    fn start_run_records_and_resets_the_trust_flag() {
+        let mut s = KeyPushState::default();
+        let _ = s.start_run(1, "~/.ssh/id_a".into(), true);
+        assert!(s.trust_new_host_key, "a trust retry carries the flag");
+        let _ = s.start_run(1, "~/.ssh/id_a".into(), false);
+        assert!(!s.trust_new_host_key, "an ordinary push does not");
     }
 
     #[test]
@@ -236,11 +314,53 @@ mod tests {
         s.committed = vec!["host-a".into(), "host-b".into()];
         s.list_state.select(Some(2));
 
-        let _ = s.start_run(2);
+        let _ = s.start_run(2, "~/.ssh/id_a".into(), false);
 
         assert!(s.selected.contains("host-a"));
         assert_eq!(s.committed, vec!["host-a".to_string(), "host-b".into()]);
         assert_eq!(s.list_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn start_run_keeps_pending_prompts_from_the_previous_run() {
+        // A retry for one host runs while the other hosts still wait for
+        // their own dialog; starting that run must not drop them.
+        let mut s = KeyPushState::default();
+        s.pending_prompts.push_back(KeyPushPrompt::Password {
+            alias: "h2".into(),
+            key_path: "~/.ssh/id_b".into(),
+        });
+        let _ = s.start_run(1, "~/.ssh/id_a".into(), false);
+        assert_eq!(s.pending_prompts.len(), 1);
+    }
+
+    #[test]
+    fn cancel_run_sets_the_flag_and_drops_pending_prompts() {
+        let mut s = KeyPushState::default();
+        let (_id, cancel) = s.start_run(2, "~/.ssh/id_a".into(), false);
+        s.pending_prompts.push_back(KeyPushPrompt::Trust {
+            alias: "h".into(),
+            key_path: "~/.ssh/id_a".into(),
+        });
+        s.cancel_run();
+        assert!(cancel.load(Ordering::Relaxed), "worker must see the cancel");
+        assert!(s.pending_prompts.is_empty());
+    }
+
+    #[test]
+    fn key_push_prompt_alias_names_the_host() {
+        let t = KeyPushPrompt::Trust {
+            alias: "a".into(),
+            key_path: "~/.ssh/id_a".into(),
+        };
+        assert_eq!(t.alias(), "a");
+        assert_eq!(t.key_path(), "~/.ssh/id_a");
+        let p = KeyPushPrompt::Password {
+            alias: "b".into(),
+            key_path: "~/.ssh/id_b".into(),
+        };
+        assert_eq!(p.alias(), "b");
+        assert_eq!(p.key_path(), "~/.ssh/id_b");
     }
 
     #[test]

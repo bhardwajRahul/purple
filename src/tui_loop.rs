@@ -822,15 +822,7 @@ fn handle_pending_container_logs(app: &mut App, events_tx: &std::sync::mpsc::Sen
     let askpass = req
         .askpass
         .or_else(|| preferences::load_askpass_default(app.env().paths()));
-    let has_tunnel = app.tunnels.active_contains(&req.alias);
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias: req.alias,
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
+    let ctx = app.ssh_context_for(req.alias, askpass);
     let tx = events_tx.clone();
     log::debug!(
         "[purple] container_logs_fetch: spawning alias={} id={}",
@@ -870,15 +862,7 @@ fn handle_pending_container_action(app: &mut App, events_tx: &std::sync::mpsc::S
     let askpass = req
         .askpass
         .or_else(|| preferences::load_askpass_default(app.env().paths()));
-    let has_tunnel = app.tunnels.active_contains(&req.alias);
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias: req.alias.clone(),
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
+    let ctx = app.ssh_context_for(req.alias.clone(), askpass);
     let tx = events_tx.clone();
     log::info!(
         "[purple] container_action_drain: spawning alias={} id={} action={:?} name={}",

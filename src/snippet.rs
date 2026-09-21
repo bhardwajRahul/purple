@@ -474,15 +474,27 @@ fn consume_until_st(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
 /// to prevent child from blocking on a full pipe buffer.
 const MAX_OUTPUT_LINES: usize = 10_000;
 
+/// How often [`ChildGuard::wait`] checks whether the child has exited. Short
+/// enough that a finished push feels immediate, long enough that waiting on a
+/// slow host costs no measurable CPU.
+const WAIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// How long a child gets to act on SIGTERM before SIGKILL follows.
+const TERM_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// RAII guard that kills the process group on drop.
 /// Uses SIGTERM first, then escalates to SIGKILL after a brief wait.
 pub struct ChildGuard {
     inner: std::sync::Mutex<Option<std::process::Child>>,
     pgid: i32,
+    /// When SIGTERM went out, if it has. The waiting thread reads this and
+    /// escalates once the grace window is up, so the caller that asked for
+    /// the kill does not have to stand there for it.
+    terminated_at: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl ChildGuard {
-    fn new(child: std::process::Child) -> Self {
+    pub(crate) fn new(child: std::process::Child) -> Self {
         // i32::try_from avoids silent overflow for PIDs > i32::MAX. Fallback 0
         // is a sentinel the Drop guard treats as "no process group": it skips
         // the group signal entirely (a negative pgid built from 0 or 1 would
@@ -492,52 +504,140 @@ impl ChildGuard {
         Self {
             inner: std::sync::Mutex::new(Some(child)),
             pgid,
+            terminated_at: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Send SIGKILL to the process group. Caller holds no lock on `inner`.
+    #[cfg(unix)]
+    fn kill_group(&self) {
+        if self.pgid > 1 {
+            // SAFETY: self.pgid was set by setpgid(0, 0) in pre_exec and is
+            // valid for the lifetime of this guard. A negative PID signals
+            // the whole group. ESRCH is the expected race and is ignored.
+            unsafe {
+                libc::kill(-self.pgid, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn kill_group(&self) {}
+
+    /// Wait for the child to exit and take it out of the guard so a later
+    /// drop cannot signal a recycled PID. Returns `None` when the child was
+    /// already taken or the wait failed.
+    ///
+    /// Polls rather than blocking inside the lock, so a `terminate` from the
+    /// UI thread is not stuck behind this call. It also carries out the
+    /// SIGKILL escalation: `terminate` only signals, and this is the thread
+    /// that is standing here anyway.
+    pub(crate) fn wait(&self) -> Option<ExitStatus> {
+        let mut escalated = false;
+        loop {
+            {
+                let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                let child = lock.as_mut()?;
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let _ = lock.take();
+                        return Some(status);
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        let _ = lock.take();
+                        return None;
+                    }
+                }
+            }
+            if !escalated && self.grace_expired() {
+                escalated = true;
+                self.kill_group();
+            }
+            std::thread::sleep(WAIT_POLL_INTERVAL);
+        }
+    }
+
+    /// True once SIGTERM has been sent and the child has had its grace
+    /// window to act on it.
+    fn grace_expired(&self) -> bool {
+        self.terminated_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some_and(|t| t.elapsed() >= TERM_GRACE)
+    }
+
+    /// Ask the process group to stop and return at once. SIGTERM goes out
+    /// now; the SIGKILL that follows the grace window is left to whichever
+    /// thread is in `wait`. Called from the UI thread on Esc and on quit, so
+    /// it must not stand and wait. A no-op once the child exited.
+    pub(crate) fn terminate(&self) {
+        let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(child) = lock.as_mut() else {
+            return;
+        };
+        // Already exited? Skip the kill entirely, the PID may be recycled.
+        if let Ok(Some(_)) = child.try_wait() {
+            return;
+        }
+        *self.terminated_at.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(std::time::Instant::now());
+        // Group signal only for a valid pgid (> 1). pgid 0 is the overflow
+        // sentinel; a negative pgid built from 0 or 1 would hit our own
+        // group or PID 1 (init), so those skip to the direct child.kill().
+        #[cfg(unix)]
+        if self.pgid > 1 {
+            // SAFETY: self.pgid was set by setpgid(0,0) in pre_exec and is
+            // valid for the lifetime of this guard. kill() with a negative
+            // PID signals the entire process group. ESRCH (already exited)
+            // is the expected race and the return value is ignored.
+            unsafe {
+                libc::kill(-self.pgid, libc::SIGTERM);
+            }
+            return;
+        }
+        // Fallback: direct kill in case setpgid failed in pre_exec or the
+        // pgid was the overflow sentinel. Nothing to escalate to afterwards.
+        let _ = child.kill();
+    }
+
+    /// Stop the child and stay until it is gone. For `Drop`, where no other
+    /// thread is left to carry out the escalation.
+    fn terminate_and_reap(&self) {
+        self.terminate();
+        let deadline = std::time::Instant::now() + TERM_GRACE;
+        loop {
+            {
+                let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                let Some(child) = lock.as_mut() else {
+                    return;
+                };
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => {
+                        let _ = lock.take();
+                        return;
+                    }
+                    Ok(None) => {}
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(WAIT_POLL_INTERVAL);
+        }
+        self.kill_group();
+        let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(child) = lock.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref mut child) = *lock {
-            // Already exited? Skip kill entirely (PID may be recycled).
-            if let Ok(Some(_)) = child.try_wait() {
-                return;
-            }
-            // Group signal only for a valid pgid (> 1). pgid 0 is the overflow
-            // sentinel; a negative pgid built from 0 or 1 would hit our own
-            // group or PID 1 (init), so skip straight to the direct child.kill().
-            #[cfg(unix)]
-            if self.pgid > 1 {
-                // SAFETY: self.pgid was set by setpgid(0,0) in pre_exec and is
-                // valid for the lifetime of this SnippetChild. kill() with a
-                // negative PID sends the signal to the entire process group.
-                // ESRCH (process already exited) is the expected race; the
-                // return value is intentionally ignored.
-                unsafe {
-                    libc::kill(-self.pgid, libc::SIGTERM);
-                }
-                // Poll for up to 500ms
-                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-                loop {
-                    if let Ok(Some(_)) = child.try_wait() {
-                        return;
-                    }
-                    if std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-                // SAFETY: same invariants as the SIGTERM call above.
-                unsafe {
-                    libc::kill(-self.pgid, libc::SIGKILL);
-                }
-            }
-            // Fallback: direct kill in case setpgid failed in pre_exec or the
-            // pgid was the overflow sentinel.
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        // Nobody is left in `wait` to escalate, so the reap happens here.
+        self.terminate_and_reap();
     }
 }
 
@@ -590,19 +690,25 @@ fn read_pipe_capped<R: io::Read>(reader: R, alias: &str, stream: &str) -> String
 /// Sets -F, ConnectTimeout, ControlMaster/ControlPath and ClearAllForwardings.
 /// Also configures askpass and Bitwarden session env vars.
 ///
-/// When `non_interactive` is true, adds `-o StrictHostKeyChecking=yes` so an
-/// unknown host returns an error instead of writing a prompt to the controlling
-/// tty. Background fetches (container listings, file browser listings, captured
-/// snippet output) pass `true`. Direct CLI use passes `false` so users retain
-/// normal host-key trust-on-first-use behaviour.
+/// When `non_interactive` is true, the child can never reach the controlling
+/// tty: `-o StrictHostKeyChecking=yes` turns an unknown host into an error
+/// (`accept-new` when `trust_new_host_key` is set by a retry after the trust
+/// dialog) and `-o BatchMode=yes` turns a password prompt into `Permission
+/// denied` when no source and no session password can answer it. Background
+/// fetches (container listings, file browser listings, captured snippet
+/// output) pass `true`. Direct CLI use passes `false` so users retain normal
+/// host-key trust-on-first-use behavior and ssh's own prompt.
+#[allow(clippy::too_many_arguments)]
 fn base_ssh_command(
     alias: &str,
     config_path: &Path,
     command: &str,
     askpass: Option<&str>,
+    session_password: Option<&str>,
     bw_session: Option<&str>,
     has_active_tunnel: bool,
     non_interactive: bool,
+    trust_new_host_key: bool,
 ) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-F")
@@ -615,7 +721,18 @@ fn base_ssh_command(
         .arg("ControlPath=none");
 
     if non_interactive {
-        cmd.arg("-o").arg("StrictHostKeyChecking=yes");
+        let strict = if trust_new_host_key {
+            "StrictHostKeyChecking=accept-new"
+        } else {
+            "StrictHostKeyChecking=yes"
+        };
+        cmd.arg("-o")
+            .arg(strict)
+            .arg("-o")
+            .arg(crate::askpass_env::SINGLE_PASSWORD_PROMPT_OPT);
+        if crate::askpass_env::needs_batch_mode(askpass, session_password) {
+            cmd.arg("-o").arg(crate::askpass_env::BATCH_MODE_OPT);
+        }
     }
 
     if has_active_tunnel {
@@ -624,34 +741,30 @@ fn base_ssh_command(
 
     cmd.arg("--").arg(alias).arg(command);
 
-    if askpass.is_some() {
-        crate::askpass_env::configure_ssh_command(&mut cmd, alias, config_path);
-    }
-
-    if let Some(token) = bw_session {
-        cmd.env("BW_SESSION", token);
-    }
+    crate::askpass_env::configure_auth(
+        &mut cmd,
+        alias,
+        config_path,
+        askpass,
+        session_password,
+        bw_session,
+    );
 
     cmd
 }
 
 /// Build the SSH Command for a snippet execution with piped I/O.
-fn build_snippet_command(
-    alias: &str,
-    config_path: &Path,
-    command: &str,
-    askpass: Option<&str>,
-    bw_session: Option<&str>,
-    has_active_tunnel: bool,
-) -> Command {
+fn build_snippet_command(ctx: &crate::ssh_context::SshContext<'_>, command: &str) -> Command {
     let mut cmd = base_ssh_command(
-        alias,
-        config_path,
+        ctx.alias,
+        ctx.config_path,
         command,
-        askpass,
-        bw_session,
-        has_active_tunnel,
+        ctx.askpass,
+        ctx.session_password,
+        ctx.bw_session,
+        ctx.has_tunnel,
         true,
+        ctx.trust_new_host_key,
     );
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -682,14 +795,7 @@ fn execute_host(
     tx: &std::sync::mpsc::Sender<crate::event::AppEvent>,
 ) -> Option<std::sync::Arc<ChildGuard>> {
     let alias = ctx.alias;
-    let mut cmd = build_snippet_command(
-        alias,
-        ctx.config_path,
-        command,
-        ctx.askpass,
-        ctx.bw_session,
-        ctx.has_tunnel,
-    );
+    let mut cmd = build_snippet_command(ctx, command);
 
     match cmd.spawn() {
         Ok(child) => {
@@ -858,8 +964,10 @@ pub fn spawn_snippet_execution(
                             alias: &alias,
                             config_path: &config_path,
                             askpass: askpass.as_deref(),
+                            session_password: None,
                             bw_session: bw_session.as_deref(),
                             has_tunnel,
+                            trust_new_host_key: false,
                             env: &env,
                         };
                         let guard = execute_host(run_id, &host_ctx, &command, &tx);
@@ -896,8 +1004,10 @@ pub fn spawn_snippet_execution(
                         alias: &alias,
                         config_path: &config_path,
                         askpass: askpass.as_deref(),
+                        session_password: None,
                         bw_session: bw_session.as_deref(),
                         has_tunnel,
+                        trust_new_host_key: false,
                         env: &env,
                     };
                     let guard = execute_host(run_id, &host_ctx, &command, &tx);
@@ -935,19 +1045,44 @@ pub fn run_snippet(
     capture: bool,
     has_active_tunnel: bool,
 ) -> anyhow::Result<SnippetResult> {
+    let ctx = crate::ssh_context::SshContext {
+        alias,
+        config_path,
+        askpass,
+        session_password: None,
+        bw_session,
+        has_tunnel: has_active_tunnel,
+        trust_new_host_key: false,
+        env,
+    };
+    run_snippet_ctx(&ctx, command, capture)
+}
+
+/// `run_snippet` for callers that already hold an
+/// [`SshContext`](crate::ssh_context::SshContext). The context
+/// carries the session password and the trust flag, so background fetches
+/// (file browser, containers) authenticate the way the TUI decided.
+pub fn run_snippet_ctx(
+    ctx: &crate::ssh_context::SshContext<'_>,
+    command: &str,
+    capture: bool,
+) -> anyhow::Result<SnippetResult> {
+    let alias = ctx.alias;
     // Renew the Vault SSH cert before connecting so container listing,
     // inspect, logs, actions and file-browser operations get a fresh cert
     // just like the interactive connect path does. No-op for non-vault hosts.
-    crate::runtime::helpers::ensure_vault_cert_for_alias(env, alias, config_path);
+    crate::runtime::helpers::ensure_vault_cert_for_alias(ctx.env, alias, ctx.config_path);
 
     let mut cmd = base_ssh_command(
         alias,
-        config_path,
+        ctx.config_path,
         command,
-        askpass,
-        bw_session,
-        has_active_tunnel,
+        ctx.askpass,
+        ctx.session_password,
+        ctx.bw_session,
+        ctx.has_tunnel,
         capture,
+        ctx.trust_new_host_key,
     );
 
     if capture {

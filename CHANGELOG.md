@@ -1,3 +1,14 @@
+## 3.29.0 - 2026-09-21
+
+- feat: Push keys and browse files on password-only hosts.
+- feat: A host that wants a password asks you for it inside purple. Pick the OS keychain and every later connection finds it by itself, or pick this session only and it stays in memory until you quit. The push or the listing continues on your answer.
+- feat: A host you have not reached before asks to be trusted first. Press `y` and purple records its key and carries on. A host key that changed still gets the security warning instead.
+- feat: Select a dozen hosts and answer one question each, in the order you picked them. A question waits its turn while you are filling in a form and opens when you come back, so nothing takes the screen from what you are typing. A password you keep for the session carries into every later listing, transfer and container command on that host, so the file explorer asks once per host rather than once per directory.
+- feat: Reach a host through a jump host and purple tells the two apart. It names whichever one refused or is unknown, so a password or a host key never lands on the wrong machine.
+- change: Every background connection reports a refusal straight away and names the host and the reason. Key pushes, remote listings, transfers, container commands and tunnel starts all come back with something you can act on.
+- change: `Esc` during a push stops the connection that is running, and quitting purple stays instant even when a host is slow to answer.
+- change: A password purple hands to `ssh` goes out once, so a rejected one costs a single failed login on the server.
+
 ## 3.28.0 - 2026-09-17
 
 - feat: Every AWS account, every instance, one host list.

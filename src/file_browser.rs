@@ -369,24 +369,8 @@ fn shell_escape(path: &str) -> String {
 }
 
 /// Get the remote home directory via `pwd`.
-pub fn get_remote_home(
-    alias: &str,
-    config_path: &Path,
-    env: &crate::runtime::env::Env,
-    askpass: Option<&str>,
-    bw_session: Option<&str>,
-    has_active_tunnel: bool,
-) -> anyhow::Result<String> {
-    let result = crate::snippet::run_snippet(
-        alias,
-        config_path,
-        env,
-        "pwd",
-        askpass,
-        bw_session,
-        true,
-        has_active_tunnel,
-    )?;
+pub fn get_remote_home(ctx: &SshContext<'_>) -> anyhow::Result<String> {
+    let result = crate::snippet::run_snippet_ctx(ctx, "pwd", true)?;
     if result.status.success() {
         Ok(result.stdout.trim().to_string())
     } else {
@@ -407,16 +391,7 @@ pub fn fetch_remote_listing(
     sort: BrowserSort,
 ) -> Result<Vec<FileEntry>, String> {
     let command = format!("LC_ALL=C ls -lhAL {}", shell_escape(remote_path));
-    let result = crate::snippet::run_snippet(
-        ctx.alias,
-        ctx.config_path,
-        ctx.env,
-        &command,
-        ctx.askpass,
-        ctx.bw_session,
-        true,
-        ctx.has_tunnel,
-    );
+    let result = crate::snippet::run_snippet_ctx(ctx, &command, true);
     match result {
         Ok(r) if r.status.success() => Ok(parse_ls_output(&r.stdout, show_hidden, sort)),
         Ok(r) => {
@@ -463,16 +438,38 @@ pub fn spawn_remote_listing<F>(
     F: FnOnce(String, String, Result<Vec<FileEntry>, String>) + Send + 'static,
 {
     std::thread::spawn(move || {
-        let borrowed = SshContext {
-            alias: &ctx.alias,
-            config_path: &ctx.config_path,
-            askpass: ctx.askpass.as_deref(),
-            bw_session: ctx.bw_session.as_deref(),
-            has_tunnel: ctx.has_tunnel,
-            env: &ctx.env,
-        };
-        let listing = fetch_remote_listing(&borrowed, &remote_path, show_hidden, sort);
+        let listing = fetch_remote_listing(&ctx.borrow(), &remote_path, show_hidden, sort);
         send(ctx.alias, remote_path, listing);
+    });
+}
+
+/// Spawn the first remote fetch for a freshly opened browser: resolve the
+/// remote home with `pwd` when `remote_path` is empty, then list it. Both
+/// the `F` key and the retry after a password or trust dialog run this, so
+/// a failed home lookup and a failed listing recover the same way.
+pub fn spawn_remote_open<F>(
+    ctx: OwnedSshContext,
+    remote_path: String,
+    show_hidden: bool,
+    sort: BrowserSort,
+    send: F,
+) where
+    F: FnOnce(String, String, Result<Vec<FileEntry>, String>) + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let home = if remote_path.is_empty() {
+            match get_remote_home(&ctx.borrow()) {
+                Ok(h) => h,
+                Err(e) => {
+                    send(ctx.alias, String::new(), Err(e.to_string()));
+                    return;
+                }
+            }
+        } else {
+            remote_path
+        };
+        let listing = fetch_remote_listing(&ctx.borrow(), &home, show_hidden, sort);
+        send(ctx.alias, home, listing);
     });
 }
 
@@ -482,28 +479,28 @@ pub struct ScpResult {
     pub stderr_output: String,
 }
 
-/// Run scp in the background with captured stderr for error reporting.
-/// Stderr is piped and captured so errors can be extracted. Progress percentage
-/// is not available because scp only outputs progress to a TTY, not to a pipe.
-/// Stdin is null (askpass handles authentication). Stdout is null (scp has no
-/// meaningful stdout output).
-pub fn run_scp(
-    alias: &str,
-    config_path: &Path,
-    env: &crate::runtime::env::Env,
-    askpass: Option<&str>,
-    bw_session: Option<&str>,
-    has_active_tunnel: bool,
-    scp_args: &[String],
-) -> anyhow::Result<ScpResult> {
-    // Renew the Vault SSH cert before transferring so a file copy never
-    // fails on an expired cert. No-op for non-vault hosts.
-    crate::runtime::helpers::ensure_vault_cert_for_alias(env, alias, config_path);
-
+/// Build the scp command for a transfer. Runs strict host key checking and
+/// BatchMode the way `snippet::base_ssh_command` does for a background ssh,
+/// so a transfer can never block on a hidden tty prompt. Pure, so tests can
+/// inspect the argv.
+pub(crate) fn build_scp_command(ctx: &SshContext<'_>, scp_args: &[String]) -> Command {
     let mut cmd = Command::new("scp");
-    cmd.arg("-F").arg(config_path);
+    cmd.arg("-F").arg(ctx.config_path);
 
-    if has_active_tunnel {
+    let strict = if ctx.trust_new_host_key {
+        "StrictHostKeyChecking=accept-new"
+    } else {
+        "StrictHostKeyChecking=yes"
+    };
+    cmd.arg("-o")
+        .arg(strict)
+        .arg("-o")
+        .arg(crate::askpass_env::SINGLE_PASSWORD_PROMPT_OPT);
+    if crate::askpass_env::needs_batch_mode(ctx.askpass, ctx.session_password) {
+        cmd.arg("-o").arg(crate::askpass_env::BATCH_MODE_OPT);
+    }
+
+    if ctx.has_tunnel {
         cmd.arg("-o").arg("ClearAllForwardings=yes");
     }
 
@@ -515,13 +512,45 @@ pub fn run_scp(
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 
-    if askpass.is_some() {
-        crate::askpass_env::configure_ssh_command(&mut cmd, alias, config_path);
+    crate::askpass_env::configure_auth(
+        &mut cmd,
+        ctx.alias,
+        ctx.config_path,
+        ctx.askpass,
+        ctx.session_password,
+        ctx.bw_session,
+    );
+
+    // Own process group so a cancel or shutdown can signal scp and the ssh
+    // it spawns together, and a Ctrl+C aimed at purple never reaches them.
+    #[cfg(unix)]
+    // SAFETY: pre_exec runs after fork, before exec in the child. setpgid(0, 0)
+    // is async-signal-safe (POSIX) and touches no Rust runtime state. The
+    // return value is ignored: a failed setpgid leaves scp in purple's group,
+    // which still transfers.
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
     }
 
-    if let Some(token) = bw_session {
-        cmd.env("BW_SESSION", token);
-    }
+    cmd
+}
+
+/// Run scp in the background with captured stderr for error reporting.
+/// Stderr is piped and captured so errors can be extracted. Progress percentage
+/// is not available because scp only outputs progress to a TTY, not to a pipe.
+/// Stdin is null (askpass handles authentication). Stdout is null (scp has no
+/// meaningful stdout output).
+pub fn run_scp(ctx: &SshContext<'_>, scp_args: &[String]) -> anyhow::Result<ScpResult> {
+    let alias = ctx.alias;
+    // Renew the Vault SSH cert before transferring so a file copy never
+    // fails on an expired cert. No-op for non-vault hosts.
+    crate::runtime::helpers::ensure_vault_cert_for_alias(ctx.env, alias, ctx.config_path);
+
+    let mut cmd = build_scp_command(ctx, scp_args);
 
     let output = cmd.output().map_err(|e| {
         log::error!("[external] scp spawn failed: alias={alias}: {e}");

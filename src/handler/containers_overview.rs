@@ -508,8 +508,10 @@ fn spawn_refresh(
         alias: item.alias,
         config_path,
         askpass: item.askpass,
+        session_password: item.session_password,
         bw_session,
         has_tunnel: item.has_tunnel,
+        trust_new_host_key: false,
         env,
     };
     let tx = events_tx.clone();
@@ -559,6 +561,7 @@ fn refresh_selected_host(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
     let has_tunnel = app.tunnels.active_contains(&alias);
+    let session_password = app.session_password_for(&alias);
     log::debug!("[purple] container refresh: alias={}", alias);
     app.notify(crate::messages::container_refreshing(&alias));
     // Mark the alias as in-flight so the post-key auto-refresh in
@@ -573,6 +576,7 @@ fn refresh_selected_host(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
         crate::app::RefreshQueueItem {
             alias,
             askpass,
+            session_password,
             cached_runtime,
             has_tunnel,
         },
@@ -609,9 +613,11 @@ pub(crate) fn auto_fetch_new_hosts(app: &mut App, events_tx: &mpsc::Sender<AppEv
         }
         let askpass = host.askpass.clone();
         let has_tunnel = app.tunnels.active_contains(&alias);
+        let session_password = app.session_password_for(&alias);
         new_items.push_back(crate::app::RefreshQueueItem {
             alias,
             askpass,
+            session_password,
             cached_runtime: None, // first fetch. runtime is detected on the SSH side
             has_tunnel,
         });
@@ -735,9 +741,11 @@ fn refresh_all_hosts(app: &mut App, events_tx: &mpsc::Sender<AppEvent>) {
             .find(|h| h.alias == *alias)
             .and_then(|h| h.askpass.clone());
         let has_tunnel = app.tunnels.active_contains(alias);
+        let session_password = app.session_passwords.get(alias).cloned();
         queue.push_back(crate::app::RefreshQueueItem {
             alias: alias.clone(),
             askpass,
+            session_password,
             cached_runtime: Some(entry.runtime),
             has_tunnel,
         });
@@ -1135,15 +1143,7 @@ pub(super) fn ensure_inspect_for_selected(app: &mut App, events_tx: &mpsc::Sende
         .iter()
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
-    let has_tunnel = app.tunnels.active_contains(&alias);
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias,
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
+    let ctx = app.ssh_context_for(alias, askpass);
     let tx = events_tx.clone();
     crate::containers::spawn_container_inspect_listing(
         ctx,
@@ -1193,6 +1193,7 @@ pub(crate) fn prefetch_inspect_for_listing(
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
     let has_tunnel = app.tunnels.active_contains(alias);
+    let session_password = app.session_password_for(alias);
     let config_path = app.reload.config_path().to_path_buf();
     let bw_session = app.bw_session.clone();
     for c in containers {
@@ -1224,8 +1225,10 @@ pub(crate) fn prefetch_inspect_for_listing(
             alias: alias.to_string(),
             config_path: config_path.clone(),
             askpass: askpass.clone(),
+            session_password: session_password.clone(),
             bw_session: bw_session.clone(),
             has_tunnel,
+            trust_new_host_key: false,
             env: std::sync::Arc::clone(&app.env),
         };
         let tx = events_tx.clone();
@@ -1294,15 +1297,7 @@ pub(super) fn ensure_logs_for_selected(app: &mut App, events_tx: &mpsc::Sender<A
         .iter()
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
-    let has_tunnel = app.tunnels.active_contains(&alias);
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias,
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
+    let ctx = app.ssh_context_for(alias, askpass);
     let tx = events_tx.clone();
     crate::containers::spawn_container_logs_fetch(
         ctx,
@@ -1376,6 +1371,7 @@ pub(super) fn ensure_inspect_for_host_header(app: &mut App, events_tx: &mpsc::Se
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
     let has_tunnel = app.tunnels.active_contains(&alias);
+    let session_password = app.session_password_for(&alias);
     let config_path = app.reload.config_path().to_path_buf();
     let bw_session = app.bw_session.clone();
 
@@ -1405,8 +1401,10 @@ pub(super) fn ensure_inspect_for_host_header(app: &mut App, events_tx: &mpsc::Se
             alias: alias.clone(),
             config_path: config_path.clone(),
             askpass: askpass.clone(),
+            session_password: session_password.clone(),
             bw_session: bw_session.clone(),
             has_tunnel,
+            trust_new_host_key: false,
             env: std::sync::Arc::clone(&app.env),
         };
         let tx = events_tx.clone();
@@ -1481,6 +1479,7 @@ pub(super) fn ensure_list_for_selected_host(app: &mut App, events_tx: &mpsc::Sen
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
     let has_tunnel = app.tunnels.active_contains(&alias);
+    let session_password = app.session_password_for(&alias);
     log::debug!("[purple] auto-list refresh: alias={}", alias);
     spawn_refresh(
         app.reload.config_path().to_path_buf(),
@@ -1489,6 +1488,7 @@ pub(super) fn ensure_list_for_selected_host(app: &mut App, events_tx: &mpsc::Sen
         crate::app::RefreshQueueItem {
             alias,
             askpass,
+            session_password,
             cached_runtime,
             has_tunnel,
         },

@@ -435,6 +435,12 @@ impl App {
             self.vault.migrate_alias(old_alias, new_alias);
             self.tunnels.migrate_alias(old_alias, new_alias);
             self.file_browser_state.migrate_alias(old_alias, new_alias);
+            // A password typed this session belongs to the machine, not to
+            // the name. Leaving it behind would hand it to whatever host
+            // takes the old alias next.
+            if let Some(password) = self.session_passwords.remove(old_alias) {
+                self.session_passwords.insert(new_alias.clone(), password);
+            }
         }
         if container_cache_changed {
             crate::containers::save_container_cache(

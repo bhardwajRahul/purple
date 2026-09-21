@@ -182,7 +182,6 @@ pub(super) fn open_file_browser(app: &mut App, events_tx: &mpsc::Sender<AppEvent
     if let Some(hint) = stale_hint {
         app.notify_warning(crate::messages::stale_host(&hint));
     }
-    let has_tunnel = app.tunnels.active_contains(&alias);
     let (local_path, remote_path) = app
         .file_browser_state
         .host_path(&alias)
@@ -226,48 +225,17 @@ pub(super) fn open_file_browser(app: &mut App, events_tx: &mpsc::Sender<AppEvent
         connection_recorded: false,
     };
     app.open_file_browser(fb);
-    // Fetch remote home dir in background
-    let tx = events_tx.clone();
-    let remote = remote_path;
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias: alias.clone(),
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
-    std::thread::spawn(move || {
-        let home = if remote.is_empty() {
-            match crate::file_browser::get_remote_home(
-                &ctx.alias,
-                &ctx.config_path,
-                &ctx.env,
-                ctx.askpass.as_deref(),
-                ctx.bw_session.as_deref(),
-                ctx.has_tunnel,
-            ) {
-                Ok(h) => h,
-                Err(e) => {
-                    let _ = tx.send(crate::event::AppEvent::FileBrowserListing {
-                        alias: ctx.alias,
-                        path: String::new(),
-                        entries: Err(e.to_string()),
-                    });
-                    return;
-                }
-            }
-        } else {
-            remote
-        };
-        crate::file_browser::spawn_remote_listing(
-            ctx,
-            home,
-            false,
-            crate::file_browser::BrowserSort::Name,
-            super::super::file_browser::fb_send(tx),
-        );
-    });
+    // Resolve the remote home (when we have no saved path) and list it in
+    // the background. Same call the retry after a password or trust dialog
+    // makes, so both recover identically.
+    let ctx = app.ssh_context_for(alias, askpass);
+    crate::file_browser::spawn_remote_open(
+        ctx,
+        remote_path,
+        false,
+        crate::file_browser::BrowserSort::Name,
+        super::super::file_browser::fb_send(events_tx.clone()),
+    );
 }
 
 /// `C` — open the container overlay for the selected host. Spawns a

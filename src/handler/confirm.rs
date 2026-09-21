@@ -704,6 +704,43 @@ pub(super) fn handle_host_key_reset_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Trust-on-first-contact dialog. `y` runs the held operation again with
+/// `StrictHostKeyChecking=accept-new`, so ssh records the host key and
+/// carries on into authentication. `n` and Esc drop it and offer the next
+/// host waiting for an answer. Accepting a host key is a security decision,
+/// hence the uniform y/n/Esc contract via `route_confirm_key`.
+///
+/// Stays on `&mut App` rather than a slice: both answers run a whole-App
+/// operation (a push worker or a file-browser listing).
+pub(super) fn handle_host_key_trust_key(
+    app: &mut App,
+    key: KeyEvent,
+    events_tx: &mpsc::Sender<AppEvent>,
+) {
+    let Screen::ConfirmHostKeyTrust { alias, retry, .. } = &app.screen else {
+        return;
+    };
+    let alias = alias.clone();
+    let retry = retry.clone();
+    match route_confirm_key(key) {
+        ConfirmAction::Yes => {
+            log::debug!("[purple] host key trust: accepted alias={alias}");
+            let back = super::password_prompt::return_screen(app);
+            app.set_screen(back);
+            super::password_prompt::execute_retry(app, retry, true, events_tx);
+            super::event_loop::key_push::drain_next_key_push_prompt(app);
+        }
+        ConfirmAction::No => {
+            log::debug!("[purple] host key trust: declined alias={alias}");
+            let back = super::password_prompt::return_screen(app);
+            app.set_screen(back);
+            app.notify_warning(crate::messages::host_key_trust::declined(&alias));
+            super::event_loop::key_push::drain_next_key_push_prompt(app);
+        }
+        ConfirmAction::Ignored => {}
+    }
+}
+
 /// A confirmed container action plus its target(s). Single-container
 /// confirms carry one target; stack and host-wide confirms carry many.
 struct ContainerConfirm {
@@ -926,7 +963,7 @@ pub(super) fn handle_key_push_key(
                 // after the screen transition. its first observable action is
                 // the guard/progress toast, with no intervening toast.
                 let tx = events_tx.clone();
-                ctx.defer(move |app| start_key_push(app, key_index, aliases, &tx));
+                ctx.defer(move |app| start_key_push(app, key_index, aliases, false, &tx));
             }
             ConfirmAction::No => {
                 // Return to the picker with the selection still intact so the
@@ -965,16 +1002,36 @@ pub(super) fn handle_run_snippet_confirm_key(
     }
 }
 
+/// The authentication inputs one host's push runs with: the askpass source
+/// that resolves for it, any password typed this session and the Bitwarden
+/// token. Resolved on the main thread because the worker has no App access.
+pub(crate) fn push_auth_for(
+    app: &App,
+    alias: &str,
+    trust_new_host_key: bool,
+) -> crate::key_push::PushAuth {
+    crate::key_push::PushAuth {
+        askpass: app.askpass_source_for(alias),
+        session_password: app.session_password_for(alias),
+        bw_session: app.bw_session.clone(),
+        trust_new_host_key,
+    }
+}
+
 /// Spawn the background push worker. Reads the pubkey from disk on the
 /// main thread (cheap) so we surface an early error toast before
 /// committing to the run. On read failure we abort and stay on
 /// HostList. Refuses to start a second push while a first is still in
 /// flight (`expected_count > 0`); the user must press Esc to cancel
 /// before triggering another run.
-fn start_key_push(
+///
+/// `trust_new_host_key` is set only by the retry that follows the trust
+/// dialog, so ssh records the host key on that one run.
+pub(crate) fn start_key_push(
     app: &mut App,
     key_index: usize,
     aliases: Vec<String>,
+    trust_new_host_key: bool,
     events_tx: &mpsc::Sender<AppEvent>,
 ) {
     // Refuse second push while a previous run still has live state OR a
@@ -1071,12 +1128,28 @@ fn start_key_push(
     };
 
     // Reset accumulators and start a new run.
-    let (run_id, cancel) = app.keys.push_mut().start_run(aliases.len());
+    let (run_id, cancel) = app.keys.push_mut().start_run(
+        aliases.len(),
+        key_info.display_path.clone(),
+        trust_new_host_key,
+    );
+    let inflight = app.keys.push().inflight.clone();
 
     app.notify_progress(crate::messages::key_push_in_progress(
         &key_info.name,
         aliases.len(),
     ));
+
+    // Resolve each host's authentication inputs here: the worker thread has
+    // no App access, so the askpass source, any password typed this session
+    // and the Bitwarden token all have to travel with the target.
+    let targets: Vec<(String, crate::key_push::PushAuth)> = aliases
+        .into_iter()
+        .map(|alias| {
+            let auth = push_auth_for(app, &alias, trust_new_host_key);
+            (alias, auth)
+        })
+        .collect();
 
     let config_path = app.hosts_state.ssh_config().path.clone();
     let tx = events_tx.clone();
@@ -1084,12 +1157,18 @@ fn start_key_push(
     let handle = std::thread::Builder::new()
         .name("key-push".into())
         .spawn(move || {
-            for alias in aliases {
+            for (alias, auth) in targets {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                let outcome =
-                    crate::key_push::push_to_host(&pubkey_payload, &alias, &config_path, &cancel);
+                let outcome = crate::key_push::push_to_host(
+                    &pubkey_payload,
+                    &alias,
+                    &config_path,
+                    &auth,
+                    &cancel,
+                    &inflight,
+                );
                 let _ = tx.send(AppEvent::KeyPushResult {
                     run_id,
                     result: crate::key_push::KeyPushResult { alias, outcome },
@@ -1202,7 +1281,7 @@ mod key_push_confirm_tests {
                 outcome: crate::key_push::KeyPushOutcome::Appended,
             });
         let (tx, _rx) = mpsc::channel();
-        start_key_push(&mut app, 0, vec!["h1".into()], &tx);
+        start_key_push(&mut app, 0, vec!["h1".into()], false, &tx);
         assert_eq!(
             app.keys.push().expected_count,
             2,
@@ -1220,7 +1299,7 @@ mod key_push_confirm_tests {
     fn start_rejects_empty_aliases_and_does_not_spawn_worker() {
         let (mut app, _scratch) = make_app();
         let (tx, _rx) = mpsc::channel();
-        start_key_push(&mut app, 0, Vec::new(), &tx);
+        start_key_push(&mut app, 0, Vec::new(), false, &tx);
         assert_eq!(app.keys.push().expected_count, 0);
         assert!(app.keys.push().worker.is_none());
         let toast = app.status_center.toast().expect("toast set");
@@ -1232,7 +1311,7 @@ mod key_push_confirm_tests {
         let (mut app, _scratch) = make_app();
         app.keys.list_mut()[0].is_certificate = true;
         let (tx, _rx) = mpsc::channel();
-        start_key_push(&mut app, 0, vec!["h1".into()], &tx);
+        start_key_push(&mut app, 0, vec!["h1".into()], false, &tx);
         assert_eq!(app.keys.push().expected_count, 0);
         assert!(app.keys.push().worker.is_none());
         let toast = app.status_center.toast().expect("toast set");
@@ -1245,7 +1324,7 @@ mod key_push_confirm_tests {
         let (mut app, _scratch) = make_app();
         app.keys.list_mut()[0].display_path = "/tmp/purple-this-file-does-not-exist".into();
         let (tx, _rx) = mpsc::channel();
-        start_key_push(&mut app, 0, vec!["h1".into()], &tx);
+        start_key_push(&mut app, 0, vec!["h1".into()], false, &tx);
         assert_eq!(app.keys.push().expected_count, 0);
         let toast = app.status_center.toast().expect("toast set");
         assert!(toast.is_error());
@@ -1266,12 +1345,183 @@ mod key_push_confirm_tests {
             pub_path.with_extension("").to_string_lossy().into_owned();
         app.keys.list_mut()[0].name = "id_bad".into();
         let (tx, _rx) = mpsc::channel();
-        start_key_push(&mut app, 0, vec!["h1".into()], &tx);
+        start_key_push(&mut app, 0, vec!["h1".into()], false, &tx);
         assert_eq!(app.keys.push().expected_count, 0);
         assert!(app.keys.push().worker.is_none());
         let toast = app.status_center.toast().expect("toast set");
         assert!(toast.is_error());
         assert!(toast.text.contains("validation"));
+    }
+
+    // --- host key trust dialog ---
+
+    fn trust_app() -> App {
+        let scratch = tempfile::tempdir().expect("tempdir").keep();
+        let config = SshConfigFile {
+            elements: SshConfigFile::parse_content("Host h1\n  HostName db.example.com\n"),
+            path: scratch.join("cfg"),
+            crlf: false,
+            bom: false,
+        };
+        let mut app = App::new(config);
+        app.screen = Screen::ConfirmHostKeyTrust {
+            alias: "h1".into(),
+            hostname: "db.example.com".into(),
+            retry: crate::app::PendingRetry::KeyPush {
+                key_path: "~/.ssh/id_test".into(),
+                alias: "h1".into(),
+            },
+        };
+        app
+    }
+
+    fn seed_key(app: &mut App) {
+        app.keys.list_mut().push(crate::ssh_keys::SshKeyInfo {
+            name: "id_test".into(),
+            display_path: "~/.ssh/id_test".into(),
+            key_type: "ED25519".into(),
+            bits: "256".into(),
+            fingerprint: String::new(),
+            comment: String::new(),
+            linked_hosts: vec![],
+            bishop_art: String::new(),
+            strength_score: 95,
+            encrypted: false,
+            agent_loaded: false,
+            is_certificate: false,
+            mtime_ts: None,
+        });
+    }
+
+    #[test]
+    fn trust_accepted_closes_the_dialog() {
+        // The key list is empty, so the retry bails inside `start_key_push`
+        // without spawning ssh. What matters here is that the dialog closes.
+        let mut app = trust_app();
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Char('y')), &tx);
+        assert_eq!(app.screen, Screen::HostList);
+        assert_eq!(app.keys.push().expected_count, 0);
+    }
+
+    #[test]
+    fn trust_accepted_authorizes_the_retry_to_record_the_host_key() {
+        // The whole point of answering `y`: the push that follows runs with
+        // `StrictHostKeyChecking=accept-new`. A real key file is seeded so
+        // `start_key_push` gets as far as starting the run, which is where
+        // the authorization is recorded.
+        let (mut app, _scratch) = make_app();
+        app.screen = Screen::ConfirmHostKeyTrust {
+            alias: "h1".into(),
+            hostname: "db.example.com".into(),
+            retry: crate::app::PendingRetry::KeyPush {
+                key_path: app.keys.list()[0].display_path.clone(),
+                alias: "h1".into(),
+            },
+        };
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Char('y')), &tx);
+        assert_eq!(app.keys.push().expected_count, 1, "the retry ran");
+        assert!(
+            app.keys.push().trust_new_host_key,
+            "the retry must be allowed to record the host key"
+        );
+        // And that authorization is what puts accept-new on the command.
+        let auth = push_auth_for(&app, "h1", app.keys.push().trust_new_host_key);
+        assert!(auth.trust_new_host_key);
+        app.keys.push_mut().cancel_run();
+    }
+
+    #[test]
+    fn a_declined_trust_leaves_an_ordinary_push_unauthorized() {
+        let mut app = trust_app();
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Char('n')), &tx);
+        assert!(!app.keys.push().trust_new_host_key);
+    }
+
+    #[test]
+    fn push_auth_collects_every_input_the_worker_cannot_reach() {
+        let scratch = tempfile::tempdir().expect("tempdir").keep();
+        let config = SshConfigFile {
+            elements: SshConfigFile::parse_content(
+                "Host h1\n  HostName 1.1.1.1\n  # purple:askpass keychain\n",
+            ),
+            path: scratch.join("cfg"),
+            crlf: false,
+            bom: false,
+        };
+        let mut app = App::new(config);
+        app.bw_session = Some("tok".into());
+        app.session_passwords
+            .insert("h1".to_string(), "hunter2".to_string());
+        let auth = push_auth_for(&app, "h1", false);
+        assert_eq!(auth.askpass.as_deref(), Some("keychain"));
+        assert_eq!(auth.session_password.as_deref(), Some("hunter2"));
+        assert_eq!(auth.bw_session.as_deref(), Some("tok"));
+        assert!(!auth.trust_new_host_key);
+        // A host purple knows nothing about carries nothing.
+        let bare = push_auth_for(&app, "ghost", false);
+        assert!(bare.askpass.is_none());
+        assert!(bare.session_password.is_none());
+    }
+
+    #[test]
+    fn trust_declined_warns_and_leaves_the_dialog() {
+        let mut app = trust_app();
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Char('n')), &tx);
+        assert_eq!(app.screen, Screen::HostList);
+        let toast = app.status_center.toast().expect("toast");
+        assert!(toast.text.contains("h1"), "got: {}", toast.text);
+    }
+
+    #[test]
+    fn trust_esc_declines_like_n() {
+        let mut app = trust_app();
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Esc), &tx);
+        assert_eq!(app.screen, Screen::HostList);
+        assert!(app.status_center.toast().is_some());
+    }
+
+    #[test]
+    fn trust_ignores_every_other_key() {
+        // Accepting a host key is a security decision, so a mistyped key
+        // next to y must neither accept nor dismiss it.
+        for code in [
+            KeyCode::Char('t'),
+            KeyCode::Char('u'),
+            KeyCode::Enter,
+            KeyCode::Tab,
+            KeyCode::Char(' '),
+        ] {
+            let mut app = trust_app();
+            let (tx, _rx) = mpsc::channel();
+            handle_host_key_trust_key(&mut app, k(code), &tx);
+            assert!(
+                matches!(app.screen, Screen::ConfirmHostKeyTrust { .. }),
+                "{code:?} must leave the dialog open"
+            );
+            assert!(app.status_center.toast().is_none(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn trust_declined_hands_the_next_waiting_host_its_dialog() {
+        let mut app = trust_app();
+        seed_key(&mut app);
+        app.keys.push_mut().key_path = "~/.ssh/id_test".to_string();
+        app.keys
+            .push_mut()
+            .pending_prompts
+            .push_back(crate::app::KeyPushPrompt::Password {
+                alias: "h1".into(),
+                key_path: "~/.ssh/id_test".into(),
+            });
+        let (tx, _rx) = mpsc::channel();
+        handle_host_key_trust_key(&mut app, k(KeyCode::Char('n')), &tx);
+        assert_eq!(app.screen, Screen::PasswordPrompt);
     }
 
     #[test]

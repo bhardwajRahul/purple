@@ -67,6 +67,11 @@ pub(crate) fn handle_tick(
         app.check_keys_changed();
         *last_config_check = Instant::now();
     }
+    // A question the last push left behind waits while the user is in a
+    // form or another dialog. This is where it gets its turn once they are
+    // back on a page that can carry one.
+    super::key_push::drain_next_key_push_prompt(app);
+
     // Poll active tunnels for exit
     let exited = app.poll_tunnels();
     for (_alias, msg, is_error) in exited {

@@ -478,6 +478,69 @@ pub fn stderr_summary(stderr: &str) -> Option<String> {
     }
 }
 
+/// True when ssh gave up on authentication and a typed password could still
+/// help: the method list behind `Permission denied (` names `password` or
+/// `keyboard-interactive`. A bare `(publickey)` is false, because the server
+/// takes no password at all.
+pub fn needs_password(stderr: &str) -> bool {
+    stderr.split("Permission denied (").skip(1).any(|rest| {
+        let methods = rest.split(')').next().unwrap_or("");
+        methods
+            .split(',')
+            .map(str::trim)
+            .any(|m| m == "password" || m == "keyboard-interactive")
+    })
+}
+
+/// True when strict host key checking refused a host that is not in
+/// `known_hosts` yet. A changed key prints the `@@@` banner plus an
+/// `Offending` line instead and stays with `parse_host_key_error`.
+pub fn is_unknown_host_key(stderr: &str) -> bool {
+    stderr.contains("host key is known for") && stderr.contains("requested strict checking")
+}
+
+/// The host ssh named on its `Permission denied` line, without the user
+/// part. OpenSSH writes `<user>@<host>: Permission denied (<methods>).`,
+/// and on a ProxyJump chain that host is whichever hop refused. `None`
+/// when no line carries the prefix.
+pub fn denied_host(stderr: &str) -> Option<&str> {
+    stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains(": Permission denied ("))
+        .filter_map(|l| {
+            let prefix = l.split(": Permission denied (").next()?;
+            prefix.rsplit('@').next().filter(|h| !h.is_empty())
+        })
+        .next_back()
+}
+
+/// The host strict checking refused, as ssh spells it on the
+/// `No ... host key is known for <host> and you have requested strict
+/// checking.` line. Carries the bracketed form for a non-default port,
+/// so `[10.0.0.1]:2222` comes back whole.
+pub fn unknown_host_key_host(stderr: &str) -> Option<&str> {
+    stderr
+        .lines()
+        .map(str::trim)
+        .find(|l| l.contains("host key is known for") && l.contains("requested strict checking"))
+        .and_then(|l| {
+            let start = l.find("host key is known for ")? + "host key is known for ".len();
+            let rest = &l[start..];
+            let end = rest.find(" and you have requested")?;
+            Some(rest[..end].trim())
+        })
+        .filter(|h| !h.is_empty())
+}
+
+/// Strip ssh's `[host]:port` form down to the bare host, so a name parsed
+/// out of stderr compares against a `HostName` directive.
+pub fn bare_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or(host)
+}
+
 /// Parse host key verification error from SSH stderr output.
 /// Returns (hostname, known_hosts_path) if the error is a changed host key.
 ///
@@ -732,6 +795,84 @@ mod tests {
             !r.stderr_output.is_empty() || !r.status.success(),
             "SSH should produce stderr or fail"
         );
+    }
+
+    // --- needs_password / is_unknown_host_key tests ---
+    //
+    // The strings are what OpenSSH 10.3 prints for a password-only sshd
+    // under BatchMode=yes and StrictHostKeyChecking=yes.
+
+    #[test]
+    fn needs_password_true_for_password_method() {
+        assert!(needs_password(
+            "test@localhost: Permission denied (password).\n"
+        ));
+    }
+
+    #[test]
+    fn needs_password_true_when_password_is_one_of_several_methods() {
+        assert!(needs_password(
+            "test@localhost: Permission denied (publickey,password).\n"
+        ));
+        assert!(needs_password(
+            "test@localhost: Permission denied (publickey,keyboard-interactive).\n"
+        ));
+    }
+
+    #[test]
+    fn needs_password_false_for_publickey_only() {
+        // A typed password cannot help when the server takes none.
+        assert!(!needs_password(
+            "test@localhost: Permission denied (publickey).\n"
+        ));
+    }
+
+    #[test]
+    fn needs_password_false_for_unrelated_errors() {
+        assert!(!needs_password(""));
+        assert!(!needs_password(
+            "ssh: connect to host example.com port 22: Connection refused\n"
+        ));
+        assert!(!needs_password("Permission denied, please try again.\n"));
+    }
+
+    #[test]
+    fn needs_password_survives_the_post_quantum_warning_prefix() {
+        let stderr = "** WARNING: connection is not using a post-quantum key exchange algorithm.\n\
+                      ** This session may be vulnerable to \"store now, decrypt later\" attacks.\n\
+                      test@10.0.0.5: Permission denied (publickey,password).\n";
+        assert!(needs_password(stderr));
+    }
+
+    #[test]
+    fn is_unknown_host_key_true_for_strict_checking_refusal() {
+        let stderr = "No ED25519 host key is known for [localhost]:12222 and you have requested strict checking.\n\
+                      Host key verification failed.\n";
+        assert!(is_unknown_host_key(stderr));
+    }
+
+    #[test]
+    fn is_unknown_host_key_false_for_changed_key_banner() {
+        // A changed key is a security event: it keeps the reset dialog and
+        // never gets an automatic retry.
+        let stderr = "\
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+Offending ECDSA key in /Users/user/.ssh/known_hosts:55
+Host key for example.com has changed and you have requested strict checking.
+Host key verification failed.
+";
+        assert!(!is_unknown_host_key(stderr));
+        assert!(parse_host_key_error(stderr).is_some());
+    }
+
+    #[test]
+    fn is_unknown_host_key_false_for_plain_permission_denied() {
+        assert!(!is_unknown_host_key(
+            "test@localhost: Permission denied (password).\n"
+        ));
+        assert!(!is_unknown_host_key(""));
     }
 
     // --- parse_host_key_error tests ---

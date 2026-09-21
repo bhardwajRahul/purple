@@ -11,6 +11,9 @@ use crate::containers::{ContainerInspect, ContainerRuntime};
 pub struct RefreshQueueItem {
     pub alias: String,
     pub askpass: Option<String>,
+    /// Password typed in the TUI for this host this session, resolved when
+    /// the item was queued so the worker needs no App access.
+    pub session_password: Option<String>,
     pub cached_runtime: Option<ContainerRuntime>,
     pub has_tunnel: bool,
 }

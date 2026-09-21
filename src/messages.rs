@@ -452,6 +452,137 @@ pub mod askpass {
             e
         )
     }
+
+    // ── TUI password prompt ─────────────────────────────────────────
+    //
+    // Distinct from the CLI prompts above: nothing here may claim that
+    // "SSH will prompt", because the background ssh never gets a tty.
+
+    /// Overlay title of the password prompt.
+    pub const PROMPT_TITLE: &str = "Password";
+
+    /// Muted text after the bold alias on the identity line.
+    pub const PROMPT_NEEDS_PASSWORD: &str = "needs a password";
+
+    /// Field labels, left column of the prompt.
+    pub const PROMPT_FIELD_PASSWORD: &str = "password";
+    pub const PROMPT_FIELD_REMEMBER: &str = "remember";
+
+    /// Value of the remember toggle when on: the password goes to the OS
+    /// keychain and `# purple:askpass keychain` is written on the host.
+    pub const PROMPT_REMEMBER_ON: &str = "in keychain";
+
+    /// Value of the remember toggle when off: the password lives in memory
+    /// until purple exits.
+    pub const PROMPT_REMEMBER_OFF: &str = "this session only";
+
+    /// Toast when a host with a configured source (Bitwarden, 1Password,
+    /// ...) failed password authentication. Typing a password would not
+    /// fix the source, so no prompt opens.
+    pub fn source_did_not_deliver(alias: &str, source_label: &str) -> String {
+        format!(
+            "{} failed password authentication. {} did not deliver a password. Check the source and try again.",
+            alias, source_label
+        )
+    }
+
+    /// Toast when the server rejected the password typed this session. The
+    /// prompt reopens right after.
+    pub fn password_rejected(alias: &str) -> String {
+        format!("{} rejected the password. Try again.", alias)
+    }
+
+    /// Toast when the keychain store failed and the password is kept for
+    /// this session only.
+    pub fn keychain_store_failed_session(e: &impl std::fmt::Display) -> String {
+        format!(
+            "Could not store in keychain: {}. Using the password for this session only.",
+            e
+        )
+    }
+
+    /// Toast when the password landed in the keychain but purple could not
+    /// find a host block to point at it. An Include file is the usual
+    /// reason: purple writes only the file it owns. The session copy keeps
+    /// the current operation going.
+    pub fn keychain_source_not_written(alias: &str) -> String {
+        format!(
+            "Stored in keychain, but the block for {} is not in the file purple writes, so the password source was not set. Using the password for this session.",
+            alias
+        )
+    }
+
+    /// Toast when the config changed on disk while the prompt was open, so
+    /// purple leaves the file alone rather than writing a stale model over
+    /// the edit. The keychain already holds the password.
+    pub fn keychain_source_skipped_external_change(alias: &str) -> String {
+        format!(
+            "Stored in keychain. Your SSH config changed on disk, so the password source for {} was left for you to set. Using the password for this session.",
+            alias
+        )
+    }
+
+    /// Toast when the keychain accepted the password but the config write
+    /// failed. The stored entry stays: purple cannot tell whether it
+    /// replaced one that was already there.
+    pub fn keychain_stored_without_source(e: &impl std::fmt::Display) -> String {
+        format!(
+            "Stored in keychain, but saving the password source failed: {}. Using the password for this session.",
+            e
+        )
+    }
+
+    /// Toast when the user closes the prompt without typing a password.
+    /// The operation is dropped; the next host waiting for an answer opens
+    /// its own dialog.
+    pub fn prompt_cancelled(alias: &str) -> String {
+        format!("No password given for {}. Skipped.", alias)
+    }
+
+    /// Toast when a jump host on the way to the target refused, rather than
+    /// the target itself. Purple asks for the target's password, so a
+    /// password typed here would not reach the hop that wants one.
+    pub fn hop_refused(hop: &str) -> String {
+        format!(
+            "{} refused the login on the way there. Give that jump host a password source and try again.",
+            hop
+        )
+    }
+}
+
+/// Host key trust dialog, shown when a background ssh met a host that is
+/// not in `known_hosts` yet.
+pub mod host_key_trust {
+    pub const TITLE: &str = "New Host";
+
+    /// Bold question line.
+    pub fn question(hostname: &str) -> String {
+        format!("Trust {} on first contact?", hostname)
+    }
+
+    /// First muted detail line: which entry this is about.
+    pub fn detail_unknown(alias: &str) -> String {
+        format!("{} is not in known_hosts yet.", alias)
+    }
+
+    /// Second muted detail line: what trusting does.
+    pub const DETAIL_RECORDED: &str =
+        "Its key is recorded now and checked on every later connection.";
+
+    /// Toast when the user declines. The operation is dropped.
+    pub fn declined(alias: &str) -> String {
+        format!("Host key for {} not trusted. Skipped.", alias)
+    }
+
+    /// Toast when the host ssh does not know is a jump host on the way to
+    /// the target. Trusting it under the target's name would record the
+    /// wrong key, so purple names the hop and leaves the choice there.
+    pub fn hop_is_unknown(hop: &str) -> String {
+        format!(
+            "{} is not in known_hosts yet, and it sits on the way there. Connect to that jump host once to record its key.",
+            hop
+        )
+    }
 }
 
 // ── Logging ─────────────────────────────────────────────────────────

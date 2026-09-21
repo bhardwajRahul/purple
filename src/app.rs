@@ -49,6 +49,7 @@ pub(crate) use hosts::migrate_renames_persistent_state;
 pub(crate) mod jump;
 mod key_push_state;
 mod keys_state;
+pub(crate) mod password_prompt;
 mod pickers;
 pub(crate) mod ping;
 mod provider_state;
@@ -83,8 +84,12 @@ pub use host_state::{
     DeletedHost, GroupBy, HostListItem, HostState, ProxyJumpCandidate, SortMode, ViewMode,
     health_summary_spans, health_summary_spans_for,
 };
-pub use key_push_state::KeyPushState;
+pub use key_push_state::{KeyPushPrompt, KeyPushState};
 pub use keys_state::KeysState;
+pub use password_prompt::{
+    PASSWORD_MAX_CHARS, PasswordPromptField, PasswordPromptState, PendingRetry, SessionPasswords,
+    source_allows_prompt,
+};
 pub use ping::{
     PingState, PingStatus, classify_ping, ping_sort_key, propagate_ping_to_dependents, status_glyph,
 };
@@ -187,6 +192,12 @@ pub struct App {
     /// askpass session token; not Keys-tab state.
     pub(crate) bw_session: Option<String>,
 
+    /// Passwords typed in the TUI with "remember" off, per alias, for the
+    /// lifetime of the process. Never written to disk.
+    pub(crate) session_passwords: SessionPasswords,
+    /// Payload of `Screen::PasswordPrompt`; Some while the prompt is open.
+    pub(crate) password_prompt: Option<PasswordPromptState>,
+
     // File browser
     /// Persistent per-host last-visited paths; always present.
     pub(crate) file_browser_state: FileBrowserState,
@@ -269,6 +280,8 @@ impl App {
             snippets: SnippetState::with_store_loaded(env.paths()),
             update: UpdateState::with_current_hint(&env),
             bw_session: None,
+            session_passwords: SessionPasswords::new(),
+            password_prompt: None,
             file_browser_state: FileBrowserState::default(),
             file_browser_session: None,
             container_state: ContainerState {
@@ -437,6 +450,19 @@ impl App {
             self.file_browser_state.prune_orphans(&valid_aliases);
             self.tunnels.prune_orphans(&valid_aliases);
             self.ping.prune_orphans(&valid_aliases);
+
+            // A session password belongs to a host in the list. One whose
+            // host is gone waits for whatever takes that alias next, so it
+            // is dropped here.
+            let before = self.session_passwords.len();
+            self.session_passwords
+                .retain(|alias, _| valid_aliases.contains(alias.as_str()));
+            if self.session_passwords.len() != before {
+                log::debug!(
+                    "[purple] reload_hosts: dropped {} session password(s) for hosts that are gone",
+                    before - self.session_passwords.len()
+                );
+            }
         }
 
         if self.hosts_state.sort_mode == SortMode::Original
@@ -1073,6 +1099,8 @@ impl App {
                 | Screen::Containers { .. }
                 | Screen::ConfirmDelete { .. }
                 | Screen::ConfirmHostKeyReset { .. }
+                | Screen::ConfirmHostKeyTrust { .. }
+                | Screen::PasswordPrompt
                 | Screen::ConfirmPurgeStale
                 | Screen::ConfirmImport { .. }
                 | Screen::ConfirmVaultSign

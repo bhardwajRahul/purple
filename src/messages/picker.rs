@@ -274,6 +274,25 @@ pub fn key_push_all_failed(count: usize) -> String {
     )
 }
 
+/// Sticky-error body when a single-host run failed. The reason travels
+/// with it: one host has one reason, and it says more than a count.
+pub fn key_push_single_failure(alias: &str, reason: &str) -> String {
+    format!("Push to {} failed. {}", alias, reason)
+}
+
+/// Toast when a finished run left hosts waiting on a dialog. Leads with
+/// what already landed. The dialog for the first of the rest opens behind
+/// it, unless the user is in a form, so the count stands on its own.
+pub fn key_push_pending_answers(done: usize, pending: usize) -> String {
+    if done == 0 {
+        return format!("{} host(s) need an answer.", pending);
+    }
+    format!(
+        "Pushed to {} host(s). {} more need an answer.",
+        done, pending
+    )
+}
+
 pub fn proxy_jump_set(alias: &str) -> String {
     format!("Jumping through {}.", alias)
 }

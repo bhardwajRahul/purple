@@ -181,21 +181,13 @@ fn spawn_initial_listing(app: &mut App, alias: String, events_tx: &mpsc::Sender<
         .iter()
         .find(|h| h.alias == alias)
         .and_then(|h| h.askpass.clone());
-    let has_tunnel = app.tunnels.active_contains(&alias);
     log::debug!("[purple] container cache add: alias={}", alias);
     app.notify(crate::messages::container_refreshing(&alias));
     // Mark in-flight so the post-key auto-refresh does not spawn a
     // second `docker ps` for the same alias before this one returns.
     app.containers_overview
         .mark_auto_list_pending(alias.clone());
-    let ctx = crate::ssh_context::OwnedSshContext {
-        alias,
-        config_path: app.reload.config_path().to_path_buf(),
-        askpass,
-        bw_session: app.bw_session.clone(),
-        has_tunnel,
-        env: std::sync::Arc::clone(&app.env),
-    };
+    let ctx = app.ssh_context_for(alias, askpass);
     let tx = events_tx.clone();
     crate::containers::spawn_container_listing(ctx, None, move |a, result| {
         let _ = tx.send(AppEvent::ContainerListing { alias: a, result });

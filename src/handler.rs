@@ -24,6 +24,7 @@ mod host_list;
 mod jump;
 pub(crate) mod key_push_picker;
 mod keys_overview;
+pub(crate) mod password_prompt;
 mod picker;
 mod ping;
 mod provider;
@@ -109,6 +110,10 @@ pub fn handle_key_event(
         Screen::SnippetHostPicker => snippet_host_picker::handle_key(app, key),
         Screen::ConfirmRunSnippet => confirm::handle_run_snippet_confirm_key(app, key, events_tx),
         Screen::ConfirmHostKeyReset { .. } => confirm::handle_host_key_reset_key(app, key),
+        Screen::ConfirmHostKeyTrust { .. } => {
+            confirm::handle_host_key_trust_key(app, key, events_tx)
+        }
+        Screen::PasswordPrompt => password_prompt::handle_key(app, key, events_tx),
         Screen::ConfirmVaultSign => confirm::handle_vault_sign_key(app, key, events_tx),
         Screen::ConfirmImport { .. } => confirm::handle_import_key(app, key),
         Screen::ConfirmPurgeStale => confirm::handle_purge_stale_key(app, key),

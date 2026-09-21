@@ -9,17 +9,20 @@
 //! (which would require fragile escaping). Stdin is the canonical channel
 //! for binary-ish content over SSH.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use log::debug;
 
+use crate::snippet::ChildGuard;
+
 /// Outcome for one host in a push run. The renderer summarises these
 /// into a toast (when every entry is `Appended` / `AlreadyPresent`) or a
-/// sticky error block (when at least one is `Failed`).
+/// sticky error block (when at least one is `Failed`). The two prompt
+/// variants leave the summary and open a dialog instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyPushOutcome {
     /// Pubkey was newly appended to the remote `authorized_keys`.
@@ -30,6 +33,74 @@ pub enum KeyPushOutcome {
     /// stripped, length-capped) so the user sees what went wrong without
     /// leaking the full ssh-vvv firehose into the UI.
     Failed(String),
+    /// ssh ended with `Permission denied` and the server still takes a
+    /// password. The TUI asks for one and pushes again. `host` is the hop
+    /// ssh named as refusing, which on a ProxyJump chain may be a bastion
+    /// rather than the target.
+    NeedsPassword {
+        detail: String,
+        host: Option<String>,
+    },
+    /// Strict host key checking refused a host that is not in
+    /// `known_hosts` yet. The TUI asks whether to trust it and pushes again.
+    /// `host` is the one ssh named, a bastion included.
+    UnknownHostKey {
+        detail: String,
+        host: Option<String>,
+    },
+}
+
+/// Authentication inputs for one host, resolved on the main thread before
+/// the worker spawns. `trust_new_host_key` is set only by the retry that
+/// follows the trust dialog.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct PushAuth {
+    pub askpass: Option<String>,
+    pub session_password: Option<String>,
+    pub bw_session: Option<String>,
+    pub trust_new_host_key: bool,
+}
+
+// Hand-written so a stray `{:?}` can never print the password or the
+// Bitwarden token. Shows whether each is present, never its value.
+impl std::fmt::Debug for PushAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PushAuth")
+            .field("askpass", &self.askpass)
+            .field("session_password", &self.session_password.is_some())
+            .field("bw_session", &self.bw_session.is_some())
+            .field("trust_new_host_key", &self.trust_new_host_key)
+            .finish()
+    }
+}
+
+/// The ssh child currently running, shared between the push worker and the
+/// UI thread. Esc and q terminate it through here, so a cancel acts within
+/// the SIGTERM grace window instead of waiting for ssh to give up.
+#[derive(Clone, Default)]
+pub struct InflightChild(Arc<Mutex<Option<Arc<ChildGuard>>>>);
+
+impl InflightChild {
+    fn set(&self, guard: Arc<ChildGuard>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
+    }
+
+    fn clear(&self) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).take();
+    }
+
+    /// Kill the running child, if any. A no-op between hosts.
+    pub fn terminate(&self) {
+        let guard = self.0.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(g) = guard {
+            g.terminate();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_set(&self) -> bool {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    }
 }
 
 /// One row in the in-flight push result list. Populated as worker
@@ -39,6 +110,10 @@ pub struct KeyPushResult {
     pub alias: String,
     pub outcome: KeyPushOutcome,
 }
+
+/// Reason recorded for a host the user aborted. Spelled once so the
+/// worker and the test that reads it cannot drift apart.
+const ABORTED: &str = "canceled";
 
 /// Maximum stderr length retained in `KeyPushOutcome::Failed`. Longer
 /// `ssh -v` output is truncated with an ellipsis so a single failure
@@ -141,21 +216,14 @@ fn scrub_stderr(raw: &str) -> String {
     }
 }
 
-/// Push `pubkey` to the remote `alias` over SSH. Synchronous: spawns
-/// `ssh -F <config_path> -T -o ConnectTimeout=10 -- <alias> <REMOTE_SNIPPET>`,
-/// pipes `pubkey` to stdin, waits for the child to finish, and returns
-/// the parsed outcome. The cancel flag is observed before the spawn so a
-/// rapid Esc after launching the batch can short-circuit pending hosts.
-pub fn push_to_host(
-    pubkey: &str,
-    alias: &str,
-    config_path: &Path,
-    cancel: &Arc<AtomicBool>,
-) -> KeyPushOutcome {
-    if cancel.load(Ordering::Relaxed) {
-        return KeyPushOutcome::Failed("cancelled".to_string());
-    }
-
+/// Build the ssh command for one push. Pure, so tests can inspect argv and
+/// env without spawning anything.
+///
+/// The child never reaches the tty: strict host key checking turns an
+/// unknown host into an error (`accept-new` on the retry after the trust
+/// dialog) and `BatchMode=yes` turns a password prompt into `Permission
+/// denied` when neither a source nor a session password can answer it.
+pub(crate) fn build_push_command(alias: &str, config_path: &Path, auth: &PushAuth) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-F")
         .arg(config_path)
@@ -165,8 +233,8 @@ pub fn push_to_host(
         // ServerAliveInterval/CountMax bound the post-auth phase:
         // ConnectTimeout only covers the TCP/handshake. Without these,
         // a remote NFS-stalled `~/.ssh/authorized_keys` or a hung shell
-        // could block `wait_with_output` indefinitely. 10s × 3 = 30s
-        // worst case after auth before SSH tears down the session.
+        // could block the wait indefinitely. 10s × 3 = 30s worst case
+        // after auth before SSH tears down the session.
         .arg("-o")
         .arg("ServerAliveInterval=10")
         .arg("-o")
@@ -174,13 +242,74 @@ pub fn push_to_host(
         .arg("-o")
         .arg("ControlMaster=no")
         .arg("-o")
-        .arg("ControlPath=none")
-        .arg("--")
+        .arg("ControlPath=none");
+    let strict = if auth.trust_new_host_key {
+        "StrictHostKeyChecking=accept-new"
+    } else {
+        "StrictHostKeyChecking=yes"
+    };
+    cmd.arg("-o")
+        .arg(strict)
+        .arg("-o")
+        .arg(crate::askpass_env::SINGLE_PASSWORD_PROMPT_OPT);
+    if crate::askpass_env::needs_batch_mode(
+        auth.askpass.as_deref(),
+        auth.session_password.as_deref(),
+    ) {
+        cmd.arg("-o").arg(crate::askpass_env::BATCH_MODE_OPT);
+    }
+    cmd.arg("--")
         .arg(alias)
         .arg(REMOTE_SNIPPET)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    crate::askpass_env::configure_auth(
+        &mut cmd,
+        alias,
+        config_path,
+        auth.askpass.as_deref(),
+        auth.session_password.as_deref(),
+        auth.bw_session.as_deref(),
+    );
+
+    // Own process group: cancel and shutdown signal ssh together with any
+    // ProxyCommand it spawned. A Ctrl+C aimed at purple never reaches them.
+    #[cfg(unix)]
+    // SAFETY: pre_exec runs after fork, before exec in the child. setpgid(0, 0)
+    // is async-signal-safe (POSIX) and touches no Rust runtime state. The
+    // return value is ignored: a failed setpgid leaves ssh in purple's group,
+    // which still pushes.
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
+    cmd
+}
+
+/// Push `pubkey` to the remote `alias` over SSH. Synchronous: spawns the
+/// command from `build_push_command`, pipes `pubkey` to stdin, waits for the
+/// child to finish and returns the parsed outcome. The cancel flag is
+/// observed before the spawn so a rapid Esc after launching the batch can
+/// short-circuit pending hosts. The running child is registered in
+/// `inflight` so the same Esc can kill it mid-connection.
+pub fn push_to_host(
+    pubkey: &str,
+    alias: &str,
+    config_path: &Path,
+    auth: &PushAuth,
+    cancel: &Arc<AtomicBool>,
+    inflight: &InflightChild,
+) -> KeyPushOutcome {
+    if cancel.load(Ordering::Relaxed) {
+        return KeyPushOutcome::Failed(ABORTED.to_string());
+    }
+
+    let mut cmd = build_push_command(alias, config_path, auth);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -190,9 +319,15 @@ pub fn push_to_host(
         }
     };
 
+    let stdin = child.stdin.take();
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let guard = Arc::new(ChildGuard::new(child));
+    inflight.set(Arc::clone(&guard));
+
     // Pipe the pubkey with a trailing newline so `printf '%s\n' "$PUBKEY"`
     // on the remote produces an exact `authorized_keys` line.
-    if let Some(stdin) = child.stdin.as_mut() {
+    if let Some(mut stdin) = stdin {
         let payload = if pubkey.ends_with('\n') {
             pubkey.to_string()
         } else {
@@ -203,35 +338,77 @@ pub fn push_to_host(
                 "[purple] key_push: stdin write failed alias={} err={}",
                 alias, e
             );
-            let _ = child.kill();
-            let _ = child.wait();
+            guard.terminate();
+            inflight.clear();
             return KeyPushOutcome::Failed(format!("write pubkey: {}", e));
         }
+        // Drop stdin so the remote `cat` receives EOF.
+        drop(stdin);
     }
-    // Drop stdin so the remote `cat` receives EOF.
-    drop(child.stdin.take());
 
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            debug!("[purple] key_push: wait failed alias={} err={}", alias, e);
-            return KeyPushOutcome::Failed(format!("wait ssh: {}", e));
+    // Drain both pipes before waiting so a chatty remote cannot block on a
+    // full pipe while we block on wait.
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_end(&mut buf);
         }
+        buf
+    });
+    let mut stdout_buf = Vec::new();
+    if let Some(mut pipe) = stdout_pipe {
+        let _ = pipe.read_to_end(&mut stdout_buf);
+    }
+    let stderr_buf = stderr_reader.join().unwrap_or_default();
+
+    let status = guard.wait();
+    inflight.clear();
+
+    let Some(status) = status else {
+        debug!("[purple] key_push: wait failed alias={}", alias);
+        return KeyPushOutcome::Failed("wait ssh: child already reaped".to_string());
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    if cancel.load(Ordering::Relaxed) {
+        debug!(
+            "[purple] key_push: cancel hit mid-connection alias={}",
+            alias
+        );
+        return KeyPushOutcome::Failed(ABORTED.to_string());
+    }
 
-    if !output.status.success() {
-        let scrubbed = scrub_stderr(&stderr);
+    let stdout = String::from_utf8_lossy(&stdout_buf);
+    let stderr = String::from_utf8_lossy(&stderr_buf);
+
+    if !status.success() {
+        // Classify on the raw stderr: the scrubbed excerpt is capped and a
+        // long warning prefix could push the decisive line past the cap.
+        let filtered = crate::file_browser::filter_ssh_warnings(&stderr);
+        let scrubbed = scrub_stderr(&filtered);
         let msg = if scrubbed.is_empty() {
-            format!("ssh exited {}", output.status)
+            format!("ssh exited {}", status)
         } else {
             scrubbed
         };
+        if crate::connection::is_unknown_host_key(&stderr) {
+            let host = crate::connection::unknown_host_key_host(&stderr).map(str::to_string);
+            debug!(
+                "[purple] key_push: unknown host key alias={} host={:?} status={}",
+                alias, host, status
+            );
+            return KeyPushOutcome::UnknownHostKey { detail: msg, host };
+        }
+        if crate::connection::needs_password(&stderr) {
+            let host = crate::connection::denied_host(&stderr).map(str::to_string);
+            debug!(
+                "[purple] key_push: needs password alias={} refused_by={:?} status={}",
+                alias, host, status
+            );
+            return KeyPushOutcome::NeedsPassword { detail: msg, host };
+        }
         debug!(
             "[purple] key_push: failed alias={} status={} stderr={}",
-            alias, output.status, msg
+            alias, status, msg
         );
         return KeyPushOutcome::Failed(msg);
     }
@@ -473,16 +650,19 @@ mod tests {
 
     #[test]
     fn push_to_host_short_circuits_when_cancel_is_set() {
-        // Cancel before spawn must return Failed("cancelled") without
+        // Cancel before spawn must return the abort reason without
         // touching ssh. We point at a path that does not exist on disk
         // so a buggy implementation that DID try to spawn would fail
         // loudly instead of silently succeeding.
         let cancel = Arc::new(AtomicBool::new(true));
+        let inflight = InflightChild::default();
         let outcome = push_to_host(
             "ssh-ed25519 AAAA test@host",
             "this-alias-does-not-exist",
             std::path::Path::new("/tmp/purple-nonexistent-config"),
+            &PushAuth::default(),
             &cancel,
+            &inflight,
         );
         match outcome {
             KeyPushOutcome::Failed(msg) => {
@@ -494,6 +674,228 @@ mod tests {
             }
             other => panic!("expected Failed(cancelled), got {:?}", other),
         }
+        assert!(!inflight.is_set(), "no child was spawned");
+    }
+
+    #[test]
+    fn push_to_host_against_missing_config_fails_and_clears_inflight() {
+        // A real spawn against a config path that does not exist: ssh
+        // exits at once with a non-zero status. The inflight slot must be
+        // empty afterwards so a later cancel never signals a reaped PID.
+        let cancel = Arc::new(AtomicBool::new(false));
+        let inflight = InflightChild::default();
+        let outcome = push_to_host(
+            "ssh-ed25519 AAAA test@host",
+            "this-alias-does-not-exist",
+            std::path::Path::new("/tmp/purple-nonexistent-config"),
+            &PushAuth::default(),
+            &cancel,
+            &inflight,
+        );
+        assert!(
+            matches!(outcome, KeyPushOutcome::Failed(_)),
+            "got {outcome:?}"
+        );
+        assert!(!inflight.is_set());
+    }
+
+    #[test]
+    fn inflight_terminate_kills_a_running_child() {
+        // A `sleep` in its own process group stands in for a stuck ssh.
+        let mut cmd = Command::new("sleep");
+        cmd.arg("30");
+        #[cfg(unix)]
+        // SAFETY: setpgid(0, 0) is async-signal-safe and the closure touches
+        // no Rust runtime state.
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        let child = cmd.spawn().expect("spawn sleep");
+        let guard = Arc::new(ChildGuard::new(child));
+        let inflight = InflightChild::default();
+        inflight.set(Arc::clone(&guard));
+        assert!(inflight.is_set());
+        let started = std::time::Instant::now();
+        inflight.terminate();
+        // Esc and quit both call this from the UI thread, so it signals and
+        // returns rather than standing through the grace window.
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(100),
+            "terminate held the caller for {:?}",
+            started.elapsed()
+        );
+        assert!(!inflight.is_set());
+        // The owner's wait returns promptly with the signal status.
+        let status = guard.wait();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(status.is_some_and(|s| !s.success()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_ignores_sigterm_is_killed_by_the_waiting_thread() {
+        // terminate only signals now, so the escalation has to come from
+        // whichever thread is in wait. A shell that traps SIGTERM proves it.
+        // The shell ignores SIGTERM and outlives the `sleep` children that
+        // do take it, so only SIGKILL ends this process group.
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg("trap '' TERM; while :; do sleep 0.05; done");
+        // SAFETY: setpgid(0, 0) is async-signal-safe and the closure touches
+        // no Rust runtime state.
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        let child = cmd.spawn().expect("spawn sh");
+        let guard = Arc::new(ChildGuard::new(child));
+        // Let the shell reach its `trap` first. Signaled before that, it
+        // dies on SIGTERM like any other process and proves nothing.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        // The waiter reports through a channel rather than a join, so a
+        // broken escalation fails this test instead of hanging the suite.
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let guard = Arc::clone(&guard);
+            std::thread::spawn(move || {
+                let _ = tx.send(guard.wait());
+            });
+        }
+        let started = std::time::Instant::now();
+        guard.terminate();
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(100),
+            "terminate held the caller for {:?}",
+            started.elapsed()
+        );
+        let status = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the waiting thread must escalate to SIGKILL");
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            status.and_then(|s| s.signal()),
+            Some(libc::SIGKILL),
+            "SIGTERM was ignored, so only SIGKILL can have ended it"
+        );
+    }
+
+    fn push_args(auth: &PushAuth) -> Vec<String> {
+        build_push_command("web1", std::path::Path::new("/tmp/cfg"), auth)
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn push_env_names(auth: &PushAuth) -> Vec<String> {
+        build_push_command("web1", std::path::Path::new("/tmp/cfg"), auth)
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|_| k.to_string_lossy().into_owned()))
+            .collect()
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
+
+    #[test]
+    fn build_push_command_without_auth_sets_batch_mode_and_no_askpass() {
+        let auth = PushAuth::default();
+        let args = push_args(&auth);
+        assert!(has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+        assert!(has_opt(&args, "StrictHostKeyChecking=yes"), "got: {args:?}");
+        assert!(push_env_names(&auth).is_empty());
+    }
+
+    #[test]
+    fn build_push_command_with_source_wires_askpass_without_batch_mode() {
+        let auth = PushAuth {
+            askpass: Some("keychain".into()),
+            ..Default::default()
+        };
+        let args = push_args(&auth);
+        assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+        let names = push_env_names(&auth);
+        assert!(names.iter().any(|n| n == "SSH_ASKPASS"));
+        assert!(names.iter().any(|n| n == "SSH_ASKPASS_REQUIRE"));
+    }
+
+    #[test]
+    fn build_push_command_with_session_password_uses_oneshot_channel() {
+        let auth = PushAuth {
+            session_password: Some("hunter2".into()),
+            ..Default::default()
+        };
+        let args = push_args(&auth);
+        assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+        assert!(args.iter().all(|a| a != "hunter2"), "secret in argv");
+        let names = push_env_names(&auth);
+        assert!(names.iter().any(|n| n == "SSH_ASKPASS"));
+        assert!(
+            names
+                .iter()
+                .any(|n| n == crate::askpass_env::ONESHOT_SECRET_VAR)
+        );
+    }
+
+    #[test]
+    fn build_push_command_forwards_bw_session() {
+        let auth = PushAuth {
+            askpass: Some("bw:item".into()),
+            bw_session: Some("tok".into()),
+            ..Default::default()
+        };
+        assert!(push_env_names(&auth).iter().any(|n| n == "BW_SESSION"));
+    }
+
+    #[test]
+    fn build_push_command_always_limits_ssh_to_one_password_attempt() {
+        // A background run has one answer to give. A second prompt only
+        // sends an empty attempt and burns another failed login.
+        for auth in [
+            PushAuth::default(),
+            PushAuth {
+                askpass: Some("keychain".into()),
+                ..Default::default()
+            },
+            PushAuth {
+                session_password: Some("hunter2".into()),
+                ..Default::default()
+            },
+        ] {
+            let args = push_args(&auth);
+            assert!(has_opt(&args, "NumberOfPasswordPrompts=1"), "got: {args:?}");
+        }
+    }
+
+    #[test]
+    fn build_push_command_trust_retry_uses_accept_new() {
+        let auth = PushAuth {
+            trust_new_host_key: true,
+            ..Default::default()
+        };
+        let args = push_args(&auth);
+        assert!(
+            has_opt(&args, "StrictHostKeyChecking=accept-new"),
+            "got: {args:?}"
+        );
+        assert!(!has_opt(&args, "StrictHostKeyChecking=yes"));
+    }
+
+    #[test]
+    fn build_push_command_options_precede_the_separator() {
+        let args = push_args(&PushAuth::default());
+        let sep = args.iter().position(|a| a == "--").expect("-- present");
+        let last_opt = args.iter().rposition(|a| a == "-o").expect("-o present");
+        assert!(last_opt < sep, "got: {args:?}");
+        assert_eq!(args[sep + 1], "web1");
+        assert_eq!(args[sep + 2], REMOTE_SNIPPET);
     }
 
     #[test]

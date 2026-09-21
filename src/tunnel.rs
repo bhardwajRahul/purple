@@ -342,18 +342,20 @@ pub fn format_uptime(elapsed: Duration) -> String {
     }
 }
 
-/// Start an SSH tunnel process for the given host alias.
-/// Uses `ssh -N` (no remote command). All configured forwards activate automatically.
-/// Passes `-F <config_path>` so the alias resolves against the correct config file.
-/// stderr is piped so poll_tunnels() can capture error messages on exit.
-/// When `askpass` is Some, delegates to `askpass_env::configure_ssh_command`. Essential
-/// for tunnels since stdin is null and interactive password entry is impossible.
-pub fn start_tunnel(
+/// Build the tunnel command. Pure, so tests can inspect argv and env.
+///
+/// Without a password source and without a session password, `BatchMode=yes`
+/// makes ssh fail at once on a password-only host, so the tunnel never sits
+/// in "connecting" while ssh waits on a tty nobody can see. No
+/// `StrictHostKeyChecking` override here: a user's own setting keeps working
+/// for tunnels.
+pub(crate) fn build_tunnel_command(
     alias: &str,
     config_path: &std::path::Path,
     askpass: Option<&str>,
+    session_password: Option<&str>,
     bw_session: Option<&str>,
-) -> Result<Child> {
+) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-F")
         .arg(config_path)
@@ -362,19 +364,43 @@ pub fn start_tunnel(
         // the LIVE and EVENTS detail cards.
         .arg("-v")
         .arg("-N")
-        .arg("--")
+        .arg("-o")
+        .arg(crate::askpass_env::SINGLE_PASSWORD_PROMPT_OPT);
+    if crate::askpass_env::needs_batch_mode(askpass, session_password) {
+        cmd.arg("-o").arg(crate::askpass_env::BATCH_MODE_OPT);
+    }
+    cmd.arg("--")
         .arg(alias)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 
-    if askpass.is_some() {
-        crate::askpass_env::configure_ssh_command(&mut cmd, alias, config_path);
-    }
+    crate::askpass_env::configure_auth(
+        &mut cmd,
+        alias,
+        config_path,
+        askpass,
+        session_password,
+        bw_session,
+    );
+    cmd
+}
 
-    if let Some(token) = bw_session {
-        cmd.env("BW_SESSION", token);
-    }
+/// Start an SSH tunnel process for the given host alias.
+/// Uses `ssh -N` (no remote command). All configured forwards activate automatically.
+/// Passes `-F <config_path>` so the alias resolves against the correct config file.
+/// stderr is piped so poll_tunnels() can capture error messages on exit.
+/// When `askpass` or `session_password` is Some, the askpass program is wired
+/// up. Essential for tunnels since stdin is null and interactive password
+/// entry is impossible.
+pub fn start_tunnel(
+    alias: &str,
+    config_path: &std::path::Path,
+    askpass: Option<&str>,
+    session_password: Option<&str>,
+    bw_session: Option<&str>,
+) -> Result<Child> {
+    let mut cmd = build_tunnel_command(alias, config_path, askpass, session_password, bw_session);
 
     #[cfg(unix)]
     // SAFETY: pre_exec runs after fork, before exec in the child process.
@@ -1040,113 +1066,117 @@ mod tests {
     }
 
     // =========================================================================
-    // start_tunnel askpass env var logic
+    // build_tunnel_command: argv and env of the ssh child
     // =========================================================================
-    // We can't call start_tunnel directly (it spawns ssh), but we can verify
-    // the env var setup logic by testing the Command builder pattern.
+    // `start_tunnel` spawns ssh; the builder is the part under test.
+
+    fn tunnel_args(askpass: Option<&str>, session_password: Option<&str>) -> Vec<String> {
+        build_tunnel_command(
+            "web1",
+            std::path::Path::new("/tmp/cfg"),
+            askpass,
+            session_password,
+            None,
+        )
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+    }
+
+    fn tunnel_env(askpass: Option<&str>, bw_session: Option<&str>) -> Vec<(String, String)> {
+        build_tunnel_command(
+            "web1",
+            std::path::Path::new("/tmp/cfg"),
+            askpass,
+            None,
+            bw_session,
+        )
+        .get_envs()
+        .filter_map(|(k, v)| {
+            v.map(|val| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    val.to_string_lossy().into_owned(),
+                )
+            })
+        })
+        .collect()
+    }
+
+    fn has_opt(args: &[String], value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+    }
 
     #[test]
     fn start_tunnel_askpass_none_does_not_set_env() {
-        // When askpass is None, the Command should not have SSH_ASKPASS set.
-        // We verify the logic: `if askpass.is_some()` gate.
-        let askpass: Option<&str> = None;
-        assert!(askpass.is_none());
+        assert!(tunnel_env(None, None).is_empty());
     }
 
     #[test]
-    fn start_tunnel_askpass_some_triggers_env_setup() {
-        let askpass: Option<&str> = Some("keychain");
-        assert!(askpass.is_some());
-    }
-
-    #[test]
-    fn start_tunnel_askpass_empty_string_still_triggers() {
-        // Even an empty askpass (from "Custom command" picker) triggers env setup
-        let askpass: Option<&str> = Some("");
-        assert!(askpass.is_some());
-    }
-
-    #[test]
-    fn start_tunnel_askpass_all_source_types_trigger() {
-        let sources = [
-            "keychain",
-            "op://Vault/Item/pw",
-            "bw:my-item",
-            "pass:ssh/server",
-            "vault:secret/ssh#pw",
-            "my-script %h",
-        ];
-        for source in &sources {
-            let askpass: Option<&str> = Some(source);
-            assert!(
-                askpass.is_some(),
-                "askpass '{}' should trigger env setup",
-                source
-            );
+    fn start_tunnel_askpass_some_wires_askpass_env() {
+        let env = tunnel_env(Some("keychain"), None);
+        let names: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        for expected in [
+            "SSH_ASKPASS",
+            "SSH_ASKPASS_REQUIRE",
+            "PURPLE_ASKPASS_MODE",
+            "PURPLE_HOST_ALIAS",
+            "PURPLE_CONFIG_PATH",
+        ] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
         }
     }
 
     #[test]
-    fn start_tunnel_env_var_names_match_connection() {
-        // Tunnel and connection must use the same env var names
-        let expected = [
-            "SSH_ASKPASS",
-            "SSH_ASKPASS_REQUIRE",
-            "PURPLE_ASKPASS_MODE",
-            "PURPLE_HOST_ALIAS",
-        ];
-        assert_eq!(expected.len(), 4);
-        assert_eq!(expected[2], "PURPLE_ASKPASS_MODE");
-    }
-
-    // Note: the SSH_ASKPASS_REQUIRE=force invariant is now covered by the
-    // real regression test in `src/askpass_env.rs`, which builds a Command and
-    // inspects its env vars directly via `Command::get_envs()`.
-
-    // =========================================================================
-    // Tunnel vs Connection env var consistency
-    // =========================================================================
-
-    #[test]
-    fn start_tunnel_sets_config_path_env() {
-        // PURPLE_CONFIG_PATH must be set so the askpass subprocess can find the config
-        let env_vars = [
-            "SSH_ASKPASS",
-            "SSH_ASKPASS_REQUIRE",
-            "PURPLE_ASKPASS_MODE",
-            "PURPLE_HOST_ALIAS",
-            "PURPLE_CONFIG_PATH",
-        ];
-        assert!(env_vars.contains(&"PURPLE_CONFIG_PATH"));
+    fn start_tunnel_forwards_bw_session_when_given() {
+        let env = tunnel_env(Some("bw:item"), Some("tok"));
+        assert!(env.contains(&("BW_SESSION".to_string(), "tok".to_string())));
     }
 
     #[test]
-    fn start_tunnel_does_not_set_bw_session() {
-        // Unlike connection.rs, start_tunnel does NOT pass BW_SESSION.
-        // The askpass subprocess reads from env inherited from the parent process.
-        // This is correct because BW_SESSION should be in the parent env already.
-        let tunnel_env_vars = [
-            "SSH_ASKPASS",
-            "SSH_ASKPASS_REQUIRE",
-            "PURPLE_ASKPASS_MODE",
-            "PURPLE_HOST_ALIAS",
-            "PURPLE_CONFIG_PATH",
-        ];
-        assert!(!tunnel_env_vars.contains(&"BW_SESSION"));
+    fn start_tunnel_without_auth_sets_batch_mode() {
+        // A password-only host without a source fails fast instead of
+        // leaving the tunnel in "connecting" while ssh waits on a tty.
+        let args = tunnel_args(None, None);
+        assert!(has_opt(&args, "BatchMode=yes"), "got: {args:?}");
     }
 
     #[test]
-    fn start_tunnel_stdin_is_null() {
-        // Tunnels use -N (no remote command) and stdin is null.
-        // This means SSH cannot prompt interactively, making ASKPASS essential.
-        let stdin_mode = "null";
-        assert_eq!(stdin_mode, "null");
+    fn start_tunnel_with_source_omits_batch_mode() {
+        let args = tunnel_args(Some("keychain"), None);
+        assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
     }
 
     #[test]
-    fn start_tunnel_uses_dash_n_flag() {
-        // -N means no remote command, just forwarding
-        let flag = "-N";
-        assert_eq!(flag, "-N");
+    fn start_tunnel_with_session_password_omits_batch_mode() {
+        let args = tunnel_args(None, Some("hunter2"));
+        assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+        assert!(args.iter().all(|a| a != "hunter2"));
+    }
+
+    #[test]
+    fn start_tunnel_always_limits_ssh_to_one_password_attempt() {
+        for (askpass, session) in [(None, None), (Some("keychain"), None), (None, Some("pw"))] {
+            let args = tunnel_args(askpass, session);
+            assert!(has_opt(&args, "NumberOfPasswordPrompts=1"), "got: {args:?}");
+        }
+    }
+
+    #[test]
+    fn start_tunnel_keeps_user_strict_host_key_setting() {
+        // Tunnels get no StrictHostKeyChecking override: the user's own
+        // ssh config setting decides.
+        let args = tunnel_args(None, None);
+        assert!(!args.iter().any(|a| a.contains("StrictHostKeyChecking")));
+    }
+
+    #[test]
+    fn start_tunnel_uses_dash_n_and_verbose_before_separator() {
+        let args = tunnel_args(None, None);
+        let sep = args.iter().position(|a| a == "--").expect("-- present");
+        let n = args.iter().position(|a| a == "-N").expect("-N present");
+        let v = args.iter().position(|a| a == "-v").expect("-v present");
+        assert!(n < sep && v < sep, "got: {args:?}");
+        assert_eq!(args.last().map(String::as_str), Some("web1"));
     }
 }

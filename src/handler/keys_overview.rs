@@ -8,8 +8,6 @@
 //! after key pushes and host-list changes, so there is no manual
 //! `R`-style reload binding.
 
-use std::sync::atomic::Ordering;
-
 use crossterm::event::{KeyCode, KeyEvent};
 use log::debug;
 
@@ -215,16 +213,14 @@ pub(super) fn push_in_flight(app: &App) -> bool {
 fn cancel_push_if_running(ctx: &mut KeysCtx) {
     let done = ctx.keys.push().results.len();
     let total = ctx.keys.push().expected_count;
-    if let Some(ref cancel) = ctx.keys.push().cancel {
-        cancel.store(true, Ordering::Relaxed);
-    }
     log::debug!(
         "[purple] key_push: cancel requested, done={}/{}",
         done,
         total
     );
-    // Clear accumulators and bump run_id so any KeyPushResult event still
-    // in flight from the cancelled worker is dropped on arrival.
+    // Raise the flag, kill the ssh child that is running right now, clear
+    // the accumulators and bump run_id so any KeyPushResult event still in
+    // flight from the aborted worker is dropped on arrival.
     ctx.keys.push_mut().cancel_run();
     // Drop the progress toast through the status-center invariant so the
     // cancel message is unambiguously the latest status.

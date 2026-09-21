@@ -19,6 +19,7 @@ mod key_detail;
 mod key_list;
 pub(crate) mod key_push_picker;
 pub(crate) mod keys_overview;
+pub(crate) mod password_prompt;
 mod picker_helpers;
 mod provider_list;
 mod snippet_form;
@@ -248,6 +249,18 @@ pub fn render(frame: &mut Frame, app: &mut App, anim: &mut crate::animation::Ani
             render_overlay(frame, app, anim, |frame, app| {
                 confirm_dialog::render_host_key_reset(frame, app, &hostname)
             });
+        }
+        Screen::ConfirmHostKeyTrust {
+            alias, hostname, ..
+        } => {
+            let alias = alias.clone();
+            let hostname = hostname.clone();
+            render_overlay(frame, app, anim, |frame, app| {
+                confirm_dialog::render_host_key_trust(frame, app, &alias, &hostname)
+            });
+        }
+        Screen::PasswordPrompt => {
+            render_overlay(frame, app, anim, password_prompt::render);
         }
         Screen::FileBrowser { .. } => {
             render_overlay(frame, app, anim, file_browser::render);

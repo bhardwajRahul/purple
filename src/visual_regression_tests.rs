@@ -1936,6 +1936,41 @@ fn visual_confirm_host_key_reset() {
 }
 
 #[test]
+fn visual_confirm_host_key_trust() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    app.screen = Screen::ConfirmHostKeyTrust {
+        alias: "bastion-ams".to_string(),
+        hostname: "bastion.example.com".to_string(),
+        retry: crate::app::PendingRetry::KeyPush {
+            key_path: "~/.ssh/id_ed25519".to_string(),
+            alias: "bastion-ams".to_string(),
+        },
+    };
+    let actual = render_screen(&mut app);
+    assert_golden("confirm_host_key_trust", &actual);
+}
+
+#[test]
+fn visual_password_prompt() {
+    let _g = setup();
+    let mut app = demo::build_demo_app();
+    let mut state = crate::app::PasswordPromptState::new(
+        "bastion-ams".to_string(),
+        false,
+        crate::app::PendingRetry::KeyPush {
+            key_path: "~/.ssh/id_ed25519".to_string(),
+            alias: "bastion-ams".to_string(),
+        },
+    );
+    state.input = "hunter2".to_string();
+    app.password_prompt = Some(state);
+    app.screen = Screen::PasswordPrompt;
+    let actual = render_screen(&mut app);
+    assert_golden("password_prompt", &actual);
+}
+
+#[test]
 fn visual_confirm_import() {
     let _g = setup();
     let mut app = demo::build_demo_app();

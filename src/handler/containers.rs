@@ -29,6 +29,9 @@ struct ContainersCtx<'a> {
     screen: &'a mut Screen,
     demo_mode: bool,
     bw_session: Option<&'a str>,
+    /// Passwords typed in the TUI this session, read so a container call
+    /// reuses the one the user already gave for that host.
+    session_passwords: &'a crate::app::SessionPasswords,
     config_path: &'a Path,
     env: std::sync::Arc<crate::runtime::env::Env>,
 }
@@ -56,6 +59,7 @@ impl ContainersCtx<'_> {
             screen: &mut app.screen,
             demo_mode: app.demo_mode,
             bw_session: app.bw_session.as_deref(),
+            session_passwords: &app.session_passwords,
             config_path: app.reload.config_path(),
             env: std::sync::Arc::clone(&app.env),
         }
@@ -73,8 +77,10 @@ impl ContainersCtx<'_> {
             alias: alias.to_string(),
             config_path: self.config_path.to_path_buf(),
             askpass,
+            session_password: self.session_passwords.get(alias).cloned(),
             bw_session: self.bw_session.map(|s| s.to_string()),
             has_tunnel: self.tunnels.active_contains(alias),
+            trust_new_host_key: false,
             env: std::sync::Arc::clone(&self.env),
         }
     }
@@ -163,8 +169,10 @@ impl ContainersCtx<'_> {
             alias: alias.clone(),
             config_path: self.config_path.to_path_buf(),
             askpass: state.askpass.clone(),
+            session_password: self.session_passwords.get(&alias).cloned(),
             bw_session: self.bw_session.map(|s| s.to_string()),
             has_tunnel: self.tunnels.active_contains(&alias),
+            trust_new_host_key: false,
             env: std::sync::Arc::clone(&self.env),
         };
         let tx = events_tx.clone();

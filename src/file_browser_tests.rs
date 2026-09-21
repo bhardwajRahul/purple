@@ -789,3 +789,135 @@ drwxr-xr-x  2 user user 4096 Dec  1  2023 new_dir
     assert_eq!(entries[2].name, "new_file.txt");
     assert_eq!(entries[3].name, "old_file.txt");
 }
+
+// =========================================================================
+// build_scp_command: the transport options and auth env of a transfer.
+// A transfer runs in the background, so it must never be able to reach the
+// controlling tty for a password or a host-key question.
+// =========================================================================
+
+fn scp_ctx<'a>(
+    env: &'a crate::runtime::env::Env,
+    askpass: Option<&'a str>,
+    session_password: Option<&'a str>,
+    trust_new_host_key: bool,
+) -> crate::ssh_context::SshContext<'a> {
+    crate::ssh_context::SshContext {
+        alias: "web1",
+        config_path: Path::new("/tmp/cfg"),
+        askpass,
+        session_password,
+        bw_session: None,
+        has_tunnel: false,
+        trust_new_host_key,
+        env,
+    }
+}
+
+fn scp_args_of(cmd: &Command) -> Vec<String> {
+    cmd.get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+}
+
+fn scp_env_names(cmd: &Command) -> Vec<String> {
+    cmd.get_envs()
+        .filter_map(|(k, v)| v.map(|_| k.to_string_lossy().into_owned()))
+        .collect()
+}
+
+fn scp_has_opt(args: &[String], value: &str) -> bool {
+    args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+}
+
+#[test]
+fn scp_without_auth_sets_batch_mode_and_strict_checking() {
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let ctx = scp_ctx(&env, None, None, false);
+    let args = scp_args_of(&build_scp_command(&ctx, &["--".to_string()]));
+    assert!(scp_has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+    assert!(
+        scp_has_opt(&args, "StrictHostKeyChecking=yes"),
+        "got: {args:?}"
+    );
+}
+
+#[test]
+fn scp_with_a_source_omits_batch_mode() {
+    // BatchMode would disable the very auth method askpass feeds.
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let ctx = scp_ctx(&env, Some("keychain"), None, false);
+    let args = scp_args_of(&build_scp_command(&ctx, &["--".to_string()]));
+    assert!(!scp_has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+}
+
+#[test]
+fn scp_with_a_session_password_wires_the_one_shot_channel() {
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let ctx = scp_ctx(&env, None, Some("hunter2"), false);
+    let cmd = build_scp_command(&ctx, &["--".to_string()]);
+    let args = scp_args_of(&cmd);
+    assert!(!scp_has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+    assert!(args.iter().all(|a| a != "hunter2"), "secret in argv");
+    let names = scp_env_names(&cmd);
+    assert!(names.iter().any(|n| n == "SSH_ASKPASS"));
+    assert!(names.iter().any(|n| n == "PURPLE_ASKPASS_ONESHOT"));
+}
+
+#[test]
+fn scp_always_limits_ssh_to_one_password_attempt() {
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    for (askpass, session) in [
+        (None, None),
+        (Some("keychain"), None),
+        (None, Some("hunter2")),
+    ] {
+        let ctx = scp_ctx(&env, askpass, session, false);
+        let args = scp_args_of(&build_scp_command(&ctx, &["--".to_string()]));
+        assert!(
+            scp_has_opt(&args, "NumberOfPasswordPrompts=1"),
+            "got: {args:?}"
+        );
+    }
+}
+
+#[test]
+fn scp_on_a_trust_retry_uses_accept_new() {
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let ctx = scp_ctx(&env, None, None, true);
+    let args = scp_args_of(&build_scp_command(&ctx, &["--".to_string()]));
+    assert!(
+        scp_has_opt(&args, "StrictHostKeyChecking=accept-new"),
+        "got: {args:?}"
+    );
+    assert!(!scp_has_opt(&args, "StrictHostKeyChecking=yes"));
+}
+
+#[test]
+fn scp_transfer_arguments_follow_the_transport_options() {
+    // scp stops option parsing at `--`, so every -o must precede it.
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let ctx = scp_ctx(&env, None, None, false);
+    let transfer = vec![
+        "--".to_string(),
+        "/tmp/a.txt".to_string(),
+        "web1:/home/u/".to_string(),
+    ];
+    let args = scp_args_of(&build_scp_command(&ctx, &transfer));
+    let sep = args.iter().position(|a| a == "--").expect("-- present");
+    let last_opt = args.iter().rposition(|a| a == "-o").expect("-o present");
+    assert!(last_opt < sep, "got: {args:?}");
+    assert_eq!(&args[sep..], &transfer[..]);
+}
+
+#[test]
+fn scp_reuses_an_open_tunnel_by_clearing_forwardings() {
+    let env = crate::runtime::env::Env::for_test("/home/u");
+    let mut ctx = scp_ctx(&env, None, None, false);
+    ctx.has_tunnel = true;
+    let args = scp_args_of(&build_scp_command(&ctx, &["--".to_string()]));
+    assert!(
+        scp_has_opt(&args, "ClearAllForwardings=yes"),
+        "got: {args:?}"
+    );
+}

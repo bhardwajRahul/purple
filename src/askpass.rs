@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
@@ -104,27 +104,75 @@ pub fn handle(env: &crate::runtime::env::Env) -> Result<()> {
     // only ever supply credentials for hosts the user has wired into this
     // connection.
     let chain = build_proxy_chain(&config, &alias);
-    let resolved_alias = parse_password_prompt_host(&prompt)
-        .and_then(|h| find_alias_for_host(&config, h, &chain))
-        .unwrap_or_else(|| alias.clone());
+    let prompt_host = parse_password_prompt_host(&prompt);
+    let prompt_hop = prompt_host.and_then(|h| find_alias_for_host(&config, h, &chain));
+    let resolved_alias = prompt_hop.clone().unwrap_or_else(|| alias.clone());
+
+    // The marker is keyed on the resolved alias so retries on one ProxyJump
+    // hop do not block askpass on the next hop.
+    let marker = marker_path(env.paths(), &resolved_alias);
+
+    // One-shot password typed in the TUI for this one run, scoped to the
+    // alias the parent named so a ProxyJump hop authenticating on the way to
+    // the target never receives the target's password.
+    //
+    // The hop must prove it is the one the password belongs to. Two ways
+    // do that, and nothing else counts:
+    //
+    // 1. The prompt named a host that resolves to a hop inside this
+    //    connection's chain, and that hop is the alias the password is for.
+    //    A prompt naming a host purple cannot place resolves to nothing, so
+    //    a bastion written as a bare `ProxyJump host` with no `Host` block
+    //    of its own is refused rather than answered.
+    // 2. The prompt named no host at all, and the connection provably has
+    //    no bastion to confuse it with. A keyboard-interactive server
+    //    reached directly still works that way; one behind a jump host
+    //    waits for a prompt that says who is asking.
+    //
+    // No marker is armed here. Every command that carries the one-shot pair
+    // also carries `-o NumberOfPasswordPrompts=1`, so ssh asks once per run
+    // and a rejected password costs one login attempt. Arming a marker would
+    // instead refuse the second ssh of a two-step operation, such as the
+    // remote home lookup followed by its listing.
+    if let (Some(oneshot_alias), Some(secret)) = (
+        env.var(crate::askpass_env::ONESHOT_ALIAS_VAR),
+        env.var(crate::askpass_env::ONESHOT_SECRET_VAR),
+    ) && oneshot_alias == resolved_alias
+    {
+        let named_this_hop = prompt_hop.is_some();
+        let direct = prompt_host.is_none() && !chain_uses_proxy_jump(&config, &chain);
+        if named_this_hop || direct {
+            debug!("[purple] Askpass one-shot password used for {resolved_alias}");
+            print!("{}", secret);
+            return Ok(());
+        }
+        debug!(
+            "[purple] Askpass one-shot withheld for {resolved_alias}: prompt_host={:?} placed_in_chain=false chain_size={}",
+            prompt_host,
+            chain.len()
+        );
+    }
 
     // Retry detection: if we've been called recently for this resolved alias,
     // the password was wrong. Exit with error so SSH falls back to interactive.
-    // The marker is keyed on the resolved alias so retries on one ProxyJump hop
-    // do not block askpass on the next hop.
-    let marker = marker_path(env.paths(), &resolved_alias);
-    if let Some(marker_path) = &marker {
+    //
+    // A background run skips this. ssh there carries
+    // `-o NumberOfPasswordPrompts=1`, so it asks once per hop and the loop
+    // the marker exists to break cannot form. Keeping it would instead
+    // refuse the second ssh of a two-step operation, such as the remote home
+    // lookup followed by its listing.
+    let single_attempt = env
+        .var(crate::askpass_env::SINGLE_ATTEMPT_VAR)
+        .is_some_and(|v| v == "1");
+    if let Some(marker_path) = &marker
+        && !single_attempt
+    {
         if is_recent_marker(marker_path) {
             debug!("[purple] Askpass retry detected for {resolved_alias}");
             let _ = std::fs::remove_file(marker_path);
             std::process::exit(1);
         }
-        if let Err(e) = std::fs::create_dir_all(marker_path.parent().unwrap()) {
-            debug!("[purple] Failed to create askpass marker directory: {e}");
-        }
-        if let Err(e) = crate::fs_util::atomic_write(marker_path, b"") {
-            debug!("[purple] Failed to write askpass marker: {e}");
-        }
+        arm_marker(marker_path);
     }
 
     let source = find_askpass_source(&config, env.paths(), &resolved_alias);
@@ -196,6 +244,17 @@ fn find_alias_for_host(
         }
     }
     by_hostname
+}
+
+/// True when any host in `chain` routes through a jump host. A `ProxyJump`
+/// naming a host that has no `Host` block of its own adds nothing to the
+/// chain, so chain size alone cannot tell a direct connection from one
+/// behind a bastion. This can.
+fn chain_uses_proxy_jump(config: &SshConfigFile, chain: &HashSet<String>) -> bool {
+    config
+        .host_entries()
+        .iter()
+        .any(|e| chain.contains(&e.alias) && !e.proxy_jump.trim().is_empty())
 }
 
 /// Build the set of aliases reachable from `target` via its ProxyJump chain,
@@ -611,6 +670,17 @@ fn retrieve_from_command(
 /// Sanitizes the alias to prevent path traversal (replaces `/` and `\` with `_`).
 fn marker_path(paths: Option<&crate::runtime::env::Paths>, alias: &str) -> Option<PathBuf> {
     paths.map(|p| p.askpass_marker(alias))
+}
+
+/// Write the retry marker. Its presence within the next minute means this
+/// alias was already answered once, so the caller refuses a second answer.
+fn arm_marker(path: &Path) {
+    if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()) {
+        debug!("[purple] Failed to create askpass marker directory: {e}");
+    }
+    if let Err(e) = crate::fs_util::atomic_write(path, b"") {
+        debug!("[purple] Failed to write askpass marker: {e}");
+    }
 }
 
 /// Check if a marker file exists and is recent (< 60 seconds old).

@@ -69,6 +69,11 @@ pub const ENTER_COLLAPSE: &str = " collapse ";
 /// Bulk tag editor: add row.
 pub const ENTER_ADD: &str = " add ";
 
+/// Password prompt: submit the password and resume the push or listing
+/// that asked for it. Distinct from `ENTER_SAVE`, which would misdescribe
+/// a submit with "remember" off.
+pub const ENTER_CONTINUE: &str = " continue ";
+
 // --- Action keys (single-letter shortcuts) ---
 
 pub const ACTION_ADD: &str = " add ";

@@ -30,6 +30,9 @@ pub(super) struct TunnelCtx<'a> {
     demo_mode: bool,
     top_page: TopPage,
     bw_session: Option<&'a str>,
+    /// Passwords typed in the TUI this session, read so a tunnel start
+    /// reuses the one the user already gave for that host.
+    session_passwords: &'a crate::app::SessionPasswords,
     config_path: &'a std::path::Path,
     pub(super) effects: Effects,
 }
@@ -123,10 +126,12 @@ impl TunnelCtx<'_> {
             .find(|h| h.alias == alias)
             .and_then(|h| h.askpass.clone());
         let rules = self.hosts.ssh_config().find_tunnel_directives(alias);
+        let session_password = self.session_passwords.get(alias).map(String::as_str);
         match crate::tunnel::start_tunnel(
             alias,
             self.config_path,
             askpass.as_deref(),
+            session_password,
             self.bw_session,
         ) {
             Ok(child) => {
@@ -239,6 +244,7 @@ pub(super) fn ctx_from_app(app: &mut App) -> TunnelCtx<'_> {
         demo_mode: app.demo_mode,
         top_page: app.top_page,
         bw_session: app.bw_session.as_deref(),
+        session_passwords: &app.session_passwords,
         config_path: app.reload.config_path(),
         effects: Effects::default(),
     }

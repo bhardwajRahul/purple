@@ -85,6 +85,48 @@ pub fn render_host_key_reset(frame: &mut Frame, app: &App, hostname: &str) {
     );
 }
 
+/// Trust-on-first-contact dialog for a host a background ssh met that is
+/// not in `known_hosts` yet. No fingerprint is shown: ssh prints none under
+/// strict checking, and fetching one would mean a second round trip to the
+/// same host that is asking to be trusted.
+///
+/// Stakes test: recording a host key is a security decision, so the footer
+/// carries action verbs on both sides.
+pub fn render_host_key_trust(frame: &mut Frame, app: &App, alias: &str, hostname: &str) {
+    let display = super::truncate(hostname, 44);
+    let content: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            format!("  {}", crate::messages::host_key_trust::question(&display)),
+            theme::bold(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(
+                "  {}",
+                crate::messages::host_key_trust::detail_unknown(alias)
+            ),
+            theme::muted(),
+        )),
+        Line::from(Span::styled(
+            format!("  {}", crate::messages::host_key_trust::DETAIL_RECORDED),
+            theme::muted(),
+        )),
+    ];
+
+    let footer_spans = design::confirm_footer_destructive("trust", "skip")
+        .to_line()
+        .spans;
+    design::render_confirm_popup(
+        frame,
+        64,
+        design::PopupKind::Destructive,
+        crate::messages::host_key_trust::TITLE,
+        content,
+        footer_spans,
+        app,
+    );
+}
+
 pub fn render_confirm_import(frame: &mut Frame, app: &App, count: usize) {
     let content: Vec<Line<'static>> = vec![Line::from(Span::styled(
         format!(

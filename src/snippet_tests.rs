@@ -890,19 +890,104 @@ fn test_sanitize_multiple_mixed_sequences() {
 // =========================================================================
 
 fn base_ssh_args(non_interactive: bool) -> Vec<String> {
+    base_ssh_args_with(None, None, non_interactive, false)
+}
+
+/// Args of a `base_ssh_command` built with the given auth inputs and flags.
+fn base_ssh_args_with(
+    askpass: Option<&str>,
+    session_password: Option<&str>,
+    non_interactive: bool,
+    trust_new_host_key: bool,
+) -> Vec<String> {
     use std::path::Path;
     let cmd = base_ssh_command(
         "host1",
         Path::new("/tmp/cfg"),
         "true",
-        None,
+        askpass,
+        session_password,
         None,
         false,
         non_interactive,
+        trust_new_host_key,
     );
     cmd.get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect()
+}
+
+fn has_opt(args: &[String], value: &str) -> bool {
+    args.windows(2).any(|w| w[0] == "-o" && w[1] == value)
+}
+
+#[test]
+fn base_ssh_non_interactive_without_auth_sets_batch_mode() {
+    // No source and no session password: ssh must fail at once instead
+    // of asking on the tty behind the TUI.
+    let args = base_ssh_args_with(None, None, true, false);
+    assert!(has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+}
+
+#[test]
+fn base_ssh_non_interactive_with_source_omits_batch_mode() {
+    // BatchMode would disable the very auth method askpass feeds.
+    let args = base_ssh_args_with(Some("keychain"), None, true, false);
+    assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+}
+
+#[test]
+fn base_ssh_non_interactive_with_session_password_omits_batch_mode() {
+    let args = base_ssh_args_with(None, Some("hunter2"), true, false);
+    assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+    // The secret travels in the environment, never in argv.
+    assert!(args.iter().all(|a| a != "hunter2"));
+}
+
+#[test]
+fn base_ssh_interactive_never_sets_batch_mode() {
+    // The terminal run (capture=false) keeps ssh's own prompt.
+    let args = base_ssh_args_with(None, None, false, false);
+    assert!(!has_opt(&args, "BatchMode=yes"), "got: {args:?}");
+}
+
+#[test]
+fn base_ssh_non_interactive_limits_ssh_to_one_password_attempt() {
+    let args = base_ssh_args_with(Some("keychain"), None, true, false);
+    assert!(has_opt(&args, "NumberOfPasswordPrompts=1"), "got: {args:?}");
+}
+
+#[test]
+fn base_ssh_interactive_keeps_the_default_password_attempts() {
+    // At a real terminal the user can type a different password, so ssh
+    // keeps its own three prompts.
+    let args = base_ssh_args_with(None, None, false, false);
+    assert!(
+        !has_opt(&args, "NumberOfPasswordPrompts=1"),
+        "got: {args:?}"
+    );
+}
+
+#[test]
+fn base_ssh_trust_retry_uses_accept_new() {
+    let args = base_ssh_args_with(None, None, true, true);
+    assert!(
+        has_opt(&args, "StrictHostKeyChecking=accept-new"),
+        "got: {args:?}"
+    );
+    assert!(!has_opt(&args, "StrictHostKeyChecking=yes"));
+}
+
+#[test]
+fn base_ssh_options_precede_the_alias_separator() {
+    // ssh stops option parsing at `--`, so every -o must come before it.
+    let args = base_ssh_args_with(None, None, true, true);
+    let sep = args.iter().position(|a| a == "--").expect("-- present");
+    let last_opt = args
+        .iter()
+        .rposition(|a| a == "-o")
+        .expect("at least one -o");
+    assert!(last_opt < sep, "got: {args:?}");
 }
 
 #[test]

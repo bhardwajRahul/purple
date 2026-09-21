@@ -226,6 +226,20 @@ pub enum Screen {
         known_hosts_path: String,
         askpass: Option<String>,
     },
+    /// Trust-on-first-contact question for a host a background ssh met
+    /// that is not in `known_hosts` yet. `y` runs `retry` once with
+    /// `StrictHostKeyChecking=accept-new`; `n` and Esc drop it. Carries
+    /// no secret, so it lives in the variant like `ConfirmHostKeyReset`.
+    ConfirmHostKeyTrust {
+        alias: String,
+        hostname: String,
+        retry: super::password_prompt::PendingRetry,
+    },
+    /// Password prompt for a background ssh that ended in `Permission
+    /// denied`. The alias, the typed password, the remember toggle and the
+    /// retry live on `app.password_prompt`, so the secret is never cloned
+    /// per frame the way variant payloads are.
+    PasswordPrompt,
     FileBrowser {
         alias: String,
     },
@@ -343,6 +357,8 @@ impl Screen {
             Screen::SnippetHostPicker => "SnippetHostPicker",
             Screen::ConfirmRunSnippet => "ConfirmRunSnippet",
             Screen::ConfirmHostKeyReset { .. } => "ConfirmHostKeyReset",
+            Screen::ConfirmHostKeyTrust { .. } => "ConfirmHostKeyTrust",
+            Screen::PasswordPrompt => "PasswordPrompt",
             Screen::FileBrowser { .. } => "FileBrowser",
             Screen::Containers { .. } => "Containers",
             Screen::ContainerHostPicker => "ContainerHostPicker",
