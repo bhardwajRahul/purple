@@ -1,3 +1,9 @@
+## 3.29.2 - 2026-09-22
+
+- change: purple opens instantly, however many keys you keep.
+- change: The Keys tab, the key picker in the host form and every key rescan read your keys directly, so a `~/.ssh` with dozens of keys opens as fast as one with a single key.
+- change: The fingerprint art on the Keys tab matches `ssh-keygen -lv` in every cell, the busiest ones included.
+
 ## 3.29.1 - 2026-09-22
 
 - change: Your password stays on the host you typed it for.

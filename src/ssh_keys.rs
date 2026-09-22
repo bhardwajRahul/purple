@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, UNIX_EPOCH};
 
 use log::debug;
 
 use crate::ssh_config::model::HostEntry;
+
+mod native;
 
 /// Resolve the SSH directory (`~/.ssh`) from the injected paths. Returns
 /// `None` when the home directory is unknown, so callers can short-circuit
@@ -31,17 +33,18 @@ pub struct SshKeyInfo {
     pub comment: String,
     /// Host aliases that reference this key via IdentityFile
     pub linked_hosts: Vec<String>,
-    /// Drunken Bishop visual fingerprint from `ssh-keygen -lv`. 11 lines
-    /// (top border + 9 content + bottom border), joined with `\n`. Empty
-    /// when ssh-keygen returned no art block.
+    /// Drunken Bishop visual fingerprint in the `ssh-keygen -lv` layout.
+    /// 11 lines (top border + 9 content + bottom border), joined with `\n`.
+    /// Empty when no art block could be produced.
     pub bishop_art: String,
     /// Strength score 0..=100. Composed of algorithm strength, key size and
     /// on-disk encryption. Hardware-bound `sk-*` keys score highest;
     /// deprecated DSA and short RSA score lowest.
     pub strength_score: u8,
-    /// Private key on disk is passphrase-encrypted. Detected via
-    /// `ssh-keygen -y -P "" -f <key>` exit status. False when the private
-    /// key is missing or unreadable.
+    /// Private key on disk is passphrase-encrypted. Read from the key file
+    /// header, or from the `ssh-keygen -y -P "" -f <key>` exit status for
+    /// other formats. False when the private key is missing or not a
+    /// regular file.
     pub encrypted: bool,
     /// Public key fingerprint matches an entry returned by `ssh-add -l`.
     pub agent_loaded: bool,
@@ -79,7 +82,7 @@ impl SshKeyInfo {
 }
 
 /// Character ladder for the Drunken Bishop random-art. Index 0 is the
-/// unvisited cell; counter values 1..=13 map to ascending visit density;
+/// unvisited cell; counter values 1..=14 map to ascending visit density;
 /// 15 marks the bishop's start position (S) and 16 the end position (E).
 const BISHOP_CHARS: &[u8] = b" .o+=*BOX@%&#/^SE";
 
@@ -125,7 +128,7 @@ pub fn drunken_bishop_grid(fp_bytes: &[u8], cols: usize, rows: usize) -> Vec<Vec
             let dy: isize = if b & 0x2 == 0 { -1 } else { 1 };
             x = (x as isize + dx).clamp(0, cols as isize - 1) as usize;
             y = (y as isize + dy).clamp(0, rows as isize - 1) as usize;
-            if grid[y][x] < BISHOP_COUNTER_CAP - 1 {
+            if grid[y][x] < BISHOP_COUNTER_CAP {
                 grid[y][x] += 1;
             }
             b >>= 2;
@@ -191,6 +194,7 @@ pub fn discover_keys(
         Err(_) => return Vec::new(),
     };
 
+    let started = Instant::now();
     let home = paths.map(|p| p.home().to_path_buf());
     let agent_fingerprints = agent_loaded_fingerprints();
 
@@ -210,10 +214,11 @@ pub fn discover_keys(
 
     keys.sort_by(|a, b| a.name.cmp(&b.name));
     debug!(
-        "[purple] discover_keys: found {} key(s) in {}, {} loaded in agent",
+        "[purple] discover_keys: found {} key(s) in {}, {} loaded in agent, took {}ms",
         keys.len(),
         ssh_dir.display(),
-        agent_fingerprints.len()
+        agent_fingerprints.len(),
+        started.elapsed().as_millis()
     );
     keys
 }
@@ -296,15 +301,27 @@ fn strength_score_for(key_type: &str, bits: &str, encrypted: bool) -> u8 {
     (base + modifier).clamp(0, 100) as u8
 }
 
-/// Detect whether a private key file is passphrase-encrypted by trying
-/// to derive its public key with an empty passphrase. Empty-passphrase
-/// success means unencrypted; failure means encrypted (or unreadable).
-/// Returns false when the private key file is absent so unbacked .pub
-/// files do not get flagged as encrypted.
+/// Detect whether a private key file is passphrase-encrypted. Known formats
+/// are read from the file header. Other formats fall back to deriving the
+/// public key with an empty passphrase: success means unencrypted, failure
+/// means encrypted (or unreadable). Returns false when the private key is
+/// absent or not a regular file, so unbacked .pub files are not flagged as
+/// encrypted and a FIFO or device cannot block the scan.
 fn private_key_encrypted(private_path: &Path) -> bool {
-    if !private_path.exists() {
+    if !private_path.is_file() {
         return false;
     }
+    if let Some(encrypted) = native::private_key_encrypted(private_path) {
+        return encrypted;
+    }
+    debug!(
+        "[purple] key scan: ssh-keygen fallback for encryption check of {}",
+        private_path.display()
+    );
+    keygen_private_key_encrypted(private_path)
+}
+
+fn keygen_private_key_encrypted(private_path: &Path) -> bool {
     let output = Command::new("ssh-keygen")
         .arg("-y")
         .args(["-P", ""])
@@ -362,15 +379,30 @@ fn is_public_key_file(entry: &std::fs::DirEntry) -> bool {
         .unwrap_or(false)
 }
 
-/// Read key metadata using `ssh-keygen -lv` (fingerprint + Drunken Bishop)
-/// and cross-reference with hosts, agent state and on-disk encryption.
-fn read_key_info(
-    ssh_dir: &Path,
-    pub_path: &Path,
-    home: Option<&Path>,
-    hosts: &[HostEntry],
-    agent_fingerprints: &HashSet<String>,
-) -> Option<SshKeyInfo> {
+/// What `ssh-keygen -lv -E sha256` reports about a public key file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PublicKeyFacts {
+    bits: String,
+    fingerprint: String,
+    comment: String,
+    key_type: String,
+    bishop_art: String,
+}
+
+/// Read the public key facts in-process. Formats the in-process reader
+/// does not cover go through `ssh-keygen -lv` instead.
+fn public_key_facts(pub_path: &Path) -> Option<PublicKeyFacts> {
+    if let Some(facts) = native::inspect_public_key(pub_path) {
+        return Some(facts);
+    }
+    debug!(
+        "[purple] key scan: ssh-keygen fallback for {}",
+        pub_path.display()
+    );
+    keygen_public_key_facts(pub_path)
+}
+
+fn keygen_public_key_facts(pub_path: &Path) -> Option<PublicKeyFacts> {
     let output = Command::new("ssh-keygen")
         .arg("-lv")
         .arg("-f")
@@ -388,6 +420,31 @@ fn read_key_info(
 
     // Format: "<bits> <fingerprint> <comment> (<type>)"
     let (bits, fingerprint, comment, key_type) = parse_keygen_output(first_line)?;
+    Some(PublicKeyFacts {
+        bits,
+        fingerprint,
+        comment,
+        key_type,
+        bishop_art: parse_bishop_block(&stdout),
+    })
+}
+
+/// Read key metadata (fingerprint + Drunken Bishop) and cross-reference
+/// with hosts, agent state and on-disk encryption.
+fn read_key_info(
+    ssh_dir: &Path,
+    pub_path: &Path,
+    home: Option<&Path>,
+    hosts: &[HostEntry],
+    agent_fingerprints: &HashSet<String>,
+) -> Option<SshKeyInfo> {
+    let PublicKeyFacts {
+        bits,
+        fingerprint,
+        comment,
+        key_type,
+        bishop_art,
+    } = public_key_facts(pub_path)?;
 
     // Derive the private key name (strip .pub)
     let pub_name = pub_path.file_name()?.to_string_lossy();
@@ -410,9 +467,6 @@ fn read_key_info(
 
     // Find hosts that reference this key
     let linked_hosts = find_linked_hosts(&private_path, &display_path, hosts);
-
-    // Extract Drunken Bishop ASCII block from -lv output.
-    let bishop_art = parse_bishop_block(&stdout);
 
     let is_certificate = detect_certificate(&pub_name, &key_type);
 

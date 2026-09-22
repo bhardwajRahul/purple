@@ -10,8 +10,8 @@
 ╭ SEARCH ─ rsa (2/5) ──────╮ ╭─────────────────────╮ ╭─────────────────────────────────────────────╮
 │▌id_rsa_legacy            │ │                     │ │                                             │
 │ id_rsa.bak               │ │                     │ │ ╭─╮  Strength    45 / 100                   │
-│                          │ │              B=EO/  │ │ │░│  Passphrase  none                       │
-│                          │ │             ooBOB/  │ │ │░│  Agent       loaded                     │
+│                          │ │              B=EO^  │ │ │░│  Passphrase  none                       │
+│                          │ │             ooBOB^  │ │ │░│  Agent       loaded                     │
 │                          │ │            o +=o@o  │ │ │░│  Modified    2021-05-17 (5y ago)        │
 │                          │ │         . o o .o +  │ │ │░│  Type        RSA 2048                   │
 │                          │ │          S      +   │ │ │░│  Fingerprint SHA256:bGVnYWN5cnNha2V5Zm… │

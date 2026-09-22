@@ -5,7 +5,7 @@
 │▌id_ed25519               │ │                     │ │                                             │
 │ yubikey_work             │ │                     │ │ ╭─╮  Strength    95 / 100                   │
 │ customer-x               │ │                     │ │ │░│  Passphrase  encrypted                  │
-│ id_rsa_legacy            │ │              =*@@/  │ │ │█│  Agent       loaded                     │
+│ id_rsa_legacy            │ │              =*@@^  │ │ │█│  Agent       loaded                     │
 │ id_rsa.bak               │ │             oE=+B#  │ │ │█│  Modified    2024-03-27 (2y ago)        │
 │                          │ │          . .  . ==  │ │ │█│  Type        ED25519 256                │
 │                          │ │         . .    ..X  │ │ │█│  Fingerprint SHA256:dGVzdGRlbW9rZXlmb3… │
