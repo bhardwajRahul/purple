@@ -127,6 +127,7 @@ impl SnippetCtx<'_> {
                 name: self.snippets.form().name.clone(),
                 command: self.snippets.form().command.clone(),
                 description: self.snippets.form().description.clone(),
+                interactive: self.snippets.form().interactive,
                 default_hosts: self.snippets.form().default_hosts.clone(),
             }));
     }
@@ -160,6 +161,7 @@ impl SnippetCtx<'_> {
             name: self.snippets.form().name.clone(),
             command: self.snippets.form().command.clone(),
             description: self.snippets.form().description.clone(),
+            interactive: self.snippets.form().interactive,
         };
         self.snippets.set_flow_snippet(Some(snippet));
         log::debug!(
@@ -460,10 +462,11 @@ fn start_snippet_output(
 
     let run_id = SNIPPET_RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
     debug!(
-        "[purple] snippet run started: run_id={} name={:?} hosts={}",
+        "[purple] snippet run started: run_id={} name={:?} hosts={} interactive={}",
         run_id,
         snippet.name,
-        target_aliases.len()
+        target_aliases.len(),
+        snippet.interactive
     );
 
     ctx.snippets
@@ -475,6 +478,7 @@ fn start_snippet_output(
             total: target_aliases.len(),
             all_done: false,
             cancel: cancel.clone(),
+            interactive: snippet.interactive,
         }));
 
     ctx.snippets.set_flow_targets(target_aliases.to_vec());
@@ -487,7 +491,7 @@ fn start_snippet_output(
         askpass_map,
         ctx.config_path.to_path_buf(),
         std::sync::Arc::new(ctx.env.clone()),
-        snippet.command.clone(),
+        snippet.remote_command(),
         ctx.bw_session.map(str::to_string),
         tunnel_aliases,
         cancel,
@@ -497,7 +501,8 @@ fn start_snippet_output(
 }
 
 /// Compute the line count for a snippet host result, matching the UI renderer.
-fn snippet_result_lines(r: &crate::app::SnippetHostOutput) -> usize {
+fn snippet_result_lines(r: &crate::app::SnippetHostOutput, interactive: bool) -> usize {
+    let hint = usize::from(r.shows_not_found_hint(interactive));
     let content = if r.stdout.is_empty() && r.stderr.is_empty() {
         1 // "[No output]" placeholder
     } else {
@@ -513,8 +518,8 @@ fn snippet_result_lines(r: &crate::app::SnippetHostOutput) -> usize {
         };
         stdout_lines + stderr_lines
     };
-    // header + content + blank line
-    1 + content + 1
+    // header + content + optional hint + blank line
+    1 + content + hint + 1
 }
 
 pub(super) fn handle_output_key(app: &mut App, key: KeyEvent) {
@@ -526,7 +531,12 @@ fn output_key(ctx: &mut SnippetCtx, key: KeyEvent) {
     let total_lines = ctx
         .snippets
         .output()
-        .map(|s| s.results.iter().map(snippet_result_lines).sum::<usize>())
+        .map(|s| {
+            s.results
+                .iter()
+                .map(|r| snippet_result_lines(r, s.interactive))
+                .sum::<usize>()
+        })
         .unwrap_or(0);
 
     match key.code {
@@ -581,7 +591,7 @@ fn output_key(ctx: &mut SnippetCtx, key: KeyEvent) {
                 let current = state.scroll_offset;
                 let mut line = 0;
                 for result in &state.results {
-                    let section = snippet_result_lines(result);
+                    let section = snippet_result_lines(result, state.interactive);
                     if line > current {
                         state.scroll_offset = line;
                         return;
@@ -598,7 +608,7 @@ fn output_key(ctx: &mut SnippetCtx, key: KeyEvent) {
                 let mut line = 0;
                 for result in &state.results {
                     offsets.push(line);
-                    line += snippet_result_lines(result);
+                    line += snippet_result_lines(result, state.interactive);
                 }
                 for &off in offsets.iter().rev() {
                     if off < current {
@@ -893,9 +903,13 @@ fn form_key(ctx: &mut SnippetCtx, key: KeyEvent) {
         KeyCode::Enter => {
             submit_snippet_form(ctx, &target_aliases, editing);
         }
-        // SPACE GUARD MUST PRECEDE the generic Char(c) arm: Space on a picker
-        // field (Default hosts) opens the host picker instead of inserting a
-        // literal space.
+        // SPACE GUARD MUST PRECEDE the generic Char(c) arm: Space on the
+        // toggle field flips it and Space on a picker field (Default hosts)
+        // opens the host picker instead of inserting a literal space.
+        KeyCode::Char(' ') if ctx.snippets.form().focused_field.is_toggle() => {
+            let form = ctx.snippets.form_mut();
+            form.interactive = !form.interactive;
+        }
         KeyCode::Char(' ') if ctx.snippets.form().focused_field.is_picker() => {
             ctx.open_default_hosts_picker();
         }
@@ -918,6 +932,7 @@ fn submit_snippet_form(ctx: &mut SnippetCtx, target_aliases: &[String], editing:
     let new_name = ctx.snippets.form_mut().name.trim().to_string();
     let new_command = ctx.snippets.form_mut().command.trim().to_string();
     let new_description = ctx.snippets.form_mut().description.trim().to_string();
+    let new_interactive = ctx.snippets.form().interactive;
 
     // Check for duplicate name (skip the snippet being edited)
     let old_name = editing.and_then(|idx| {
@@ -942,6 +957,7 @@ fn submit_snippet_form(ctx: &mut SnippetCtx, target_aliases: &[String], editing:
         name: new_name,
         command: new_command,
         description: new_description,
+        interactive: new_interactive,
     };
 
     // The form owns the default hosts (seeded from the saved targets on open, so
@@ -995,7 +1011,7 @@ fn submit_snippet_form(ctx: &mut SnippetCtx, target_aliases: &[String], editing:
     ctx.ui.snippet_picker_state_mut().select(new_idx);
 
     debug!(
-        "[purple] snippet saved: {name} (new={is_new}, default_hosts={})",
+        "[purple] snippet saved: {name} (new={is_new}, interactive={new_interactive}, default_hosts={})",
         ctx.snippets.store().targets_for(&name).len()
     );
     if is_new {
@@ -1026,6 +1042,7 @@ mod param_form_tests {
             name: "test".to_string(),
             command: "echo hi".to_string(),
             description: String::new(),
+            interactive: false,
         };
         app.snippets.set_param_snippet(Some(snippet));
         app.snippets.set_flow_targets(vec!["h1".to_string()]);
@@ -1220,6 +1237,7 @@ mod output_tests {
             total: line_count,
             all_done: true,
             cancel: Arc::new(AtomicBool::new(false)),
+            interactive: false,
         }));
         app.snippets
             .set_output_snippet_name(Some("echo".to_string()));
@@ -1241,6 +1259,20 @@ mod output_tests {
         handle_output_key(&mut app, k(KeyCode::Char('j')));
         let state = app.snippets.output().expect("output state");
         assert_eq!(state.scroll_offset, 1);
+    }
+
+    #[test]
+    fn result_lines_count_the_not_found_tip() {
+        let r = SnippetHostOutput {
+            alias: "h".to_string(),
+            stdout: String::new(),
+            stderr: "pm2: command not found".to_string(),
+            exit_code: Some(crate::snippet::EXIT_COMMAND_NOT_FOUND),
+        };
+        // header + stderr + tip + blank line
+        assert_eq!(snippet_result_lines(&r, false), 4);
+        // No tip once the snippet already runs interactively.
+        assert_eq!(snippet_result_lines(&r, true), 3);
     }
 
     #[test]

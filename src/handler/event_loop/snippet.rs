@@ -118,6 +118,7 @@ mod tests {
             total: exit_codes.len(),
             all_done: false,
             cancel: Arc::new(AtomicBool::new(false)),
+            interactive: false,
         }));
         app.snippets.set_output_snippet_name(Some(name.to_string()));
         app

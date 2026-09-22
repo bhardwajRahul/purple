@@ -147,6 +147,7 @@ fn test_set_adds_new() {
         name: "check".to_string(),
         command: "ls".to_string(),
         description: String::new(),
+        interactive: false,
     });
     assert_eq!(store.snippets.len(), 1);
 }
@@ -158,6 +159,7 @@ fn test_set_replaces_existing() {
         name: "check".to_string(),
         command: "df -h".to_string(),
         description: String::new(),
+        interactive: false,
     });
     assert_eq!(store.snippets.len(), 1);
     assert_eq!(store.snippets[0].command, "df -h");
@@ -252,11 +254,13 @@ fn test_save_roundtrip() {
         name: "check-disk".to_string(),
         command: "df -h".to_string(),
         description: "Check disk usage".to_string(),
+        interactive: false,
     });
     store.set(Snippet {
         name: "uptime".to_string(),
         command: "uptime".to_string(),
         description: String::new(),
+        interactive: false,
     });
 
     // Serialize
@@ -307,6 +311,7 @@ fn test_save_to_temp_file() {
         name: "test".to_string(),
         command: "echo hello".to_string(),
         description: "Test snippet".to_string(),
+        interactive: false,
     });
     store.save().unwrap();
 
@@ -322,6 +327,286 @@ fn test_save_to_temp_file() {
 }
 
 // =========================================================================
+// Interactive shell
+// =========================================================================
+
+#[test]
+fn test_parse_interactive_true() {
+    let store = SnippetStore::parse("[pm2]\ncommand=pm2 status\ninteractive=true\n");
+    assert!(store.snippets[0].interactive);
+}
+
+#[test]
+fn test_parse_interactive_defaults_to_false() {
+    let store = SnippetStore::parse("[pm2]\ncommand=pm2 status\n");
+    assert!(!store.snippets[0].interactive);
+}
+
+#[test]
+fn test_parse_interactive_only_accepts_true() {
+    for value in ["false", "yes", "1", "TRUE", ""] {
+        let content = format!("[pm2]\ncommand=pm2 status\ninteractive={value}\n");
+        let store = SnippetStore::parse(&content);
+        assert!(!store.snippets[0].interactive, "value {value:?}");
+    }
+}
+
+#[test]
+fn test_save_writes_interactive_only_when_set() {
+    let _guard = crate::demo_flag::GLOBAL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let prior_demo = crate::demo_flag::is_demo();
+    crate::demo_flag::disable();
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let path = dir.path().join("snippets");
+    let mut store = SnippetStore {
+        path_override: Some(path.clone()),
+        ..Default::default()
+    };
+    store.set(Snippet {
+        name: "plain".to_string(),
+        command: "uptime".to_string(),
+        ..Snippet::default()
+    });
+    store.set(Snippet {
+        name: "pm2".to_string(),
+        command: "pm2 status".to_string(),
+        interactive: true,
+        ..Snippet::default()
+    });
+    store.save().unwrap();
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(content.matches("interactive=").count(), 1);
+    assert!(content.contains("[pm2]\ncommand=pm2 status\ninteractive=true\n"));
+    let reloaded = SnippetStore::parse(&content);
+    assert!(!reloaded.get("plain").unwrap().interactive);
+    assert!(reloaded.get("pm2").unwrap().interactive);
+
+    if prior_demo {
+        crate::demo_flag::enable();
+    }
+}
+
+#[test]
+fn test_remote_command_plain_is_the_command() {
+    let s = Snippet {
+        name: "a".into(),
+        command: "pm2 status".into(),
+        ..Snippet::default()
+    };
+    assert_eq!(s.remote_command(), "pm2 status");
+}
+
+#[test]
+fn test_remote_command_interactive_wraps() {
+    let s = Snippet {
+        name: "a".into(),
+        command: "pm2 status".into(),
+        interactive: true,
+        ..Snippet::default()
+    };
+    let wrapped = s.remote_command();
+    assert!(wrapped.starts_with("exec /bin/sh -c '"), "{wrapped}");
+    assert!(wrapped.contains(" sh 'pm2 status' "), "{wrapped}");
+}
+
+#[test]
+fn test_portable_escape_keeps_quotes_backslashes_and_bangs_outside_quotes() {
+    assert_eq!(portable_escape("plain"), "'plain'");
+    assert_eq!(portable_escape("it's"), "'it'\\''s'");
+    assert_eq!(portable_escape("a\\b"), "'a'\\\\'b'");
+    assert_eq!(portable_escape("x!y"), "'x'\\!'y'");
+}
+
+#[test]
+fn test_wrap_interactive_quotes_the_command_as_its_own_argument() {
+    let wrapped = wrap_interactive("echo 'hi'");
+    assert!(wrapped.contains(" sh 'echo '\\''hi'\\''' "), "{wrapped}");
+}
+
+/// POSIX login shells the wrapper is run through, as far as they exist on this
+/// machine. bash and zsh take the interactive route, sh and dash the plain one.
+fn local_shells() -> Vec<&'static str> {
+    existing(&[
+        "/bin/sh",
+        "/bin/bash",
+        "/bin/zsh",
+        "/usr/bin/zsh",
+        "/bin/dash",
+    ])
+}
+
+/// Non-POSIX login shells, which run the command in their own syntax.
+fn other_local_shells() -> Vec<&'static str> {
+    existing(&[
+        "/bin/tcsh",
+        "/usr/bin/tcsh",
+        "/usr/bin/fish",
+        "/opt/homebrew/bin/fish",
+    ])
+}
+
+fn existing(paths: &[&'static str]) -> Vec<&'static str> {
+    paths
+        .iter()
+        .copied()
+        .filter(|s| std::path::Path::new(s).exists())
+        .collect()
+}
+
+/// Run a wrapped command through a local shell the way sshd runs it on the
+/// remote: `$SHELL -c <command>`, with HOME pointing at an empty directory
+/// and `stdin` fed to the command.
+fn run_wrapped_locally(shell: &str, command: &str, stdin: &str) -> std::process::Output {
+    run_in_sandbox(shell, &wrap_interactive(command), stdin)
+}
+
+/// Run `script` with `shell -c` the way sshd starts a login shell (short name
+/// as argv[0]), inside an empty HOME that is also the working directory, so
+/// nothing from the developer's own dotfiles or the repo leaks in or out.
+fn run_in_sandbox(shell: &str, script: &str, stdin: &str) -> std::process::Output {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    let home = tempfile::tempdir().expect("create tempdir");
+    // Keeps Ubuntu's /etc/bash.bashrc from printing its sudo hint to stdout.
+    std::fs::write(home.path().join(".sudo_as_admin_successful"), "").expect("write marker");
+    let name = shell.rsplit('/').next().unwrap_or(shell);
+    let mut child = std::process::Command::new(shell)
+        .arg0(name)
+        .arg("-c")
+        .arg(script)
+        .env("SHELL", shell)
+        .env("HOME", home.path())
+        .env_remove("ENV")
+        .current_dir(home.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("run shell");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(stdin.as_bytes())
+        .expect("write stdin");
+    child.wait_with_output().expect("wait shell")
+}
+
+#[test]
+fn test_wrap_interactive_runs_with_quotes_stderr_and_exit_code() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "printf '%s\\n' \"it's\"; echo err >&2; exit 3", "");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "it's\n", "{shell}");
+        assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n", "{shell}");
+        assert_eq!(out.status.code(), Some(3), "{shell}");
+    }
+}
+
+#[test]
+fn test_wrap_interactive_passes_stdin_to_the_command() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "read x; echo \"got $x\"", "hello\n");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "got hello\n",
+            "{shell}"
+        );
+    }
+}
+
+#[test]
+fn test_wrap_interactive_never_runs_stdin_after_a_syntax_error() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "echo \"unterminated", "echo INJECTED\n");
+        assert!(
+            !String::from_utf8_lossy(&out.stdout).contains("INJECTED"),
+            "{shell}"
+        );
+        assert_ne!(out.status.code(), Some(0), "{shell}");
+        assert!(
+            !out.stderr.is_empty(),
+            "{shell}: the syntax error stays visible"
+        );
+    }
+}
+
+#[test]
+fn test_wrap_interactive_runs_plainly_on_other_login_shells() {
+    let plain_route = |s: &&str| !s.ends_with("/bash") && !s.ends_with("/zsh");
+    let shells = local_shells().into_iter().filter(plain_route);
+    for shell in shells.chain(other_local_shells()) {
+        for command in ["echo \"x!y\"; echo it\\'s", "purple_no_such_command_xyz"] {
+            let wrapped = run_wrapped_locally(shell, command, "");
+            let plain = run_in_sandbox(shell, command, "");
+            assert_eq!(wrapped.stdout, plain.stdout, "{shell}: {command}");
+            assert_eq!(wrapped.stderr, plain.stderr, "{shell}: {command}");
+            assert_eq!(
+                wrapped.status.code(),
+                plain.status.code(),
+                "{shell}: {command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_wrap_interactive_keeps_backslashes_and_quotes_in_every_shell() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "printf '%s\\n' 'a\\b' \"it's\"", "");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "a\\b\nit's\n",
+            "{shell}"
+        );
+    }
+}
+
+#[test]
+fn test_wrap_interactive_hides_shell_noise_after_a_signal() {
+    // Only bash and zsh run interactively; the plain route reports a signal
+    // the same way a plain snippet does.
+    let interactive = |s: &&str| s.ends_with("/bash") || s.ends_with("/zsh");
+    for shell in local_shells().into_iter().filter(interactive) {
+        let out = run_wrapped_locally(shell, "sh -c 'kill -TERM $$'", "");
+        assert!(out.stderr.is_empty(), "{shell}: {:?}", out.stderr);
+    }
+}
+
+#[test]
+fn test_wrap_interactive_survives_a_trailing_comment() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "echo ok # trailing comment", "");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "ok\n", "{shell}");
+        assert_eq!(out.status.code(), Some(0), "{shell}");
+    }
+}
+
+#[test]
+fn test_wrap_interactive_keeps_not_found_exit_code() {
+    for shell in local_shells() {
+        let out = run_wrapped_locally(shell, "purple_no_such_command_xyz", "");
+        assert_eq!(out.status.code(), Some(EXIT_COMMAND_NOT_FOUND), "{shell}");
+        assert!(
+            !out.stderr.is_empty(),
+            "{shell}: the command's own error stays visible"
+        );
+    }
+}
+
+#[test]
+fn test_not_found_hint_applies_only_to_plain_127() {
+    assert!(not_found_hint_applies(false, Some(EXIT_COMMAND_NOT_FOUND)));
+    assert!(!not_found_hint_applies(true, Some(EXIT_COMMAND_NOT_FOUND)));
+    assert!(!not_found_hint_applies(false, Some(0)));
+    assert!(!not_found_hint_applies(false, Some(1)));
+    assert!(!not_found_hint_applies(false, None));
+}
+
+// =========================================================================
 // Edge cases
 // =========================================================================
 
@@ -333,6 +618,7 @@ fn test_set_multiple_then_remove_all() {
             name: name.to_string(),
             command: "cmd".to_string(),
             description: String::new(),
+            interactive: false,
         });
     }
     assert_eq!(store.snippets.len(), 3);
@@ -383,6 +669,7 @@ fn test_name_with_equals_roundtrip() {
         name: "check=disk".to_string(),
         command: "df -h".to_string(),
         description: String::new(),
+        interactive: false,
     });
 
     let mut content = String::new();
@@ -436,21 +723,25 @@ fn test_set_overwrite_preserves_order() {
         name: "a".into(),
         command: "1".into(),
         description: String::new(),
+        interactive: false,
     });
     store.set(Snippet {
         name: "b".into(),
         command: "2".into(),
         description: String::new(),
+        interactive: false,
     });
     store.set(Snippet {
         name: "c".into(),
         command: "3".into(),
         description: String::new(),
+        interactive: false,
     });
     store.set(Snippet {
         name: "b".into(),
         command: "updated".into(),
         description: String::new(),
+        interactive: false,
     });
     assert_eq!(store.snippets.len(), 3);
     assert_eq!(store.snippets[0].name, "a");
@@ -1070,11 +1361,13 @@ fn filtered_indices_returns_all_when_query_is_none_or_empty() {
                 name: "a".into(),
                 command: "ls".into(),
                 description: String::new(),
+                interactive: false,
             },
             Snippet {
                 name: "b".into(),
                 command: "df".into(),
                 description: String::new(),
+                interactive: false,
             },
         ],
         ..Default::default()
@@ -1091,16 +1384,19 @@ fn filtered_indices_matches_name_command_or_description_case_insensitively() {
                 name: "Deploy".into(),
                 command: "make".into(),
                 description: "ship".into(),
+                interactive: false,
             },
             Snippet {
                 name: "uptime".into(),
                 command: "UPTIME -p".into(),
                 description: String::new(),
+                interactive: false,
             },
             Snippet {
                 name: "disk".into(),
                 command: "df".into(),
                 description: "Free space".into(),
+                interactive: false,
             },
         ],
         ..Default::default()

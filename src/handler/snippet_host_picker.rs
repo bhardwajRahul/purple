@@ -313,6 +313,7 @@ mod tests {
             name: "deploy".into(),
             command: "make deploy".into(),
             description: String::new(),
+            interactive: false,
         }));
         app.set_screen(Screen::SnippetHostPicker);
         app.snippets.host_pick_mut().list_state.select(Some(0));

@@ -1,7 +1,7 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  purple       hosts      tunnels      containers      snippets      keys                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ Snippets (10) ───────────────────────────────────────────────────────────────────────╮╭─ OVERVIEW ───────────────────────────────────────────────────────────╮
+╭ Snippets (11) ───────────────────────────────────────────────────────────────────────╮╭─ OVERVIEW ───────────────────────────────────────────────────────────╮
 │  NAME                    PARAMS  DESCRIPTION                                         ││ Pull and roll a service                                              │
 │ ──────────────────────────────────────────────────────────────────────────────────── ││                                                                      │
 │  uptime                  ·       Server uptime and load                              ││ Parameters    2                                                      │
@@ -14,7 +14,7 @@
 │  log-rotate              ·       Force a log rotation                                ││  0  │                                                                │
 │  container-prune         ·       Show disk usage then purge unused image…            ││ last ✓ 2h ago · 28 of 29 host runs ok · 1 partial                    │
 │  certbot-renew           ·       Renew Let's Encrypt certificates and re…            │╰──────────────────────────────────────────────────────────────────────╯
-│                                                                                      │╭─ COMMAND ────────────────────────────────────────────────────────────╮
+│  pm2-status              ·       Node processes under pm2                            │╭─ COMMAND ────────────────────────────────────────────────────────────╮
 │                                                                                      ││ cd /opt/{{app}} && git pull && docker compose pull && docker compose │
 │                                                                                      ││ up -d --no-deps {{service:web}}                                      │
 │                                                                                      │╰──────────────────────────────────────────────────────────────────────╯
@@ -1881,6 +1881,62 @@
 (158,15) fg=Reset bg=Reset mod=DIM
 (159,15) fg=Reset bg=Reset mod=DIM
 (0,16) fg=Reset bg=Reset mod=DIM
+(3,16) fg=Reset bg=Reset mod=BOLD
+(4,16) fg=Reset bg=Reset mod=BOLD
+(5,16) fg=Reset bg=Reset mod=BOLD
+(6,16) fg=Reset bg=Reset mod=BOLD
+(7,16) fg=Reset bg=Reset mod=BOLD
+(8,16) fg=Reset bg=Reset mod=BOLD
+(9,16) fg=Reset bg=Reset mod=BOLD
+(10,16) fg=Reset bg=Reset mod=BOLD
+(11,16) fg=Reset bg=Reset mod=BOLD
+(12,16) fg=Reset bg=Reset mod=BOLD
+(13,16) fg=Reset bg=Reset mod=BOLD
+(14,16) fg=Reset bg=Reset mod=BOLD
+(15,16) fg=Reset bg=Reset mod=BOLD
+(16,16) fg=Reset bg=Reset mod=BOLD
+(17,16) fg=Reset bg=Reset mod=BOLD
+(18,16) fg=Reset bg=Reset mod=BOLD
+(19,16) fg=Reset bg=Reset mod=BOLD
+(20,16) fg=Reset bg=Reset mod=BOLD
+(21,16) fg=Reset bg=Reset mod=BOLD
+(22,16) fg=Reset bg=Reset mod=BOLD
+(23,16) fg=Reset bg=Reset mod=BOLD
+(24,16) fg=Reset bg=Reset mod=BOLD
+(25,16) fg=Reset bg=Reset mod=BOLD
+(26,16) fg=Reset bg=Reset mod=BOLD
+(27,16) fg=Reset bg=Reset mod=DIM
+(28,16) fg=Reset bg=Reset mod=DIM
+(29,16) fg=Reset bg=Reset mod=DIM
+(30,16) fg=Reset bg=Reset mod=DIM
+(31,16) fg=Reset bg=Reset mod=DIM
+(32,16) fg=Reset bg=Reset mod=DIM
+(33,16) fg=Reset bg=Reset mod=DIM
+(34,16) fg=Reset bg=Reset mod=DIM
+(35,16) fg=Reset bg=Reset mod=DIM
+(36,16) fg=Reset bg=Reset mod=DIM
+(37,16) fg=Reset bg=Reset mod=DIM
+(38,16) fg=Reset bg=Reset mod=DIM
+(39,16) fg=Reset bg=Reset mod=DIM
+(40,16) fg=Reset bg=Reset mod=DIM
+(41,16) fg=Reset bg=Reset mod=DIM
+(42,16) fg=Reset bg=Reset mod=DIM
+(43,16) fg=Reset bg=Reset mod=DIM
+(44,16) fg=Reset bg=Reset mod=DIM
+(45,16) fg=Reset bg=Reset mod=DIM
+(46,16) fg=Reset bg=Reset mod=DIM
+(47,16) fg=Reset bg=Reset mod=DIM
+(48,16) fg=Reset bg=Reset mod=DIM
+(49,16) fg=Reset bg=Reset mod=DIM
+(50,16) fg=Reset bg=Reset mod=DIM
+(51,16) fg=Reset bg=Reset mod=DIM
+(52,16) fg=Reset bg=Reset mod=DIM
+(53,16) fg=Reset bg=Reset mod=DIM
+(54,16) fg=Reset bg=Reset mod=DIM
+(55,16) fg=Reset bg=Reset mod=DIM
+(56,16) fg=Reset bg=Reset mod=DIM
+(57,16) fg=Reset bg=Reset mod=DIM
+(58,16) fg=Reset bg=Reset mod=DIM
 (87,16) fg=Reset bg=Reset mod=DIM
 (88,16) fg=Reset bg=Reset mod=DIM
 (89,16) fg=Reset bg=Reset mod=DIM

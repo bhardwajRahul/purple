@@ -1142,6 +1142,14 @@ pub fn handle_password_command(
     }
 }
 
+/// Print the Interactive shell tip on stderr when a plain-shell run ended with
+/// "command not found".
+pub(crate) fn print_not_found_hint(snip: &snippet::Snippet, exit_code: Option<i32>) {
+    if snippet::not_found_hint_applies(snip.interactive, exit_code) {
+        eprintln!("{}", crate::messages::cli::SNIPPET_NOT_FOUND_HINT);
+    }
+}
+
 pub fn handle_snippet_command(
     env: &crate::runtime::env::Env,
     config: SshConfigFile,
@@ -1169,6 +1177,7 @@ pub fn handle_snippet_command(
             name,
             command,
             description,
+            interactive,
         } => {
             if let Err(e) = snippet::validate_name(&name) {
                 eprintln!("{}", e);
@@ -1190,8 +1199,10 @@ pub fn handle_snippet_command(
                 name: name.clone(),
                 command,
                 description: description.unwrap_or_default(),
+                interactive,
             });
             store.save()?;
+            log::debug!("[purple] cli snippet saved: {name} (interactive={interactive})");
             if is_update {
                 println!("{}", crate::messages::cli::snippet_updated(&name));
             } else {
@@ -1268,7 +1279,7 @@ pub fn handle_snippet_command(
                     &host.alias,
                     config_path,
                     env,
-                    &snip.command,
+                    &snip.remote_command(),
                     askpass.as_deref(),
                     bw_session.as_deref(),
                     false,
@@ -1281,6 +1292,7 @@ pub fn handle_snippet_command(
                 crate::askpass::cleanup_marker(env.paths(), &host.alias);
                 match result {
                     Ok(r) => {
+                        print_not_found_hint(&snip, r.status.code());
                         if !r.status.success() {
                             std::process::exit(r.status.code().unwrap_or(1));
                         }
@@ -1341,7 +1353,7 @@ pub fn handle_snippet_command(
                         (h.alias.clone(), askpass)
                     })
                     .collect();
-                let command = snip.command.clone();
+                let command = snip.remote_command();
                 let env = std::sync::Arc::new(env.clone());
                 thread::spawn(move || {
                     for (alias, askpass) in targets_info {
@@ -1380,6 +1392,16 @@ pub fn handle_snippet_command(
                                 for line in r.stderr.lines() {
                                     eprintln!("[{}] {}", alias, line);
                                 }
+                                if snippet::not_found_hint_applies(
+                                    snip.interactive,
+                                    r.status.code(),
+                                ) {
+                                    eprintln!(
+                                        "[{}] {}",
+                                        alias,
+                                        crate::messages::cli::SNIPPET_NOT_FOUND_HINT
+                                    );
+                                }
                             }
                             Err(e) => {
                                 eprintln!("{}", crate::messages::cli::host_failed(&alias, &e))
@@ -1407,7 +1429,7 @@ pub fn handle_snippet_command(
                         &host.alias,
                         config_path,
                         env,
-                        &snip.command,
+                        &snip.remote_command(),
                         askpass.as_deref(),
                         bw_session.as_deref(),
                         false,
@@ -1416,6 +1438,7 @@ pub fn handle_snippet_command(
                     crate::askpass::cleanup_marker(env.paths(), &host.alias);
                     match result {
                         Ok(r) => {
+                            print_not_found_hint(&snip, r.status.code());
                             if !r.status.success() {
                                 eprintln!(
                                     "{}",

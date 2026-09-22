@@ -195,6 +195,11 @@ pub use super::snippet_added;
 pub use super::snippet_removed;
 pub use super::snippet_updated;
 
+/// CLI wording of `SNIPPET_NOT_FOUND_HINT`: the CLI changes a snippet through
+/// `snippet add` instead of the edit form.
+pub const SNIPPET_NOT_FOUND_HINT: &str = "Tip: bash or zsh host? Run purple snippet add again \
+     with --interactive (and --description, if it has one) to load ~/.bashrc or ~/.zshrc.";
+
 pub fn snippet_not_found(name: &str) -> String {
     format!("No snippet '{}' found.", name)
 }

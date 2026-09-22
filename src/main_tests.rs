@@ -1362,6 +1362,26 @@ fn cli_vault_sign_alias_parsing() {
 }
 
 #[test]
+fn cli_snippet_add_interactive_flag_parsing() {
+    use clap::Parser;
+    let parse = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+        Some(Commands::Snippet {
+            command: crate::cli_args::SnippetCommands::Add { interactive, .. },
+        }) => interactive,
+        _ => panic!("expected Snippet::Add"),
+    };
+    assert!(parse(&[
+        "purple",
+        "snippet",
+        "add",
+        "pm2",
+        "pm2 status",
+        "--interactive"
+    ]));
+    assert!(!parse(&["purple", "snippet", "add", "pm2", "pm2 status"]));
+}
+
+#[test]
 fn cli_vault_sign_all_flag_parsing() {
     use clap::Parser;
     let cli = Cli::try_parse_from(["purple", "vault", "sign", "--all"]).unwrap();

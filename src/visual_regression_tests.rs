@@ -1173,6 +1173,7 @@ fn visual_snippet_host_picker() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     app.snippets.host_pick_mut().list_state.select(Some(0));
     app.screen = Screen::SnippetHostPicker;
@@ -1188,6 +1189,7 @@ fn visual_snippet_host_picker_selected() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     let first_two: Vec<String> = app
         .hosts_state
@@ -1215,6 +1217,7 @@ fn visual_snippet_host_picker_edit_default() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     app.snippets.host_pick_mut().purpose = crate::app::SnippetHostPickPurpose::EditDefault;
     if let Some(alias) = app.hosts_state.list().first().map(|h| h.alias.clone()) {
@@ -1238,6 +1241,7 @@ fn visual_snippet_host_picker_grouped() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     app.snippets.host_pick_mut().list_state.select(Some(0));
     app.screen = Screen::SnippetHostPicker;
@@ -1255,6 +1259,7 @@ fn visual_snippet_host_picker_filtered() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     app.snippets.host_pick_mut().query = "aws".to_string();
     app.snippets.host_pick_mut().filtering = true;
@@ -1272,6 +1277,7 @@ fn visual_confirm_run_snippet() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     }));
     let targets: Vec<String> = app
         .hosts_state
@@ -1466,6 +1472,7 @@ fn visual_snippet_form_default_hosts() {
         name: "deploy".into(),
         command: "make deploy".into(),
         description: "Ship the app".into(),
+        interactive: false,
     });
     app.snippets.form_mut().default_hosts = vec!["bastion-ams".into(), "db-primary".into()];
     app.snippets.form_mut().focused_field = crate::app::SnippetFormField::DefaultHosts;
@@ -1493,6 +1500,7 @@ fn visual_snippet_output() {
             total: 1,
             all_done: true,
             cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            interactive: false,
         }));
     app.snippets
         .set_output_snippet_name(Some("uptime".to_string()));
@@ -1511,6 +1519,7 @@ fn visual_snippet_param_form() {
         name: "uptime".to_string(),
         command: "uptime".to_string(),
         description: "Server uptime and load".to_string(),
+        interactive: false,
     };
     // Param form requires state populated with the snippet's params (none here),
     // so build an empty SnippetParamFormState matching the snippet.

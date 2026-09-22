@@ -139,6 +139,16 @@ pub fn runs_failed(n: usize) -> String {
     format!("{n} failed")
 }
 
+/// Shown under a host that exited with "command not found" on a snippet that
+/// runs in a plain shell.
+pub const SNIPPET_NOT_FOUND_HINT: &str =
+    "Tip: bash or zsh host? On the Snippets tab, press e and turn on Interactive shell.";
+
+/// Detail panel label and value for a snippet with Interactive shell on. The
+/// label fits the panel's label column.
+pub const SNIPPET_INTERACTIVE_LABEL: &str = "Interactive";
+pub const SNIPPET_INTERACTIVE_ON: &str = "yes";
+
 pub const OUTPUT_COPIED: &str = "Output copied.";
 
 pub fn copy_failed(e: &impl std::fmt::Display) -> String {

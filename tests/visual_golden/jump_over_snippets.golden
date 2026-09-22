@@ -1,7 +1,7 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  purple       hosts      tunnels      containers      snippets      keys                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ Snippets (10) ───────────────────────────────────────────────────────────────────────────────────╮
+╭ Snippets (11) ───────────────────────────────────────────────────────────────────────────────────╮
 │  NAME                    PARAMS  DESCRIPTION                                                     │
 │ ──────────────────────────────────────────────────────────────────────────────────────────────── │
 │ ▌uptime                  ·       Server uptime and load                                          │
@@ -14,7 +14,7 @@
 │  log-rotat│   Actions   6 of 50                                                     │            │
 │  container│   Snippets: Run snippet                                             r   │            │
 │  certbot-r│   Snippets: Run on all visible                                      R   │            │
-│           │   Hosts: Add host                                                   a   │            │
+│  pm2-statu│   Hosts: Add host                                                   a   │            │
 │           │   Tunnels: Manage tunnels                                           T   │            │
 │           │   Containers: List containers                                       C   │            │
 │           │   Files: Browse remote files                                        F   │            │
@@ -1267,15 +1267,15 @@
 (0,16) fg=DarkGray bg=Reset mod=DIM
 (1,16) fg=DarkGray bg=Reset mod=DIM
 (2,16) fg=DarkGray bg=Reset mod=DIM
-(3,16) fg=DarkGray bg=Reset mod=DIM
-(4,16) fg=DarkGray bg=Reset mod=DIM
-(5,16) fg=DarkGray bg=Reset mod=DIM
-(6,16) fg=DarkGray bg=Reset mod=DIM
-(7,16) fg=DarkGray bg=Reset mod=DIM
-(8,16) fg=DarkGray bg=Reset mod=DIM
-(9,16) fg=DarkGray bg=Reset mod=DIM
-(10,16) fg=DarkGray bg=Reset mod=DIM
-(11,16) fg=DarkGray bg=Reset mod=DIM
+(3,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(4,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(5,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(6,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(7,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(8,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(9,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(10,16) fg=DarkGray bg=Reset mod=BOLD|DIM
+(11,16) fg=DarkGray bg=Reset mod=BOLD|DIM
 (12,16) fg=Reset bg=Reset mod=DIM
 (16,16) fg=Reset bg=Reset mod=BOLD
 (17,16) fg=Reset bg=Reset mod=BOLD

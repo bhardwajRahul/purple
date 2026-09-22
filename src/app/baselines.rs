@@ -43,6 +43,7 @@ pub struct SnippetFormBaseline {
     pub name: String,
     pub command: String,
     pub description: String,
+    pub interactive: bool,
     pub default_hosts: Vec<String>,
 }
 
@@ -417,6 +418,7 @@ impl App {
             name: self.snippets.form.name.clone(),
             command: self.snippets.form.command.clone(),
             description: self.snippets.form.description.clone(),
+            interactive: self.snippets.form.interactive,
             default_hosts: self.snippets.form.default_hosts.clone(),
         });
     }

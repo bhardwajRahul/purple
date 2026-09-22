@@ -1559,6 +1559,7 @@ mod key_push_confirm_tests {
             name: "deploy".into(),
             command: "echo {{msg}}".into(),
             description: String::new(),
+            interactive: false,
         }));
         app.snippets.set_flow_targets(vec!["h1".into()]);
         app.set_screen(Screen::ConfirmRunSnippet);

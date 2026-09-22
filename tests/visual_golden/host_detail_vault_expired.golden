@@ -26,7 +26,7 @@
 │   ● do-personal-blog                 personal       20h  ││ Status        Expired (press V to sign
 │   ● do-personal-mail                 personal       21h  │╰──────────────────────────────────────╯
 │   ● pve-web-01                       web            22h  │╭─ SNIPPETS ───────────────────────────╮
-╰──────────────────────────────────────────── getpurple.sh ╯│ 10 available (r to run)              │
+╰──────────────────────────────────────────── getpurple.sh ╯│ 11 available (r to run)              │
  Enter  connect    /  search    #  tag    v  compact    :  jump                              ?  more
 ---STYLES---
 (0,0) fg=Reset bg=Reset mod=DIM

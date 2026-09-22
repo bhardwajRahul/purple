@@ -3472,11 +3472,13 @@ fn make_snippet_app() -> App {
             name: "check-disk".to_string(),
             command: "df -h".to_string(),
             description: "Check disk usage".to_string(),
+            interactive: false,
         },
         crate::snippet::Snippet {
             name: "uptime".to_string(),
             command: "uptime".to_string(),
             description: String::new(),
+            interactive: false,
         },
     ];
     let _ = app.snippets.store_mut().save();
@@ -3617,6 +3619,7 @@ fn test_snippet_picker_d_last_item_selects_none() {
         name: "only".to_string(),
         command: "ls".to_string(),
         description: String::new(),
+        interactive: false,
     }];
     app.ui.snippet_picker_state_mut().select(Some(0));
     let _ = app.snippets.store_mut().save();
@@ -3729,6 +3732,12 @@ fn test_snippet_form_tab_cycles_fields() {
     let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
     assert_eq!(
         app.snippets.form_mut().focused_field,
+        crate::app::SnippetFormField::Interactive
+    );
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Tab), &tx);
+    assert_eq!(
+        app.snippets.form_mut().focused_field,
         crate::app::SnippetFormField::DefaultHosts
     );
 
@@ -3804,6 +3813,76 @@ fn test_snippet_form_submit_edit() {
     let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
     assert!(matches!(app.screen, Screen::SnippetPicker));
     assert_eq!(app.snippets.store().snippets[0].command, "df -hT");
+}
+
+fn open_snippet_form_on_interactive(app: &mut App) {
+    *app.snippets.form_mut() = crate::app::SnippetForm::new();
+    app.snippets.form_mut().focused_field = crate::app::SnippetFormField::Interactive;
+    app.snippets.set_flow_targets(vec!["myserver".to_string()]);
+    app.snippets.set_form_editing(None);
+    app.screen = Screen::SnippetForm;
+}
+
+#[test]
+fn test_snippet_form_space_flips_interactive_toggle() {
+    let mut app = make_snippet_app();
+    open_snippet_form_on_interactive(&mut app);
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert!(app.snippets.form().interactive);
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    assert!(!app.snippets.form().interactive);
+    assert!(matches!(app.screen, Screen::SnippetForm));
+}
+
+#[test]
+fn test_snippet_form_typing_on_interactive_toggle_is_ignored() {
+    let mut app = make_snippet_app();
+    open_snippet_form_on_interactive(&mut app);
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Char('x')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Backspace), &tx);
+    let form = app.snippets.form();
+    assert!(!form.interactive);
+    assert!(form.name.is_empty() && form.command.is_empty() && form.description.is_empty());
+}
+
+#[test]
+fn test_snippet_form_submit_persists_interactive() {
+    let mut app = make_snippet_app();
+    let _ = app.snippets.store_mut().save();
+    open_snippet_form_on_interactive(&mut app);
+    app.snippets.form_mut().name = "pm2".to_string();
+    app.snippets.form_mut().command = "pm2 status".to_string();
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Enter), &tx);
+    assert!(matches!(app.screen, Screen::SnippetPicker));
+    assert!(app.snippets.store().get("pm2").unwrap().interactive);
+}
+
+#[test]
+fn test_snippet_form_edit_seeds_interactive_from_snippet() {
+    let mut snippet = make_snippet_app().snippets.store().snippets[0].clone();
+    snippet.interactive = true;
+    let form = crate::app::SnippetForm::from_snippet(&snippet);
+    assert!(form.interactive);
+}
+
+#[test]
+fn test_snippet_form_toggling_interactive_makes_esc_ask_to_discard() {
+    let mut app = make_snippet_app();
+    open_snippet_form_on_interactive(&mut app);
+    app.capture_snippet_form_baseline();
+    let (tx, _rx) = mpsc::channel();
+
+    let _ = handle_key_event(&mut app, key(KeyCode::Char(' ')), &tx);
+    let _ = handle_key_event(&mut app, key(KeyCode::Esc), &tx);
+    assert!(app.forms.is_discard_pending());
+    assert!(matches!(app.screen, Screen::SnippetForm));
 }
 
 #[test]
@@ -8130,6 +8209,7 @@ fn jump_enter_on_snippet_hit_with_no_host_warns() {
             name: "deploy".into(),
             command: "curl example".into(),
             description: String::new(),
+            interactive: false,
         });
     app.jump = Some(crate::app::JumpState::default());
     if let Some(p) = app.jump.as_mut() {

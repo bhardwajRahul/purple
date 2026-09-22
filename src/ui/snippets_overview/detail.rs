@@ -87,6 +87,15 @@ fn build_static_cards(
         let value = crate::messages::snippet::snippet_default_hosts_summary(targets);
         design::section_field(lines, "Default hosts", &value, content_w, box_width);
     }
+    if snippet.interactive {
+        design::section_field(
+            lines,
+            crate::messages::snippet::SNIPPET_INTERACTIVE_LABEL,
+            crate::messages::snippet::SNIPPET_INTERACTIVE_ON,
+            content_w,
+            box_width,
+        );
+    }
     design::section_close(lines, box_width);
 
     // TRACK RECORD (reliability verdict + inset trend chart), only with runs.
@@ -490,6 +499,7 @@ mod tests {
             name: name.to_string(),
             command: "echo {{x:hi}}".to_string(),
             description: "demo snippet".to_string(),
+            interactive: false,
         }
     }
 
@@ -527,6 +537,33 @@ mod tests {
         (0..width)
             .map(|x| buf.cell((x, y)).map(|c| c.symbol()).unwrap_or(""))
             .collect()
+    }
+
+    fn buffer_contains(buf: &Buffer, width: u16, height: u16, needle: &str) -> bool {
+        (0..height).any(|y| row_text(buf, y, width).contains(needle))
+    }
+
+    #[test]
+    fn overview_shows_interactive_shell_only_when_on() {
+        let (w, h) = (60, 30);
+        let label = crate::messages::snippet::SNIPPET_INTERACTIVE_LABEL;
+        let plain = snippet("plain");
+        let buf = render_buffer(w, h, &plain, &SnippetRunLog::default());
+        assert!(!buffer_contains(&buf, w, h, label));
+
+        let interactive = Snippet {
+            interactive: true,
+            ..snippet("pm2")
+        };
+        let buf = render_buffer(w, h, &interactive, &SnippetRunLog::default());
+        // The value sits apart from its label, not glued onto it.
+        let row = (0..h)
+            .map(|y| row_text(&buf, y, w))
+            .find(|r| r.contains(label))
+            .expect("interactive row");
+        let after = row.split(label).nth(1).unwrap_or_default();
+        assert!(after.starts_with("  "), "{row}");
+        assert!(after.trim_start().starts_with("yes"), "{row}");
     }
 
     #[test]

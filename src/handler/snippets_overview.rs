@@ -207,11 +207,13 @@ mod tests {
                 name: "deploy".into(),
                 command: "make".into(),
                 description: String::new(),
+                interactive: false,
             },
             crate::snippet::Snippet {
                 name: "uptime".into(),
                 command: "uptime".into(),
                 description: String::new(),
+                interactive: false,
             },
         ];
         app.snippets.list_state_mut().select(Some(0));

@@ -89,6 +89,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 )));
             }
         }
+        if result.shows_not_found_hint(state.interactive) {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", crate::messages::SNIPPET_NOT_FOUND_HINT),
+                theme::muted(),
+            )));
+        }
         lines.push(Line::from(""));
     }
 
@@ -130,9 +136,75 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
 
     use super::design;
+    use crate::app::{App, Screen, SnippetHostOutput, SnippetOutputState};
+    use crate::ssh_config::model::SshConfigFile;
+
+    const W: u16 = 120;
+    const H: u16 = 30;
+
+    /// Render the output overlay for one host that exited with `exit_code`.
+    fn render_text(exit_code: i32, interactive: bool) -> String {
+        let _lock = crate::demo_flag::GLOBAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::ui::theme::init_with_mode(1);
+        crate::ui::theme::set_theme(crate::ui::theme::ThemeDef::purple());
+        let scratch = tempfile::tempdir().expect("tempdir");
+        let config = SshConfigFile {
+            elements: SshConfigFile::parse_content(""),
+            path: scratch.path().join("config"),
+            crlf: false,
+            bom: false,
+        };
+        let mut app = App::new(config);
+        app.snippets.set_output(Some(SnippetOutputState {
+            run_id: 1,
+            results: vec![SnippetHostOutput {
+                alias: "vps".to_string(),
+                stdout: String::new(),
+                stderr: "bash: line 1: pm2: command not found".to_string(),
+                exit_code: Some(exit_code),
+            }],
+            scroll_offset: 0,
+            completed: 1,
+            total: 1,
+            all_done: true,
+            cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            interactive,
+        }));
+        app.snippets
+            .set_output_snippet_name(Some("pm2-status".to_string()));
+        app.snippets.set_flow_targets(vec!["vps".to_string()]);
+        app.screen = Screen::SnippetOutput;
+        let mut terminal = Terminal::new(TestBackend::new(W, H)).expect("terminal");
+        terminal.draw(|f| super::render(f, &mut app)).expect("draw");
+        let buf = terminal.backend().buffer().clone();
+        (0..H)
+            .map(|y| {
+                (0..W)
+                    .map(|x| buf.cell((x, y)).map(|c| c.symbol()).unwrap_or(""))
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn command_not_found_shows_the_interactive_shell_tip() {
+        let text = render_text(crate::snippet::EXIT_COMMAND_NOT_FOUND, false);
+        assert!(text.contains(crate::messages::SNIPPET_NOT_FOUND_HINT));
+    }
+
+    #[test]
+    fn tip_stays_away_from_other_exit_codes_and_interactive_snippets() {
+        assert!(!render_text(1, false).contains("Tip:"));
+        assert!(!render_text(crate::snippet::EXIT_COMMAND_NOT_FOUND, true).contains("Tip:"));
+    }
 
     #[test]
     fn footer_sits_directly_below_block() {

@@ -526,6 +526,7 @@ fn open_snippet_forms_initialize_state_without_mtime() {
         name: "deploy".to_string(),
         command: "echo hi".to_string(),
         description: "test snippet".to_string(),
+        interactive: false,
     };
     app.open_snippet_edit_form(&snippet, aliases.clone(), 5);
     assert!(

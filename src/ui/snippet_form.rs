@@ -58,9 +58,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         render_field_content(frame, content_area, field, app.snippets.form());
     }
 
-    // Footer below the block. The Default hosts field is a picker (Space opens
-    // the host picker), so its footer carries the Space hint; the text fields
-    // map to FieldKind::Text.
+    // Footer below the block. The Interactive shell toggle and the Default
+    // hosts picker carry their Space hint; the text fields map to FieldKind::Text.
     let footer_area = design::render_overlay_footer(frame, block_area);
     if app.forms.is_discard_pending() {
         design::render_discard_prompt(frame, footer_area, app);
@@ -82,10 +81,26 @@ fn render_field_content(
 ) {
     let is_focused = form.focused_field == field;
 
+    if field.is_toggle() {
+        let value_text = crate::messages::hints::snippet_interactive_value(form.interactive);
+        let content = if is_focused {
+            let gap = (area.width as usize).saturating_sub(value_text.width() + 3);
+            Line::from(vec![
+                Span::styled(value_text, theme::bold()),
+                Span::raw(" ".repeat(gap)),
+                Span::styled(design::TOGGLE_HINT, theme::muted()),
+            ])
+        } else {
+            Line::from(Span::styled(value_text, theme::bold()))
+        };
+        frame.render_widget(Paragraph::new(content), area);
+        return;
+    }
+
     let placeholder = match field {
         SnippetFormField::Name => crate::messages::hints::SNIPPET_NAME,
         SnippetFormField::Command => crate::messages::hints::SNIPPET_COMMAND,
-        SnippetFormField::Description => "",
+        SnippetFormField::Description | SnippetFormField::Interactive => "",
         SnippetFormField::DefaultHosts => crate::messages::hints::SNIPPET_DEFAULT_HOSTS,
     };
 
@@ -93,6 +108,7 @@ fn render_field_content(
         SnippetFormField::Name => form.name.clone(),
         SnippetFormField::Command => form.command.clone(),
         SnippetFormField::Description => form.description.clone(),
+        SnippetFormField::Interactive => String::new(),
         SnippetFormField::DefaultHosts => {
             crate::messages::snippet::snippet_default_hosts_summary(&form.default_hosts)
         }

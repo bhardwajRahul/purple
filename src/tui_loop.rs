@@ -932,13 +932,16 @@ fn handle_pending_snippet(
             alias,
             app.reload.config_path(),
             &env,
-            &snip.command,
+            &snip.remote_command(),
             askpass.as_deref(),
             app.bw_session.as_deref(),
             false,
             has_tunnel,
         ) {
             Ok(r) => {
+                if snippet::not_found_hint_applies(snip.interactive, r.status.code()) {
+                    eprintln!("{}", crate::messages::SNIPPET_NOT_FOUND_HINT);
+                }
                 if r.status.success() {
                     ok_count += 1;
                     app.history.record(alias);

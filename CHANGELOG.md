@@ -1,3 +1,9 @@
+## 3.30.0 - 2026-09-22
+
+- feat: Snippets can run with your full shell setup.
+- feat: Turn on Interactive shell in a snippet and it runs with your `~/.bashrc` loaded, so tools like `pm2` installed through nvm work the same as when you log in. On the command line, `purple snippet add` takes `--interactive`.
+- feat: A snippet that ends with "command not found" shows a tip that points you to the Interactive shell toggle.
+
 ## 3.29.2 - 2026-09-22
 
 - change: purple opens instantly, however many keys you keep.

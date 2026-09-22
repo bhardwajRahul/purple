@@ -246,6 +246,7 @@ impl SnippetState {
                 self.form.name != b.name
                     || self.form.command != b.command
                     || self.form.description != b.description
+                    || self.form.interactive != b.interactive
                     || self.form.default_hosts != b.default_hosts
             }
             None => false,
@@ -418,6 +419,7 @@ mod tests {
                     name: "ls".into(),
                     command: "ls -la".into(),
                     description: String::new(),
+                    interactive: false,
                 },
                 vec!["host-a".into()],
             )),
@@ -451,6 +453,7 @@ mod tests {
             name: "deploy".into(),
             command: "make deploy".into(),
             description: "ship it".into(),
+            interactive: false,
             default_hosts: Vec::new(),
         }));
         s
@@ -479,6 +482,7 @@ mod tests {
         assert_field_change_is_dirty("name", |f| f.name.push('x'));
         assert_field_change_is_dirty("command", |f| f.command.push('x'));
         assert_field_change_is_dirty("description", |f| f.description.push('x'));
+        assert_field_change_is_dirty("interactive", |f| f.interactive = !f.interactive);
     }
 
     #[test]
@@ -514,6 +518,7 @@ mod tests {
             name: "deploy".into(),
             command: "make deploy".into(),
             description: String::new(),
+            interactive: false,
         }));
         assert_eq!(s.flow_snippet().map(|s| s.name.as_str()), Some("deploy"));
         let taken = s.take_flow_snippet();

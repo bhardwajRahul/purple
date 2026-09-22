@@ -6,11 +6,71 @@ use std::process::{Command, ExitStatus, Stdio};
 use crate::fs_util;
 
 /// A saved command snippet.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Snippet {
     pub name: String,
     pub command: String,
     pub description: String,
+    /// Run the command through the remote user's bash or zsh with `-i` so
+    /// `~/.bashrc` or `~/.zshrc` (and with it PATH additions like nvm) is loaded.
+    pub interactive: bool,
+}
+
+impl Snippet {
+    /// The command string handed to ssh: the plain command, or the command
+    /// wrapped in an interactive shell when `interactive` is set.
+    pub fn remote_command(&self) -> String {
+        if self.interactive {
+            wrap_interactive(&self.command)
+        } else {
+            self.command.clone()
+        }
+    }
+}
+
+/// POSIX dispatcher for [`wrap_interactive`]. `$1` is the command, `$2` the
+/// interactive script. Other login shells run the command themselves, as they
+/// would a plain snippet. Without a `$SHELL`, `/bin/sh` runs it.
+const INTERACTIVE_DISPATCH: &str = "case \"${SHELL##*/}\" in bash|zsh) \
+     exec 3>&2 4<&0; exec \"$SHELL\" -ic \"$2\" \"${SHELL##*/}\" \"$1\" 2>/dev/null </dev/null;; \
+     ?*) exec \"$SHELL\" -c \"$1\" \"${SHELL##*/}\";; \
+     *) eval \"$1\";; esac";
+
+/// Runs inside the interactive bash or zsh. The shell itself reads from
+/// `/dev/null` and writes its own noise (bash job-control warnings) there, so
+/// a syntax error can never make it run stdin. The subshell gives the command
+/// the real stderr and stdin back via fds 3 and 4 and keeps bash from echoing
+/// `exit`. `eval` makes a syntax error in the command visible.
+const INTERACTIVE_SCRIPT: &str = "( exec 2>&3 3>&- 0<&4 4<&-; eval \"$1\" )";
+
+/// Wrap `command` so the remote user's bash or zsh runs it interactively. The
+/// command travels as its own argument so no quoting nests. The outer line
+/// also parses in fish and tcsh.
+pub fn wrap_interactive(command: &str) -> String {
+    format!(
+        "exec /bin/sh -c {} sh {} {}",
+        portable_escape(INTERACTIVE_DISPATCH),
+        portable_escape(command),
+        portable_escape(INTERACTIVE_SCRIPT)
+    )
+}
+
+/// Single-quote `s` so POSIX shells, fish and tcsh all read it back verbatim.
+/// fish treats a backslash inside single quotes as an escape and tcsh expands
+/// `!` there, so quotes, backslashes and `!` are written outside the quotes.
+fn portable_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        match c {
+            '\'' => out.push_str("'\\''"),
+            '\\' => out.push_str("'\\\\'"),
+            '!' => out.push_str("'\\!'"),
+            _ => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
 }
 
 /// Result of running a snippet on a host.
@@ -95,8 +155,7 @@ impl SnippetStore {
                 }
                 current = Some(Snippet {
                     name,
-                    command: String::new(),
-                    description: String::new(),
+                    ..Snippet::default()
                 });
             } else if let Some(ref mut snippet) = current
                 && let Some((key, value)) = trimmed.split_once('=')
@@ -108,6 +167,7 @@ impl SnippetStore {
                 match key {
                     "command" => snippet.command = value,
                     "description" => snippet.description = value,
+                    "interactive" => snippet.interactive = value.trim() == "true",
                     "hosts" => {
                         let aliases: Vec<String> = value
                             .split(',')
@@ -159,6 +219,9 @@ impl SnippetStore {
             content.push_str(&format!("command={}\n", snippet.command));
             if !snippet.description.is_empty() {
                 content.push_str(&format!("description={}\n", snippet.description));
+            }
+            if snippet.interactive {
+                content.push_str("interactive=true\n");
             }
             if let Some(hosts) = self.targets.get(&snippet.name)
                 && !hosts.is_empty()
@@ -469,6 +532,15 @@ fn consume_until_st(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
 // =========================================================================
 // Background snippet execution
 // =========================================================================
+
+/// Exit status a POSIX shell returns when it cannot find the command.
+pub const EXIT_COMMAND_NOT_FOUND: i32 = 127;
+
+/// True when a run in a plain shell ended with "command not found", the case
+/// the Interactive shell toggle usually solves.
+pub fn not_found_hint_applies(interactive: bool, exit_code: Option<i32>) -> bool {
+    !interactive && exit_code == Some(EXIT_COMMAND_NOT_FOUND)
+}
 
 /// Maximum lines stored per host. Reader continues draining beyond this
 /// to prevent child from blocking on a full pipe buffer.

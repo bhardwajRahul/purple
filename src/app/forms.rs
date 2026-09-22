@@ -1246,6 +1246,8 @@ pub enum SnippetFormField {
     Name,
     Command,
     Description,
+    /// Interactive shell. Not a text field: Space flips `SnippetForm::interactive`.
+    Interactive,
     /// Default target hosts. Not a text field: Space opens the host
     /// multi-select picker; the chosen aliases live in `SnippetForm::default_hosts`.
     DefaultHosts,
@@ -1256,6 +1258,7 @@ impl SnippetFormField {
         SnippetFormField::Name,
         SnippetFormField::Command,
         SnippetFormField::Description,
+        SnippetFormField::Interactive,
         SnippetFormField::DefaultHosts,
     ];
 
@@ -1265,10 +1268,18 @@ impl SnippetFormField {
         matches!(self, SnippetFormField::DefaultHosts)
     }
 
+    /// True for the toggle fields (currently just `Interactive`): Space flips
+    /// the value. Mirrors `ProviderFormField::is_toggle`.
+    pub fn is_toggle(self) -> bool {
+        matches!(self, SnippetFormField::Interactive)
+    }
+
     /// Field kind for [`crate::ui::design::FieldKind`], driving the dynamic
-    /// footer hint (`Space pick` vs none). Mirrors `FormField::kind`.
+    /// footer hint (`Space toggle`, `Space pick` or none). Mirrors `FormField::kind`.
     pub fn kind(self) -> crate::ui::design::FieldKind {
-        if self.is_picker() {
+        if self.is_toggle() {
+            crate::ui::design::FieldKind::Toggle
+        } else if self.is_picker() {
             crate::ui::design::FieldKind::Picker
         } else {
             crate::ui::design::FieldKind::Text
@@ -1290,6 +1301,7 @@ impl SnippetFormField {
             SnippetFormField::Name => "Name",
             SnippetFormField::Command => "Command",
             SnippetFormField::Description => "Description",
+            SnippetFormField::Interactive => "Interactive shell",
             SnippetFormField::DefaultHosts => "Default hosts",
         }
     }
@@ -1301,6 +1313,7 @@ pub struct SnippetForm {
     pub name: String,
     pub command: String,
     pub description: String,
+    pub interactive: bool,
     /// Default target host aliases, chosen via the host picker (the
     /// `DefaultHosts` field). Seeded from the snippet's saved targets on edit;
     /// persisted on submit. Empty means no default hosts.
@@ -1315,6 +1328,7 @@ impl SnippetForm {
             name: String::new(),
             command: String::new(),
             description: String::new(),
+            interactive: false,
             default_hosts: Vec::new(),
             focused_field: SnippetFormField::Name,
             cursor_pos: 0,
@@ -1326,6 +1340,7 @@ impl SnippetForm {
             name: snippet.name.clone(),
             command: snippet.command.clone(),
             description: snippet.description.clone(),
+            interactive: snippet.interactive,
             // The caller seeds default_hosts from the store's saved targets;
             // a Snippet carries no host association of its own.
             default_hosts: Vec::new(),
@@ -1353,19 +1368,19 @@ impl SnippetForm {
             SnippetFormField::Name => &self.name,
             SnippetFormField::Command => &self.command,
             SnippetFormField::Description => &self.description,
-            // Not a text field; no editable value.
-            SnippetFormField::DefaultHosts => "",
+            // Not text fields; no editable value.
+            SnippetFormField::Interactive | SnippetFormField::DefaultHosts => "",
         }
     }
 
     /// Mutable text value of the focused field, or `None` for the non-text
-    /// `DefaultHosts` field (so keystroke handlers no-op there).
+    /// `Interactive` and `DefaultHosts` fields (so keystroke handlers no-op there).
     pub fn focused_value_mut(&mut self) -> Option<&mut String> {
         match self.focused_field {
             SnippetFormField::Name => Some(&mut self.name),
             SnippetFormField::Command => Some(&mut self.command),
             SnippetFormField::Description => Some(&mut self.description),
-            SnippetFormField::DefaultHosts => None,
+            SnippetFormField::Interactive | SnippetFormField::DefaultHosts => None,
         }
     }
 
@@ -1416,6 +1431,15 @@ pub struct SnippetHostOutput {
     pub exit_code: Option<i32>,
 }
 
+impl SnippetHostOutput {
+    /// True when the host reported "command not found" for a snippet that
+    /// runs in a plain shell, so the output can point at the Interactive
+    /// shell toggle.
+    pub fn shows_not_found_hint(&self, interactive: bool) -> bool {
+        crate::snippet::not_found_hint_applies(interactive, self.exit_code)
+    }
+}
+
 /// State for the snippet output screen.
 #[derive(Debug, Clone)]
 pub struct SnippetOutputState {
@@ -1426,6 +1450,8 @@ pub struct SnippetOutputState {
     pub total: usize,
     pub all_done: bool,
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether the running snippet uses the Interactive shell toggle.
+    pub interactive: bool,
 }
 
 /// Form state for snippet parameter input.

@@ -354,6 +354,11 @@ description=Show disk usage then purge unused images, networks and volumes
 [certbot-renew]
 command=sudo certbot renew --quiet && sudo systemctl reload nginx
 description=Renew Let's Encrypt certificates and reload nginx
+
+[pm2-status]
+command=pm2 status
+description=Node processes under pm2
+interactive=true
 ";
 
 const DEMO_PROVIDERS: &str = "\
@@ -2526,8 +2531,16 @@ mod tests {
     #[test]
     fn demo_app_has_snippets() {
         let (app, _guard) = demo_app();
-        // 5 original + 5 new (deploy, backup-db, log-rotate, container-prune, certbot-renew) = 10
-        assert_eq!(app.snippets.store().snippets.len(), 10);
+        // 5 original + 5 new (deploy, backup-db, log-rotate, container-prune, certbot-renew)
+        // + pm2-status = 11
+        assert_eq!(app.snippets.store().snippets.len(), 11);
+    }
+
+    #[test]
+    fn demo_app_shows_an_interactive_snippet() {
+        let (app, _guard) = demo_app();
+        let pm2 = app.snippets.store().get("pm2-status").expect("pm2-status");
+        assert!(pm2.interactive);
     }
 
     #[test]

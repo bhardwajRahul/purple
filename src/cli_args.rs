@@ -381,6 +381,10 @@ pub enum SnippetCommands {
         /// Short description
         #[arg(long)]
         description: Option<String>,
+
+        /// Run in an interactive shell so ~/.bashrc or ~/.zshrc is loaded (e.g. for nvm)
+        #[arg(long)]
+        interactive: bool,
     },
     /// Remove a snippet
     Remove {

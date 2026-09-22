@@ -654,6 +654,15 @@ pub mod hints {
     /// Default-hosts field placeholder (the field opens a picker on Space).
     pub const SNIPPET_DEFAULT_HOSTS: &str = "Space to pick hosts";
 
+    /// The Interactive shell toggle as the form shows it, read as the outcome.
+    pub fn snippet_interactive_value(interactive: bool) -> &'static str {
+        if interactive {
+            "yes (loads ~/.bashrc or ~/.zshrc, like when you log in)"
+        } else {
+            "no (plain ssh)"
+        }
+    }
+
     // ── Provider form ───────────────────────────────────────────────
     pub const PROVIDER_URL: &str = "https://pve.example.com:8006";
     pub const PROVIDER_URL_NETBOX: &str = "https://netbox.example.com";
