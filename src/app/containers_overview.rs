@@ -7,7 +7,7 @@ use crate::containers::{ContainerInspect, ContainerRuntime};
 
 /// One queued host in a `R` batch refresh: everything the listing
 /// thread needs to spawn an SSH `docker ps` for that alias.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RefreshQueueItem {
     pub alias: String,
     pub askpass: Option<String>,
@@ -16,6 +16,20 @@ pub struct RefreshQueueItem {
     pub session_password: Option<String>,
     pub cached_runtime: Option<ContainerRuntime>,
     pub has_tunnel: bool,
+}
+
+// Hand-written so a stray `{:?}`, here or on the batch that holds a queue of
+// these, can never print the password. Shows whether one is present.
+impl std::fmt::Debug for RefreshQueueItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RefreshQueueItem")
+            .field("alias", &self.alias)
+            .field("askpass", &self.askpass)
+            .field("session_password", &self.session_password.is_some())
+            .field("cached_runtime", &self.cached_runtime)
+            .field("has_tunnel", &self.has_tunnel)
+            .finish()
+    }
 }
 
 /// State of a `R` batch refresh. None when no batch is active.

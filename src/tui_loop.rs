@@ -958,6 +958,10 @@ fn handle_pending_snippet(
             }
             Err(e) => eprintln!("{}", crate::messages::cli::host_failed(alias, &e)),
         }
+        // This run is over, so drop the retry marker it may have armed. Left
+        // behind, it would read as a rejected password on the next run within
+        // the minute and send ssh to the tty instead of the stored one.
+        askpass::cleanup_marker(app.env.paths(), alias);
         if multi {
             println!();
         }

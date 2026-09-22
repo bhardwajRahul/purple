@@ -129,6 +129,18 @@ fn open_listing_dialog(app: &mut App, alias: &str, path: String, kind: ListingBl
     match kind {
         ListingBlocked::Trust(_) => app.open_host_key_trust(alias, retry),
         ListingBlocked::Password(_) => {
+            if crate::askpass::take_withheld(app.env.paths(), alias) {
+                // The server asked without naming itself on a connection
+                // that proxies. A typed password would be held back for the
+                // same reason, so none is asked for.
+                log::debug!("[external] file_browser: prompt named no host alias={alias}");
+                if let Some(fb) = app.file_browser_session.as_mut()
+                    && fb.alias == alias
+                {
+                    fb.remote_error = Some(crate::messages::askpass::prompt_names_no_host(alias));
+                }
+                return;
+            }
             let source = app.askpass_source_for(alias);
             if crate::app::source_allows_prompt(source.as_deref()) {
                 let supplied = app.password_was_supplied_for(alias);

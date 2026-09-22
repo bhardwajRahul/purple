@@ -44,11 +44,22 @@ pub(crate) fn needs_batch_mode(askpass: Option<&str>, session_password: Option<&
     askpass.is_none() && session_password.is_none()
 }
 
-/// Wire every authentication input a background ssh child can use: the
-/// askpass program when a source or a session password exists, the one-shot
-/// variables for a session password and the Bitwarden session token. Every
-/// caller is a background run, so the single-attempt flag rides along with
-/// the askpass program. Args and stdio stay with the caller.
+/// Wire every authentication input an ssh child can use: the askpass
+/// program, the one-shot variables for a session password and the Bitwarden
+/// session token. Args and stdio stay with the caller.
+///
+/// A background run always gets the askpass program, even with no source and
+/// no session password to hand out. `SSH_ASKPASS_REQUIRE=force` is what keeps
+/// a password prompt off the terminal, and it is the only lever that reaches
+/// a `ProxyJump` hop: ssh builds that hop's command with `-l`, `-p`, `-J`,
+/// `-F` and `-v` only, so none of the `-o` options below travel with it, while
+/// the environment does. purple in askpass mode with nothing to answer prints
+/// nothing and exits non-zero, so the hop fails the way `BATCH_MODE_OPT` makes
+/// the target fail instead of writing a prompt over the TUI.
+///
+/// The terminal path wires askpass only when there is something to answer
+/// with, and never sets the single-attempt flag, so ssh keeps its own prompt
+/// and the retry marker keeps breaking a wrong-password loop.
 pub(crate) fn configure_auth(
     cmd: &mut Command,
     alias: &str,
@@ -56,9 +67,12 @@ pub(crate) fn configure_auth(
     askpass: Option<&str>,
     session_password: Option<&str>,
     bw_session: Option<&str>,
+    background: bool,
 ) {
-    if askpass.is_some() || session_password.is_some() {
+    if background || askpass.is_some() || session_password.is_some() {
         configure_ssh_command(cmd, alias, config_path);
+    }
+    if background {
         cmd.env(SINGLE_ATTEMPT_VAR, "1");
     }
     if let Some(secret) = session_password {
@@ -194,10 +208,72 @@ mod tests {
     }
 
     #[test]
-    fn configure_auth_without_inputs_sets_nothing() {
+    fn a_terminal_run_without_inputs_sets_nothing() {
         let mut cmd = Command::new("ssh");
-        configure_auth(&mut cmd, "h", &PathBuf::from("/tmp/cfg"), None, None, None);
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            None,
+            None,
+            None,
+            false,
+        );
         assert!(snapshot_envs(&cmd).is_empty());
+    }
+
+    #[test]
+    fn a_background_run_wires_askpass_even_with_nothing_to_answer_with() {
+        // ssh builds a ProxyJump hop's command without any of the `-o`
+        // options, so BatchMode never reaches it and only the environment
+        // does. Without the askpass program wired here, that hop asks for a
+        // password on the terminal the TUI is drawing on.
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            None,
+            None,
+            None,
+            true,
+        );
+        let envs = snapshot_envs(&cmd);
+        assert_eq!(
+            envs.get(&OsString::from("SSH_ASKPASS_REQUIRE")),
+            Some(&OsString::from("force")),
+            "force is what keeps the prompt off the terminal on every hop"
+        );
+        assert_eq!(
+            envs.get(&OsString::from(SINGLE_ATTEMPT_VAR)),
+            Some(&OsString::from("1"))
+        );
+    }
+
+    #[test]
+    fn a_terminal_run_with_a_source_keeps_the_retry_marker() {
+        // The marker is what stops a wrong stored password from looping on
+        // the terminal path, where ssh keeps its own three attempts.
+        let mut cmd = Command::new("ssh");
+        configure_auth(
+            &mut cmd,
+            "h",
+            &PathBuf::from("/tmp/cfg"),
+            Some("keychain"),
+            None,
+            None,
+            false,
+        );
+        let envs = snapshot_envs(&cmd);
+        assert_eq!(
+            envs.get(&OsString::from("SSH_ASKPASS_REQUIRE")),
+            Some(&OsString::from("force")),
+            "a configured source still reaches ssh"
+        );
+        assert!(
+            !envs.contains_key(&OsString::from(SINGLE_ATTEMPT_VAR)),
+            "the single-attempt flag belongs to background runs only"
+        );
     }
 
     #[test]
@@ -210,6 +286,7 @@ mod tests {
             Some("keychain"),
             None,
             None,
+            true,
         );
         let envs = snapshot_envs(&cmd);
         assert_eq!(
@@ -232,6 +309,7 @@ mod tests {
             None,
             Some("hunter2"),
             None,
+            true,
         );
         let envs = snapshot_envs(&cmd);
         assert_eq!(
@@ -258,6 +336,7 @@ mod tests {
             Some("bw:item"),
             None,
             Some("tok"),
+            true,
         );
         let envs = snapshot_envs(&cmd);
         assert_eq!(
@@ -276,6 +355,7 @@ mod tests {
             None,
             Some("hunter2"),
             None,
+            true,
         );
         assert!(cmd.get_args().all(|a| a != "hunter2"));
     }

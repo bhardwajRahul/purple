@@ -382,6 +382,7 @@ pub(crate) fn build_tunnel_command(
         askpass,
         session_password,
         bw_session,
+        true,
     );
     cmd
 }
@@ -878,7 +879,7 @@ mod tests {
 
     #[test]
     fn parse_missing_remote_host() {
-        // ":80" parses via rfind(':') as empty host + port 80 — SSH would reject this
+        // ":80" parses via rfind(':') as empty host + port 80. SSH would reject this
         // but the parser accepts it (validation happens at form/CLI level)
         let rule = TunnelRule::parse_value("LocalForward", "8080 :80").unwrap();
         assert_eq!(rule.remote_host, "");
@@ -887,7 +888,7 @@ mod tests {
 
     #[test]
     fn parse_empty_brackets() {
-        // "[]" produces empty address — SSH would reject, parser accepts
+        // "[]" produces empty address. SSH would reject, parser accepts
         let rule = TunnelRule::parse_value("LocalForward", "[]:8080 localhost:80").unwrap();
         assert_eq!(rule.bind_address, "");
     }
@@ -1015,7 +1016,7 @@ mod tests {
 
     #[test]
     fn from_cli_spec_bare_ipv6_remote() {
-        // Bare (unbracketed) IPv6 via rfind(':') — remote_host="::1", remote_port=80
+        // Bare (unbracketed) IPv6 via rfind(':'): remote_host="::1", remote_port=80
         let rule = TunnelRule::from_cli_spec("L:8080:::1:80").unwrap();
         assert_eq!(rule.remote_host, "::1");
         assert_eq!(rule.remote_port, 80);
@@ -1108,8 +1109,19 @@ mod tests {
     }
 
     #[test]
-    fn start_tunnel_askpass_none_does_not_set_env() {
-        assert!(tunnel_env(None, None).is_empty());
+    fn start_tunnel_without_a_source_still_wires_askpass() {
+        // A tunnel is a background run with no terminal of its own. Even
+        // with nothing to answer, the askpass program has to be wired: ssh
+        // passes the environment to a ProxyJump hop but none of its `-o`
+        // options, so a bastion asking for a password would otherwise
+        // prompt on the terminal the TUI is drawing on.
+        let env = tunnel_env(None, None);
+        let names: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(names.contains(&"SSH_ASKPASS_REQUIRE"), "got: {names:?}");
+        assert!(
+            !names.contains(&crate::askpass_env::ONESHOT_SECRET_VAR),
+            "there is no secret to carry: {names:?}"
+        );
     }
 
     #[test]

@@ -1,3 +1,13 @@
+## 3.29.1 - 2026-09-22
+
+- change: Your password stays on the host you typed it for.
+- change: A jump host never receives the password or the vault entry meant for the host behind it. This applies to `ProxyCommand` as well as `ProxyJump`, including one inherited from a `Host *` or `Match` block. `ProxyCommand none` means direct.
+- change: Background work (key push, file browser, transfers, container commands, tunnels) routes every hop's password prompt through purple. Nothing draws a prompt over the TUI. A jump host that refuses shows up in the connection error by name.
+- change: A password question waits while you type in the search, the tag field or the jump bar. It also waits for an open confirm dialog.
+- change: A `ProxyCommand` on a `Host *` or `Match` block now counts for the hosts that inherit it, so those read as proxied in the ping sweep instead of being probed directly. Teleport writes its hosts that way.
+- change: A server behind a jump host that asks for a password without identifying itself gets an explanation instead of a prompt, since purple cannot tell it apart from the jump host asking.
+- fix: `Esc` during a key push and quitting purple return immediately, even on a slow connection.
+
 ## 3.29.0 - 2026-09-21
 
 - feat: Push keys and browse files on password-only hosts.

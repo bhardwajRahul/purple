@@ -93,6 +93,84 @@ fn setup_bare_proxy_jump() -> Fixture {
     }
 }
 
+/// A config written the older way, with the bastion named inside a
+/// `ProxyCommand` instead of a `ProxyJump`. The bastion is a real second
+/// machine, yet it appears in no directive purple parses into the chain.
+fn setup_proxy_command() -> Fixture {
+    fixture_with(
+        "Host target\n    HostName target.example.com\n    ProxyCommand ssh -W %h:%p bastion\n\nHost bastion\n    HostName bastion.example.com\n",
+    )
+}
+
+/// Build a fixture around one config body.
+fn fixture_with(config: &str) -> Fixture {
+    let home = tempfile::Builder::new()
+        .prefix("purple_oneshot_home_")
+        .tempdir()
+        .unwrap();
+    let config_dir = tempfile::Builder::new()
+        .prefix("purple_oneshot_cfg_")
+        .tempdir()
+        .unwrap();
+    let config_path = config_dir.path().join("config");
+    std::fs::write(&config_path, config).unwrap();
+    Fixture {
+        home,
+        config_path,
+        _config_dir: config_dir,
+    }
+}
+
+/// The password a configured source hands back in the source-path tests.
+const SOURCE_SECRET: &str = "source-secret";
+
+/// A config carrying a custom-command source on the target, so the source
+/// path can be exercised without a keychain or a vault. `route` is the
+/// directive that puts a bastion in front of it, empty for a direct host.
+fn setup_with_source(route: &str) -> Fixture {
+    fixture_with(&format!(
+        "Host target\n    HostName target.example.com\n{route}    # purple:askpass echo {SOURCE_SECRET}\n\nHost bastion\n    HostName bastion.example.com\n"
+    ))
+}
+
+/// Run purple in askpass mode with a configured source and no one-shot pair,
+/// the way ssh reaches it for a host carrying `# purple:askpass`. PATH is
+/// kept because a custom-command source runs through the shell.
+fn run_askpass_source_only(f: &Fixture, prompt: &str) -> std::process::Output {
+    Command::new(purple_bin())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("PURPLE_ASKPASS_MODE", "1")
+        .env("PURPLE_HOST_ALIAS", "target")
+        .env("PURPLE_CONFIG_PATH", &f.config_path)
+        .env("HOME", f.home.path())
+        .arg(prompt)
+        .output()
+        .expect("failed to spawn purple binary")
+}
+
+/// Run purple in askpass mode with `PATH` intact, so the `ssh -G` probe that
+/// settles whether the connection proxies can actually run. Everything else
+/// matches `run_askpass`.
+fn run_askpass_with_ssh_on_path(
+    f: &Fixture,
+    host_alias: &str,
+    prompt: &str,
+) -> std::process::Output {
+    Command::new(purple_bin())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin:/usr/local/bin")
+        .env("PURPLE_ASKPASS_MODE", "1")
+        .env("PURPLE_HOST_ALIAS", host_alias)
+        .env("PURPLE_CONFIG_PATH", &f.config_path)
+        .env("HOME", f.home.path())
+        .env("PURPLE_ASKPASS_ONESHOT_ALIAS", host_alias)
+        .env("PURPLE_ASKPASS_ONESHOT", "hunter2")
+        .arg(prompt)
+        .output()
+        .expect("failed to spawn purple binary")
+}
+
 /// Run purple in askpass mode the way ssh does, with the one-shot pair set
 /// for `oneshot_alias` and the given prompt as argv[1].
 fn run_askpass(
@@ -320,4 +398,203 @@ fn a_terminal_run_still_arms_the_retry_marker() {
     let f = setup();
     let armed = run_askpass_with_source(&f, "target", false);
     assert!(armed, "the terminal path keeps its retry guard");
+}
+
+// --- a bastion named inside a ProxyCommand ---
+//
+// `ProxyCommand ssh -W %h:%p bastion` is the older way of writing what
+// `ProxyJump bastion` writes today, and it reaches a second machine just the
+// same. The bastion appears in no directive that contributes to the chain,
+// so the connection has to be read as one that jumps.
+
+#[test]
+fn a_proxy_command_bastion_never_receives_the_targets_password() {
+    // The prompt names nobody, which is what a keyboard-interactive server
+    // sends. Reading the chain as direct would hand the bastion the
+    // password the user typed for the target.
+    let f = setup_proxy_command();
+    let out = run_askpass(&f, "target", "hunter2", "Password: ");
+    assert!(
+        !out.status.success(),
+        "a connection that proxies must not be answered blind"
+    );
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("hunter2"));
+}
+
+#[test]
+fn a_proxy_command_bastion_is_refused_when_it_names_itself_too() {
+    let f = setup_proxy_command();
+    let out = run_askpass(
+        &f,
+        "target",
+        "hunter2",
+        "ops@bastion.example.com's password: ",
+    );
+    assert!(!out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("hunter2"));
+}
+
+// --- routes purple's own model cannot see ---
+//
+// A `Match` block, a directive above the first `Host` line or a
+// canonicalized name each change where ssh actually connects. None of them
+// reaches the host model. ssh reports its own reading. That is the one the
+// gate follows.
+
+#[test]
+fn a_bastion_named_only_in_a_match_block_is_still_refused() {
+    let f = fixture_with(
+        "Host db\n    HostName db.internal\n\nMatch host db.internal\n    ProxyCommand ssh -W %h:%p bastion.example.com\n",
+    );
+    let out = run_askpass_with_ssh_on_path(&f, "db", "ops@bastion.example.com's password: ");
+    assert!(
+        !out.status.success(),
+        "a bastion ssh routes through must not be answered"
+    );
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("hunter2"));
+}
+
+#[test]
+fn a_host_ssh_reports_as_direct_is_answered_on_a_prompt_it_cannot_place() {
+    // Nothing proxies, so the one machine in the connection is the one
+    // asking, whatever name ssh spells out for it.
+    let f = fixture_with("Host solo\n    HostName solo.example.com\n");
+    let out = run_askpass_with_ssh_on_path(&f, "solo", "ops@some.other.name's password: ");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "hunter2");
+}
+
+// --- the marker that tells the TUI a prompt could not be placed ---
+
+/// True when the fixture's state directory holds the withheld marker for
+/// `alias`, which is what the TUI reads to decide against asking.
+fn withheld_marker_exists(f: &Fixture, alias: &str) -> bool {
+    let wanted = format!(".askpass_withheld.{alias}");
+    std::fs::read_dir(f.home.path().join(".purple"))
+        .map(|rd| {
+            rd.flatten()
+                .any(|e| e.file_name().to_str().is_some_and(|s| s == wanted))
+        })
+        .unwrap_or(false)
+}
+
+#[test]
+fn a_withheld_prompt_leaves_a_marker_for_the_tui() {
+    // Asking the user for a password here would be asking for something
+    // that meets the same wall, so the TUI has to be able to tell this
+    // apart from an ordinary refusal.
+    let f = setup_proxy_command();
+    let out = run_askpass(&f, "target", "hunter2", "Password: ");
+    assert!(!out.status.success());
+    assert!(
+        withheld_marker_exists(&f, "target"),
+        "the TUI needs to know the prompt could not be placed"
+    );
+}
+
+#[test]
+fn an_answered_prompt_leaves_no_withheld_marker() {
+    let f = setup_single_hop();
+    let out = run_askpass_for(&f, "solo", "solo", "hunter2", "Password: ");
+    assert!(out.status.success());
+    assert!(!withheld_marker_exists(&f, "solo"));
+}
+
+// --- the configured-source path ---
+//
+// A source reaches ssh through the same askpass call as a typed password
+// and lands on the same machine, so it is released on the same evidence.
+
+#[test]
+fn a_source_is_withheld_from_a_prompt_naming_a_bastion_it_cannot_place() {
+    // The prompt names the bastion, which sits in no directive that reaches
+    // the chain. Falling back to the target here would hand the target's
+    // own source straight to the machine in front of it.
+    let f = setup_with_source("    ProxyCommand ssh -W %h:%p bastion\n");
+    let out = run_askpass_source_only(&f, "ops@bastion.example.com's password: ");
+    assert!(!out.status.success(), "the hop cannot be placed");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(SOURCE_SECRET));
+}
+
+#[test]
+fn a_source_is_withheld_from_an_unnamed_prompt_behind_a_proxy_command() {
+    let f = setup_with_source("    ProxyCommand ssh -W %h:%p bastion\n");
+    let out = run_askpass_source_only(&f, "Password: ");
+    assert!(!out.status.success(), "the hop cannot be placed");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(SOURCE_SECRET));
+}
+
+#[test]
+fn a_source_is_withheld_from_an_unnamed_prompt_behind_a_jump_host() {
+    let f = setup_with_source("    ProxyJump bastion\n");
+    let out = run_askpass_source_only(&f, "Password: ");
+    assert!(!out.status.success(), "the hop cannot be placed");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(SOURCE_SECRET));
+}
+
+#[test]
+fn a_source_still_answers_a_prompt_that_names_the_target() {
+    // The everyday case behind a bastion: ssh spells out whose password it
+    // wants, so the hop is placed and the source is released.
+    let f = setup_with_source("    ProxyJump bastion\n");
+    let out = run_askpass_source_only(&f, "ops@target.example.com's password: ");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), SOURCE_SECRET);
+}
+
+#[test]
+fn a_wildcard_proxy_command_puts_a_bastion_in_front_of_every_host() {
+    // `Host *` with a ProxyCommand is how a whole estate is routed through
+    // one machine. The target names nothing itself, so the pattern is the
+    // only place the bastion appears.
+    let f = fixture_with(
+        "Host *\n    ProxyCommand ssh -W %h:%p bastion\n\nHost target\n    HostName target.example.com\n",
+    );
+    let out = run_askpass(&f, "target", "hunter2", "Password: ");
+    assert!(
+        !out.status.success(),
+        "the pattern routes through a bastion"
+    );
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("hunter2"));
+}
+
+#[test]
+fn a_host_opting_out_of_a_wildcard_proxy_command_is_answered() {
+    // `ProxyCommand none` above the pattern is how one machine is taken
+    // back out of a route that covers everything. ssh takes the first value
+    // it obtains, so the opt-out has to come first to have any effect. The
+    // host then reaches its target directly, and an unnamed prompt has only
+    // one host it could belong to.
+    let f = fixture_with(
+        "Host target\n    HostName target.example.com\n    ProxyCommand none\n\nHost *\n    ProxyCommand ssh -W %h:%p bastion\n",
+    );
+    let out = run_askpass(&f, "target", "hunter2", "Password: ");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "hunter2");
+}
+
+#[test]
+fn a_source_still_answers_an_unnamed_prompt_on_a_direct_host() {
+    // Nothing proxies, so there is no second machine the prompt could have
+    // come from. A keyboard-interactive server keeps working.
+    let f = setup_with_source("");
+    let out = run_askpass_source_only(&f, "Password: ");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), SOURCE_SECRET);
 }

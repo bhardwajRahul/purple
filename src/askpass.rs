@@ -112,22 +112,30 @@ pub fn handle(env: &crate::runtime::env::Env) -> Result<()> {
     // hop do not block askpass on the next hop.
     let marker = marker_path(env.paths(), &resolved_alias);
 
+    // Whether this prompt may be answered at all. Decided once, then applied
+    // to the one-shot password and to a configured source alike, so both
+    // channels release a credential on the same evidence.
+    //
+    // A prompt already naming a hop inside the chain settles itself. For the
+    // rest, ssh answers the route question exactly, including for shapes the
+    // model does not parse: a `Match` block, a directive above the first
+    // `Host` line, a canonicalized name. Its reading is the one that counts,
+    // because it is ssh that opens the connection. Asking costs a subprocess
+    // that runs the user's own `Match exec` commands, so it stays behind the
+    // cheap answer.
+    let attributable = prompt_hop.is_some()
+        || match ssh_resolves_a_proxy(env, &config_path, &alias) {
+            Some(proxied) => !proxied,
+            // ssh could not be asked. All that is left is the model, which
+            // does not carry every shape ssh reads. A prompt naming a host
+            // the model cannot place is refused on that uncertainty rather
+            // than answered on a route that may be incomplete.
+            None => prompt_host.is_none() && !chain_uses_jump_host(&config, &chain),
+        };
+
     // One-shot password typed in the TUI for this one run, scoped to the
-    // alias the parent named so a ProxyJump hop authenticating on the way to
-    // the target never receives the target's password.
-    //
-    // The hop must prove it is the one the password belongs to. Two ways
-    // do that, and nothing else counts:
-    //
-    // 1. The prompt named a host that resolves to a hop inside this
-    //    connection's chain, and that hop is the alias the password is for.
-    //    A prompt naming a host purple cannot place resolves to nothing, so
-    //    a bastion written as a bare `ProxyJump host` with no `Host` block
-    //    of its own is refused rather than answered.
-    // 2. The prompt named no host at all, and the connection provably has
-    //    no bastion to confuse it with. A keyboard-interactive server
-    //    reached directly still works that way; one behind a jump host
-    //    waits for a prompt that says who is asking.
+    // alias the parent named so a hop authenticating on the way to the
+    // target never receives the target's password.
     //
     // No marker is armed here. Every command that carries the one-shot pair
     // also carries `-o NumberOfPasswordPrompts=1`, so ssh asks once per run
@@ -138,19 +146,31 @@ pub fn handle(env: &crate::runtime::env::Env) -> Result<()> {
         env.var(crate::askpass_env::ONESHOT_ALIAS_VAR),
         env.var(crate::askpass_env::ONESHOT_SECRET_VAR),
     ) && oneshot_alias == resolved_alias
+        && attributable
     {
-        let named_this_hop = prompt_hop.is_some();
-        let direct = prompt_host.is_none() && !chain_uses_proxy_jump(&config, &chain);
-        if named_this_hop || direct {
-            debug!("[purple] Askpass one-shot password used for {resolved_alias}");
-            print!("{}", secret);
-            return Ok(());
-        }
+        debug!("[purple] Askpass one-shot password used for {resolved_alias}");
+        print!("{}", secret);
+        return Ok(());
+    }
+
+    // A prompt that cannot be placed inside this connection's own chain gets
+    // nothing, from either channel. Exiting before the retry marker leaves no
+    // trace of an attempt, because none was made.
+    //
+    // A marker of its own does go out, under the alias the parent named. The
+    // TUI reads it to tell this case apart from an ordinary refusal: a
+    // password typed here would meet the same wall, so it asks for none and
+    // explains instead.
+    if !attributable {
         debug!(
-            "[purple] Askpass one-shot withheld for {resolved_alias}: prompt_host={:?} placed_in_chain=false chain_size={}",
+            "[purple] Askpass withheld for {resolved_alias}: prompt_host={:?} placed_in_chain=false chain_size={}",
             prompt_host,
             chain.len()
         );
+        if let Some(path) = withheld_marker_path(env.paths(), &alias) {
+            arm_marker(&path);
+        }
+        std::process::exit(1);
     }
 
     // Retry detection: if we've been called recently for this resolved alias,
@@ -246,15 +266,75 @@ fn find_alias_for_host(
     by_hostname
 }
 
-/// True when any host in `chain` routes through a jump host. A `ProxyJump`
-/// naming a host that has no `Host` block of its own adds nothing to the
-/// chain, so chain size alone cannot tell a direct connection from one
-/// behind a bastion. This can.
-fn chain_uses_proxy_jump(config: &SshConfigFile, chain: &HashSet<String>) -> bool {
-    config
-        .host_entries()
-        .iter()
-        .any(|e| chain.contains(&e.alias) && !e.proxy_jump.trim().is_empty())
+/// True when any host in `chain` routes through a jump host, written either
+/// as `ProxyJump` or as a `ProxyCommand`. Neither form is guaranteed to put
+/// the bastion in the chain: a `ProxyJump` naming a host with no `Host` block
+/// of its own contributes no alias, and a `ProxyCommand` names its bastion
+/// inside a command line purple does not parse. So chain size alone cannot
+/// tell a direct connection from one behind a bastion. This can.
+fn chain_uses_jump_host(config: &SshConfigFile, chain: &HashSet<String>) -> bool {
+    config.host_entries().iter().any(|e| {
+        chain.contains(&e.alias) && (!e.proxy_jump.trim().is_empty() || e.has_proxy_command)
+    })
+}
+
+/// How long `ssh -G` gets before its answer is given up on. Reading a config
+/// is instant, but `CanonicalizeHostname` makes it resolve names and a
+/// `Match exec` block runs a command of the user's own, either of which can
+/// stall. ssh is waiting on this askpass while that happens, so the wait is
+/// bounded and the model answers instead.
+const PROXY_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ask ssh whether it resolves a route through another machine for `alias`.
+/// `ssh -G` prints the configuration it will actually use, so this covers
+/// every shape the model does not carry: a `Match` block, a directive above
+/// the first `Host` line, a canonicalized name. It omits both keywords
+/// entirely when nothing proxies, and `ProxyCommand none` prints no line at
+/// all. `None` when ssh could not be run, took too long or refused the
+/// alias, which leaves the answer to the caller.
+fn ssh_resolves_a_proxy(
+    env: &crate::runtime::env::Env,
+    config_path: &str,
+    alias: &str,
+) -> Option<bool> {
+    let mut child = env
+        .command("ssh")
+        .arg("-G")
+        .arg("-F")
+        .arg(config_path)
+        .arg("--")
+        .arg(alias)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    // Read on a thread rather than after the wait, so a chatty config cannot
+    // fill the pipe and park both sides. EOF on the pipe means ssh is done.
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let read = std::io::Read::read_to_string(&mut stdout, &mut text);
+        let _ = tx.send(read.ok().map(|_| text));
+    });
+    let Ok(Some(text)) = rx.recv_timeout(PROXY_PROBE_TIMEOUT) else {
+        debug!("[purple] Askpass proxy probe gave no answer for {alias}");
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    if !child.wait().ok()?.success() {
+        return None;
+    }
+    Some(
+        text.lines()
+            .any(|l| l.starts_with("proxycommand ") || l.starts_with("proxyjump ")),
+    )
 }
 
 /// Build the set of aliases reachable from `target` via its ProxyJump chain,
@@ -672,6 +752,37 @@ fn marker_path(paths: Option<&crate::runtime::env::Paths>, alias: &str) -> Optio
     paths.map(|p| p.askpass_marker(alias))
 }
 
+/// Filename prefix of the marker that records a prompt a background run
+/// could not place. The dot after `withheld` keeps it clear of a retry
+/// marker, whose own sanitizer turns every dot into an underscore.
+pub(crate) const WITHHELD_MARKER_PREFIX: &str = ".askpass_withheld.";
+
+/// Path of the marker that records a prompt this connection could not place.
+/// Keyed on the alias the TUI acted on, because that is the name it has to
+/// look up afterwards. Cleared by `cleanup_marker` along with the rest.
+fn withheld_marker_path(
+    paths: Option<&crate::runtime::env::Paths>,
+    alias: &str,
+) -> Option<PathBuf> {
+    paths.map(|p| p.askpass_withheld_marker(alias))
+}
+
+/// True when the last background run for `alias` met a prompt it could not
+/// place inside the connection's own chain. A password typed in the TUI
+/// would meet the same wall, so the caller asks for none.
+///
+/// Reading takes the marker with it. One withheld run then accounts for one
+/// dialog and never for a later, unrelated one, which matters because the
+/// runs that arm a marker do not all have a place to clear it.
+pub fn take_withheld(paths: Option<&crate::runtime::env::Paths>, alias: &str) -> bool {
+    let Some(path) = withheld_marker_path(paths, alias) else {
+        return false;
+    };
+    let recent = is_recent_marker(&path);
+    let _ = std::fs::remove_file(&path);
+    recent
+}
+
 /// Write the retry marker. Its presence within the next minute means this
 /// alias was already answered once, so the caller refuses a second answer.
 fn arm_marker(path: &Path) {
@@ -708,10 +819,13 @@ pub fn cleanup_marker(paths: Option<&crate::runtime::env::Paths>, _alias: &str) 
         return;
     };
     for entry in read.flatten() {
+        // Retry markers only. A withheld marker belongs to the alias it was
+        // armed for and is taken by whoever reads it, so a sweep running for
+        // another host has no business removing it.
         if entry
             .file_name()
             .to_str()
-            .is_some_and(|s| s.starts_with(".askpass_"))
+            .is_some_and(|s| s.starts_with(".askpass_") && !s.starts_with(WITHHELD_MARKER_PREFIX))
         {
             let _ = std::fs::remove_file(entry.path());
         }

@@ -532,23 +532,39 @@ impl ChildGuard {
     /// UI thread is not stuck behind this call. It also carries out the
     /// SIGKILL escalation: `terminate` only signals, and this is the thread
     /// that is standing here anyway.
+    ///
+    /// Sweeps the whole group once the child is reaped, whether the run was
+    /// stopped or ended on its own. ssh goes away first while a
+    /// `ProxyCommand` it spawned can linger, and that command inherits ssh's
+    /// stderr, so a reader blocked on the pipe stays blocked long after ssh
+    /// itself is gone. A group id stays reserved while any member is alive,
+    /// so the sweep reaches the stragglers it is meant for. Where the group
+    /// is already empty the signal does nothing, save for a window of a few
+    /// instructions after the reap in which the kernel could hand that same
+    /// id to a new group leader. `terminate` refuses the kill outright on
+    /// that risk; here the alternative is a reader parked on a pipe for as
+    /// long as the straggler lives, which is the worse of the two.
     pub(crate) fn wait(&self) -> Option<ExitStatus> {
         let mut escalated = false;
         loop {
-            {
+            let reaped = {
                 let mut lock = self.inner.lock().unwrap_or_else(|e| e.into_inner());
                 let child = lock.as_mut()?;
                 match child.try_wait() {
                     Ok(Some(status)) => {
                         let _ = lock.take();
-                        return Some(status);
+                        Some(Some(status))
                     }
-                    Ok(None) => {}
+                    Ok(None) => None,
                     Err(_) => {
                         let _ = lock.take();
-                        return None;
+                        Some(None)
                     }
                 }
+            };
+            if let Some(status) = reaped {
+                self.kill_group();
+                return status;
             }
             if !escalated && self.grace_expired() {
                 escalated = true;
@@ -748,6 +764,7 @@ fn base_ssh_command(
         askpass,
         session_password,
         bw_session,
+        non_interactive,
     );
 
     cmd

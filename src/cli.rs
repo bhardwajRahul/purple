@@ -1264,7 +1264,7 @@ pub fn handle_snippet_command(
                 super::ensure_proton_login(env, askpass.as_deref());
                 let bw_session = super::ensure_bw_session(env, None, askpass.as_deref());
                 super::ensure_keychain_password(env, &host.alias, askpass.as_deref());
-                match snippet::run_snippet(
+                let result = snippet::run_snippet(
                     &host.alias,
                     config_path,
                     env,
@@ -1273,7 +1273,13 @@ pub fn handle_snippet_command(
                     bw_session.as_deref(),
                     false,
                     false,
-                ) {
+                );
+                // Drop the retry marker this run may have armed, before any
+                // exit path. Left behind, it reads as a rejected password on
+                // the next run within the minute and sends ssh to the tty
+                // instead of the stored one.
+                crate::askpass::cleanup_marker(env.paths(), &host.alias);
+                match result {
                     Ok(r) => {
                         if !r.status.success() {
                             std::process::exit(r.status.code().unwrap_or(1));
@@ -1397,7 +1403,7 @@ pub fn handle_snippet_command(
                     }
                     super::ensure_keychain_password(env, &host.alias, askpass.as_deref());
                     println!("{}", crate::messages::cli::host_separator(&host.alias));
-                    match snippet::run_snippet(
+                    let result = snippet::run_snippet(
                         &host.alias,
                         config_path,
                         env,
@@ -1406,7 +1412,9 @@ pub fn handle_snippet_command(
                         bw_session.as_deref(),
                         false,
                         false,
-                    ) {
+                    );
+                    crate::askpass::cleanup_marker(env.paths(), &host.alias);
+                    match result {
                         Ok(r) => {
                             if !r.status.success() {
                                 eprintln!(
@@ -1645,7 +1653,7 @@ pub fn handle_vault_sign_command(
                 // Host disappeared between the `entries` snapshot and
                 // the config mutation. In the single-host CLI path
                 // both reads happen back-to-back in the same process,
-                // so this is effectively unreachable — but surface it
+                // so this is effectively unreachable, but surface it
                 // loudly if the invariant ever breaks instead of
                 // silently writing a cert nobody references.
                 anyhow::bail!(

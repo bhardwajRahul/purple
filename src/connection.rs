@@ -875,6 +875,88 @@ Host key verification failed.
         assert!(!is_unknown_host_key(""));
     }
 
+    // --- denied_host / unknown_host_key_host / bare_host tests ---
+    //
+    // These three name the hop ssh refused, which is what decides whether a
+    // dialog opens for the target or the run is reported as a jump host's
+    // refusal. The fixtures are verbatim OpenSSH output.
+
+    #[test]
+    fn denied_host_takes_the_host_and_drops_the_user() {
+        assert_eq!(
+            denied_host(
+                "nobodyuser@127.0.0.1: Permission denied (publickey,password,keyboard-interactive).\n"
+            ),
+            Some("127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn denied_host_reads_a_line_carrying_no_user() {
+        assert_eq!(
+            denied_host("bastion.example.com: Permission denied (password).\n"),
+            Some("bastion.example.com")
+        );
+    }
+
+    #[test]
+    fn denied_host_survives_a_warning_prefix_and_trailing_lines() {
+        let stderr = "** WARNING: connection is not using a post-quantum key exchange algorithm.\n\
+                      ops@10.0.0.5: Permission denied (publickey,password).\n\
+                      Connection closed by 10.0.0.5 port 22\n";
+        assert_eq!(denied_host(stderr), Some("10.0.0.5"));
+    }
+
+    #[test]
+    fn denied_host_takes_the_last_line_when_several_carry_the_prefix() {
+        // On a chain the hop that refused prints its own line. The last one
+        // is the deepest ssh got.
+        let stderr = "ops@bastion.example.com: Permission denied (password).\n\
+                      ops@target.example.com: Permission denied (password).\n";
+        assert_eq!(denied_host(stderr), Some("target.example.com"));
+    }
+
+    #[test]
+    fn denied_host_is_none_without_the_line() {
+        assert_eq!(denied_host(""), None);
+        assert_eq!(denied_host("Permission denied, please try again.\n"), None);
+        assert_eq!(
+            denied_host("ssh: connect to host x port 22: Connection refused\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn unknown_host_key_host_keeps_the_bracketed_port_form() {
+        let stderr = "No ED25519 host key is known for [127.0.0.1]:12222 and you have requested strict checking.\n\
+                      Host key verification failed.\n";
+        assert_eq!(unknown_host_key_host(stderr), Some("[127.0.0.1]:12222"));
+    }
+
+    #[test]
+    fn unknown_host_key_host_reads_a_default_port_host() {
+        let stderr =
+            "No RSA host key is known for db.example.com and you have requested strict checking.\n";
+        assert_eq!(unknown_host_key_host(stderr), Some("db.example.com"));
+    }
+
+    #[test]
+    fn unknown_host_key_host_is_none_for_other_failures() {
+        assert_eq!(unknown_host_key_host(""), None);
+        assert_eq!(
+            unknown_host_key_host("test@localhost: Permission denied (password).\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn bare_host_strips_the_bracketed_port() {
+        assert_eq!(bare_host("[127.0.0.1]:12222"), "127.0.0.1");
+        assert_eq!(bare_host("[2001:db8::1]:2222"), "2001:db8::1");
+        assert_eq!(bare_host("db.example.com"), "db.example.com");
+        assert_eq!(bare_host(""), "");
+    }
+
     // --- parse_host_key_error tests ---
 
     #[test]

@@ -266,7 +266,7 @@ fn has_forward_exact_match() {
 #[test]
 fn has_forward_whitespace_normalized() {
     let config = parse_str("Host myserver\n  LocalForward 8080  localhost:80\n");
-    // Extra space in config value vs single space in query — should still match
+    // Extra space in config value vs single space in query: should still match
     assert!(config.has_forward("myserver", "LocalForward", "8080 localhost:80"));
 }
 
@@ -304,14 +304,14 @@ fn edit_tunnel_detects_duplicate_after_remove() {
     );
     // Edit rule A (8080) toward rule B (9090): remove A first
     assert!(config.remove_forward("myserver", "LocalForward", "8080 localhost:80"));
-    // Now check if the target value already exists — should detect duplicate
+    // Now check if the target value already exists: should detect duplicate
     assert!(config.has_forward("myserver", "LocalForward", "9090 localhost:90"));
 }
 
 #[test]
 fn has_forward_tab_whitespace_normalized() {
     let config = parse_str("Host myserver\n  LocalForward 8080\tlocalhost:80\n");
-    // Tab in config value vs space in query — should match via values_match
+    // Tab in config value vs space in query: should match via values_match
     assert!(config.has_forward("myserver", "LocalForward", "8080 localhost:80"));
 }
 
@@ -2448,6 +2448,102 @@ fn host_entries_inherit_proxy_jump_from_star_pattern() {
 }
 
 #[test]
+fn host_entries_inherit_proxy_command_from_star_pattern() {
+    // A ProxyCommand on a pattern routes every host it matches through a
+    // machine of its own, the same way a ProxyJump does.
+    let config = parse_str(
+        "Host myserver\n  Hostname 10.0.0.1\n\nHost *\n  ProxyCommand ssh -W %h:%p bastion\n",
+    );
+    let hosts = config.host_entries();
+    assert_eq!(hosts.len(), 1);
+    assert!(hosts[0].has_proxy_command);
+}
+
+#[test]
+fn a_host_opting_out_keeps_its_own_proxy_command_none() {
+    // `ProxyCommand none` is the opt-out spelling. The host answered for
+    // itself, so the pattern does not answer over it.
+    let config = parse_str(
+        "Host myserver\n  Hostname 10.0.0.1\n  ProxyCommand none\n\nHost *\n  ProxyCommand ssh -W %h:%p bastion\n",
+    );
+    let hosts = config.host_entries();
+    assert_eq!(hosts.len(), 1);
+    assert!(!hosts[0].has_proxy_command);
+}
+
+#[test]
+fn a_pattern_above_the_host_wins_over_the_hosts_own_none() {
+    // ssh takes the first value it obtains for the keyword, and the pattern
+    // is read first here, so the opt-out below it never applies and the
+    // host really does go through the bastion.
+    let config = parse_str(
+        "Host *\n  ProxyCommand ssh -W %h:%p bastion\n\nHost myserver\n  Hostname 10.0.0.1\n  ProxyCommand none\n",
+    );
+    let hosts = config.host_entries();
+    assert_eq!(hosts.len(), 1);
+    assert!(hosts[0].has_proxy_command);
+}
+
+#[test]
+fn a_pattern_setting_proxy_command_none_adds_no_bastion() {
+    let config = parse_str("Host myserver\n  Hostname 10.0.0.1\n\nHost *\n  ProxyCommand none\n");
+    let hosts = config.host_entries();
+    assert!(!hosts[0].has_proxy_command);
+}
+
+#[test]
+fn a_negated_pattern_proxy_command_skips_the_host_it_excludes() {
+    // The shape `tsh config` writes: every node in the cluster goes through
+    // the proxy, except the proxy itself.
+    let config = parse_str(
+        "Host node1.example.com\n  HostName node1.example.com\n\nHost proxy.example.com\n  HostName proxy.example.com\n\nHost *.example.com !proxy.example.com\n  Port = 3022\n  ProxyCommand tsh proxy ssh %r@%h:%p\n",
+    );
+    let hosts = config.host_entries();
+    let node = hosts
+        .iter()
+        .find(|h| h.alias == "node1.example.com")
+        .expect("node1");
+    let proxy = hosts
+        .iter()
+        .find(|h| h.alias == "proxy.example.com")
+        .expect("proxy");
+    assert!(node.has_proxy_command, "the node goes through the proxy");
+    assert!(
+        !proxy.has_proxy_command,
+        "the pattern excludes the proxy itself"
+    );
+}
+
+#[test]
+fn an_earlier_pattern_saying_none_beats_a_later_one_setting_a_command() {
+    // ssh takes the first value it obtains, so the broad opt-out at the top
+    // settles it and the narrower block below never applies.
+    let config = parse_str(
+        "Host prod-db\n  Hostname 10.0.0.1\n\nHost *\n  ProxyCommand none\n\nHost prod-*\n  ProxyCommand ssh -W %h:%p bastion\n",
+    );
+    let hosts = config.host_entries();
+    assert!(!hosts[0].has_proxy_command);
+}
+
+#[test]
+fn an_earlier_pattern_setting_a_command_wins_over_a_later_none() {
+    let config = parse_str(
+        "Host prod-db\n  Hostname 10.0.0.1\n\nHost prod-*\n  ProxyCommand ssh -W %h:%p bastion\n\nHost *\n  ProxyCommand none\n",
+    );
+    let hosts = config.host_entries();
+    assert!(hosts[0].has_proxy_command);
+}
+
+#[test]
+fn a_pattern_proxy_command_does_not_reach_a_host_it_does_not_match() {
+    let config = parse_str(
+        "Host myserver\n  Hostname 10.0.0.1\n\nHost prod-*\n  ProxyCommand ssh -W %h:%p bastion\n",
+    );
+    let hosts = config.host_entries();
+    assert!(!hosts[0].has_proxy_command);
+}
+
+#[test]
 fn host_entries_own_proxy_jump_takes_precedence() {
     // Host's own ProxyJump should not be overridden by pattern.
     let config = parse_str(
@@ -2468,7 +2564,7 @@ fn host_entries_hostname_pattern_does_not_match_by_hostname() {
     let hosts = config.host_entries();
     assert_eq!(hosts.len(), 1);
     assert_eq!(hosts[0].alias, "myserver");
-    assert_eq!(hosts[0].proxy_jump, ""); // no match — alias doesn't match pattern
+    assert_eq!(hosts[0].proxy_jump, ""); // no match: alias doesn't match pattern
     assert_eq!(hosts[0].user, ""); // no match
 }
 
@@ -2738,7 +2834,7 @@ fn inherited_hints_negation_excludes() {
 
 #[test]
 fn inherited_hints_returned_even_when_host_has_own_values() {
-    // inherited_hints is independent of the host's own values — it reports
+    // inherited_hints is independent of the host's own values: it reports
     // what patterns provide. The form decides visibility via value.is_empty().
     let config = parse_str(
         "Host *\n  ProxyJump gateway\n  User admin\n\n\
@@ -3471,7 +3567,7 @@ fn delete_host_strips_single_alias_from_multi_alias_block() {
         "deleted alias must be gone: {}",
         output
     );
-    // Directives untouched — they still apply to the remaining aliases.
+    // Directives untouched: they still apply to the remaining aliases.
     assert!(output.contains("HostName 10.0.1.5"));
     assert!(output.contains("User deploy"));
     // has_host reflects the on-disk state.
@@ -4191,7 +4287,7 @@ fn host_entry_provider_label_is_none_for_legacy_marker() {
 
 #[test]
 fn marker_empty_middle_segment_returns_none() {
-    // `aws::123` has an empty label — neither a valid labeled marker nor
+    // `aws::123` has an empty label: neither a valid labeled marker nor
     // unambiguous as legacy. Must be treated as malformed (host unowned)
     // rather than guessing a server_id with a leading colon.
     let content = "Host vm\n  HostName 1.2.3.4\n  # purple:provider aws::123\n";
@@ -4844,7 +4940,7 @@ fn set_host_certificate_file_non_purple_path_is_noop_when_no_purple_line() {
 
     // But: a non-purple path WHEN a purple-managed line already exists
     // should still update the purple line (caller intent unclear; treat as
-    // overwrite of the purple slot). Actually no — the lookup is by
+    // overwrite of the purple slot). Actually no: the lookup is by
     // is_purple_managed_cert_value on the EXISTING line, not the path
     // argument. So we'd overwrite the purple line's value with the
     // user-set path, marking it as non-purple. That's a separate edge

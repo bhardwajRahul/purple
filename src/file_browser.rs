@@ -519,6 +519,7 @@ pub(crate) fn build_scp_command(ctx: &SshContext<'_>, scp_args: &[String]) -> Co
         ctx.askpass,
         ctx.session_password,
         ctx.bw_session,
+        true,
     );
 
     // Own process group so a cancel or shutdown can signal scp and the ssh

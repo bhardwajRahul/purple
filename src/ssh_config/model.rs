@@ -62,7 +62,7 @@ pub struct Directive {
     pub is_non_directive: bool,
 }
 
-/// Convenience view for the TUI — extracted from a HostBlock.
+/// Convenience view for the TUI, extracted from a HostBlock.
 #[derive(Debug, Clone)]
 pub struct HostEntry {
     pub alias: String,
@@ -282,9 +282,23 @@ impl SshConfigFile {
     /// match the token typed on the command line, not the resolved `Hostname`).
     fn apply_pattern_inheritance(&self, entries: &mut [HostEntry]) {
         // Patterns are pre-collected once. Host entries never contain pattern
-        // aliases — collect_host_entries skips is_host_pattern blocks.
+        // aliases: collect_host_entries skips is_host_pattern blocks.
         let all_patterns = self.pattern_entries();
+        // Every ProxyCommand in the file, in the order ssh reads them. A
+        // ProxyCommand reaches a machine of its own, so whichever block
+        // states one first decides whether this host has a bastion in front
+        // of it. The host's own block is in there beside the patterns,
+        // because ssh gives it no precedence: an opt-out written as
+        // `ProxyCommand none` only takes effect above the pattern it opts
+        // out of.
+        let mut proxy_commands = Vec::new();
+        Self::collect_proxy_commands(&self.elements, &mut proxy_commands);
         for entry in entries.iter_mut() {
+            entry.has_proxy_command = proxy_commands
+                .iter()
+                .find(|(pattern, _)| host_pattern_matches(pattern, &entry.alias))
+                .map(|(_, reaches_a_machine)| *reaches_a_machine)
+                .unwrap_or(false);
             if !entry.proxy_jump.is_empty()
                 && !entry.user.is_empty()
                 && !entry.identity_file.is_empty()
@@ -341,6 +355,37 @@ impl SshConfigFile {
         let mut entries = Vec::new();
         Self::collect_pattern_entries(&self.elements, &mut entries);
         entries
+    }
+
+    /// Collect every `ProxyCommand` declaration in the file, in reading
+    /// order: the block's host pattern paired with whether its value
+    /// reaches a machine of its own. `none` is the opt-out spelling and
+    /// pairs with false. Concrete blocks and patterns go in the same list
+    /// because ssh reads them the same way, taking the first value it
+    /// obtains for the keyword.
+    fn collect_proxy_commands(elements: &[ConfigElement], out: &mut Vec<(String, bool)>) {
+        for e in elements {
+            match e {
+                ConfigElement::HostBlock(block) => {
+                    if let Some(d) = block
+                        .directives
+                        .iter()
+                        .find(|d| d.key.eq_ignore_ascii_case("ProxyCommand"))
+                    {
+                        out.push((
+                            block.host_pattern.clone(),
+                            !d.value.trim().eq_ignore_ascii_case("none"),
+                        ));
+                    }
+                }
+                ConfigElement::Include(include) => {
+                    for file in &include.resolved_files {
+                        Self::collect_proxy_commands(&file.elements, out);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     fn collect_pattern_entries(elements: &[ConfigElement], entries: &mut Vec<PatternEntry>) {
@@ -694,7 +739,7 @@ impl SshConfigFile {
     /// Find the start of a trailing group of wildcard/pattern Host blocks.
     /// Scans backwards from the end, skipping GlobalLines (blanks/comments/Match).
     /// Returns `None` if no trailing patterns exist (or if ALL hosts are patterns,
-    /// i.e. patterns start at position 0 — in that case we append at end).
+    /// i.e. patterns start at position 0, in which case we append at end).
     fn find_trailing_pattern_start(&self) -> Option<usize> {
         let mut first_pattern_pos = None;
         for i in (0..self.elements.len()).rev() {
@@ -716,7 +761,7 @@ impl SshConfigFile {
                 ConfigElement::Include(_) => break,
             }
         }
-        // Don't return position 0 — that means everything is patterns (or patterns at top)
+        // Don't return position 0: that means everything is patterns (or patterns at top)
         first_pattern_pos.filter(|&pos| pos > 0)
     }
 
@@ -874,7 +919,7 @@ impl SshConfigFile {
                 return;
             }
         }
-        // Not found — insert before trailing blanks
+        // Not found, so insert before trailing blanks
         let pos = block.content_end();
         let rendered = if quote {
             HostBlock::render_value(value)
@@ -1641,7 +1686,7 @@ impl SshConfigFile {
             // Harvest trailing comments (column-0 `#` lines or section
             // headers) from each block we're about to delete, so they
             // survive the delete and re-attach to whatever follows.
-            // Skip `# purple:*` metadata — that's bookkeeping owned by the
+            // Skip `# purple:*` metadata: that's bookkeeping owned by the
             // block being removed.
             let mut salvaged_comments: Vec<String> = Vec::new();
             for el in &mut self.elements {
@@ -1850,7 +1895,7 @@ impl SshConfigFile {
     /// Every value that ends up inside a `raw_line` is routed through
     /// `HostBlock::sanitize_raw_line_value`. A `\n` or `\r` in `alias`,
     /// `hostname`, `user`, `identity_file` or `proxy_jump` would otherwise
-    /// split the rendered line and inject extra SSH config directives — for
+    /// split the rendered line and inject extra SSH config directives, for
     /// example a provider API returning `name = "evil\n  ProxyJump bad"`
     /// would land as a real ProxyJump directive in the user's config. The
     /// previous `debug_assert!` guards were stripped from release builds,

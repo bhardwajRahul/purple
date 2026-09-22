@@ -245,6 +245,26 @@ impl Paths {
         self.state_dir.join(format!(".askpass_{safe}"))
     }
 
+    /// Marker recording that a background run met a prompt it could not
+    /// place. The dot after `withheld` keeps this apart from a retry marker,
+    /// whose own sanitizer turns every dot into an underscore. The alias is
+    /// percent-encoded rather than flattened, so `web.prod` and `web_prod`
+    /// keep their own file and neither can walk out of the state directory.
+    pub fn askpass_withheld_marker(&self, alias: &str) -> PathBuf {
+        let mut safe = String::with_capacity(alias.len());
+        for c in alias.chars() {
+            match c {
+                '%' => safe.push_str("%25"),
+                '/' => safe.push_str("%2f"),
+                '\\' => safe.push_str("%5c"),
+                '.' => safe.push_str("%2e"),
+                other => safe.push(other),
+            }
+        }
+        self.state_dir
+            .join(format!("{}{safe}", crate::askpass::WITHHELD_MARKER_PREFIX))
+    }
+
     /// `<cache>/container_cache.jsonl`.
     pub fn container_cache(&self) -> PathBuf {
         self.cache_dir.join("container_cache.jsonl")
@@ -755,6 +775,41 @@ mod tests {
         assert_eq!(
             p.askpass_marker("a/b\\c.d"),
             PathBuf::from("/home/u/.purple/.askpass_a_b_c_d")
+        );
+    }
+
+    #[test]
+    fn askpass_withheld_marker_keeps_each_alias_to_itself() {
+        // Provider-synced hosts carry dots, so flattening them would let one
+        // host's marker speak for another.
+        let p = Paths::new("/home/u");
+        assert_ne!(
+            p.askpass_withheld_marker("web.prod"),
+            p.askpass_withheld_marker("web_prod")
+        );
+        assert_eq!(
+            p.askpass_withheld_marker("web.prod"),
+            PathBuf::from("/home/u/.purple/.askpass_withheld.web%2eprod")
+        );
+    }
+
+    #[test]
+    fn askpass_withheld_marker_cannot_walk_out_of_the_state_dir() {
+        let p = Paths::new("/home/u");
+        assert_eq!(
+            p.askpass_withheld_marker("../../etc/passwd"),
+            PathBuf::from("/home/u/.purple/.askpass_withheld.%2e%2e%2f%2e%2e%2fetc%2fpasswd")
+        );
+    }
+
+    #[test]
+    fn askpass_withheld_marker_never_collides_with_a_retry_marker() {
+        // A host literally named `withheld.x` must not land on the file the
+        // withheld marker for `x` uses.
+        let p = Paths::new("/home/u");
+        assert_ne!(
+            p.askpass_marker("withheld.x"),
+            p.askpass_withheld_marker("x")
         );
     }
 

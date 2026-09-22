@@ -272,6 +272,7 @@ pub(crate) fn build_push_command(alias: &str, config_path: &Path, auth: &PushAut
         auth.askpass.as_deref(),
         auth.session_password.as_deref(),
         auth.bw_session.as_deref(),
+        true,
     );
 
     // Own process group: cancel and shutdown signal ssh together with any
@@ -346,8 +347,18 @@ pub fn push_to_host(
         drop(stdin);
     }
 
-    // Drain both pipes before waiting so a chatty remote cannot block on a
-    // full pipe while we block on wait.
+    // Drain both pipes on their own threads so a chatty remote cannot block
+    // on a full pipe. The wait stays on this thread because it is what
+    // escalates a cancel to SIGKILL and sweeps the process group. Reading
+    // here instead would park this thread on a pipe that a `ProxyCommand`
+    // outliving ssh still holds open, and the escalation would never run.
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stdout_pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
     let stderr_reader = std::thread::spawn(move || {
         let mut buf = Vec::new();
         if let Some(mut pipe) = stderr_pipe {
@@ -355,14 +366,11 @@ pub fn push_to_host(
         }
         buf
     });
-    let mut stdout_buf = Vec::new();
-    if let Some(mut pipe) = stdout_pipe {
-        let _ = pipe.read_to_end(&mut stdout_buf);
-    }
-    let stderr_buf = stderr_reader.join().unwrap_or_default();
 
     let status = guard.wait();
     inflight.clear();
+    let stdout_buf = stdout_reader.join().unwrap_or_default();
+    let stderr_buf = stderr_reader.join().unwrap_or_default();
 
     let Some(status) = status else {
         debug!("[purple] key_push: wait failed alias={}", alias);
@@ -786,6 +794,95 @@ mod tests {
         );
     }
 
+    #[test]
+    #[cfg(unix)]
+    fn a_stopped_run_sweeps_a_process_left_holding_the_pipe() {
+        // ssh dies on SIGTERM long before a ProxyCommand it spawned has to,
+        // and that command inherits ssh's stderr. Here the outer shell is
+        // the one that dies and the inner one holds the pipe, so the reader
+        // reaches EOF only once the group itself is swept. The inner shell
+        // gives up on its own after ten seconds, so a regression leaves no
+        // process behind.
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(
+                "sh -c \"trap '' TERM; i=0; while [ \\$i -lt 200 ]; do sleep 0.05; i=\\$((i+1)); done\" & exec sleep 30",
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // SAFETY: setpgid(0, 0) is async-signal-safe and the closure touches
+        // no Rust runtime state.
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        let mut child = cmd.spawn().expect("spawn sh");
+        let stderr_pipe = child.stderr.take();
+        let guard = Arc::new(ChildGuard::new(child));
+        // Let the inner shell reach its trap before anything is signaled.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // The reader reports through a channel so a regression fails this
+        // test instead of hanging the suite.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = stderr_pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            let _ = tx.send(());
+        });
+
+        guard.terminate();
+        assert!(guard.wait().is_some(), "the child itself is reaped");
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the reader must reach EOF once the group is swept");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_run_that_ends_on_its_own_sweeps_the_group_too() {
+        // ssh can exit cleanly while something it spawned keeps the
+        // inherited stderr open, and no cancel ever arrives. The reader
+        // reaches EOF only because the sweep runs on every reap. The inner
+        // shell gives up on its own after ten seconds, so a regression
+        // leaves no process behind.
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg("sh -c \"i=0; while [ \\$i -lt 200 ]; do sleep 0.05; i=\\$((i+1)); done\" & exec true")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // SAFETY: setpgid(0, 0) is async-signal-safe and the closure touches
+        // no Rust runtime state.
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        let mut child = cmd.spawn().expect("spawn sh");
+        let stderr_pipe = child.stderr.take();
+        let guard = Arc::new(ChildGuard::new(child));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = stderr_pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            let _ = tx.send(());
+        });
+
+        // No terminate: this is the clean-exit path.
+        assert!(guard.wait().is_some(), "the child itself is reaped");
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the reader must reach EOF without a cancel");
+    }
+
     fn push_args(auth: &PushAuth) -> Vec<String> {
         build_push_command("web1", std::path::Path::new("/tmp/cfg"), auth)
             .get_args()
@@ -805,12 +902,27 @@ mod tests {
     }
 
     #[test]
-    fn build_push_command_without_auth_sets_batch_mode_and_no_askpass() {
+    fn build_push_command_without_auth_sets_batch_mode_and_still_wires_askpass() {
+        // BatchMode keeps the target from being asked at all. The askpass
+        // program is wired anyway, because it is the only part of this that
+        // a ProxyJump hop inherits: ssh builds that hop's command without
+        // any `-o` option, so a bastion with nothing to answer would
+        // otherwise prompt on the terminal.
         let auth = PushAuth::default();
         let args = push_args(&auth);
         assert!(has_opt(&args, "BatchMode=yes"), "got: {args:?}");
         assert!(has_opt(&args, "StrictHostKeyChecking=yes"), "got: {args:?}");
-        assert!(push_env_names(&auth).is_empty());
+        let names = push_env_names(&auth);
+        assert!(
+            names.iter().any(|n| n == "SSH_ASKPASS_REQUIRE"),
+            "got: {names:?}"
+        );
+        assert!(
+            !names
+                .iter()
+                .any(|n| n == crate::askpass_env::ONESHOT_SECRET_VAR),
+            "there is no secret to carry: {names:?}"
+        );
     }
 
     #[test]

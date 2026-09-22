@@ -548,6 +548,19 @@ pub mod askpass {
             hop
         )
     }
+
+    /// Shown when a password prompt on a proxied connection cannot be placed
+    /// on a hop. Two shapes reach this: a prompt naming no host at all, and
+    /// one naming a host with no `Host` block of its own. Either end of the
+    /// connection could have sent it, so neither gets an answer. The remedy
+    /// covers only the second shape, which is why it is stated with its
+    /// condition rather than as a step to take.
+    pub fn prompt_names_no_host(alias: &str) -> String {
+        format!(
+            "{} goes through a jump host. purple could not tell which machine asked for the password, so it answered neither. A prompt that spells out its host can be placed by giving that host a Host block of its own.",
+            alias
+        )
+    }
 }
 
 /// Host key trust dialog, shown when a background ssh met a host that is

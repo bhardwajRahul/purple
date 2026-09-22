@@ -104,6 +104,20 @@ fn finalize_key_push(app: &mut App) {
                         r.alias.clone(),
                         crate::messages::askpass::hop_refused(host.as_deref().unwrap_or(&r.alias)),
                     ));
+                } else if crate::askpass::take_withheld(app.env.paths(), &r.alias) {
+                    // The server asked without naming itself on a connection
+                    // that proxies, so the target cannot be told apart from
+                    // the machine in front of it. A typed password would be
+                    // held back for the same reason, so none is asked for.
+                    log::debug!(
+                        "[external] key_push: prompt named no host alias={} err={}",
+                        r.alias,
+                        detail
+                    );
+                    failed.push((
+                        r.alias.clone(),
+                        crate::messages::askpass::prompt_names_no_host(&r.alias),
+                    ));
                 } else if crate::app::source_allows_prompt(source.as_deref()) {
                     prompts.push(KeyPushPrompt::Password {
                         alias: r.alias.clone(),
@@ -235,6 +249,9 @@ pub(crate) fn drain_next_key_push_prompt(app: &mut App) -> bool {
     if app.keys.push().expected_count > 0 {
         return false;
     }
+    // A prompt whose screen moved on without it would read as a dialog that
+    // is still waiting, and every later question would queue behind it.
+    app.drop_stranded_password_prompt();
     // Another dialog is waiting, or the user is somewhere a question must
     // not appear, such as a form. The queue keeps its order and the tick
     // drains it once they are back on a page that can carry a dialog.
@@ -505,6 +522,47 @@ mod tests {
             }
             other => panic!("expected the trust dialog, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_prompt_that_named_no_host_asks_for_nothing_and_explains() {
+        // Behind a bastion, a server asking without naming itself cannot be
+        // told apart from the bastion asking. The background run left a
+        // marker saying so, and a password typed in a dialog would be held
+        // back for the same reason, so no dialog opens.
+        let mut app = app_with_hosts(
+            "Host bast\n  HostName bastion.example.com\n\
+             Host h1\n  HostName db.example.com\n  ProxyJump bast\n",
+        );
+        let marker = app
+            .env()
+            .paths()
+            .expect("sandboxed paths")
+            .askpass_withheld_marker("h1");
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, b"").unwrap();
+
+        // ssh names the target on its failure line, so without the marker
+        // this is the shape that opens a dialog.
+        run_with(
+            &mut app,
+            vec![result("h1", needs_password_from(Some("db.example.com")))],
+        );
+        assert!(
+            app.password_prompt.is_none(),
+            "a dialog here would ask for something that cannot be used"
+        );
+        assert!(
+            !marker.exists(),
+            "reading takes the marker, so it cannot suppress a later dialog"
+        );
+        let said = app
+            .status_center
+            .status()
+            .map(|s| s.text.clone())
+            .or_else(|| app.status_center.toast().map(|t| t.text.clone()))
+            .expect("the reason is reported");
+        assert!(said.contains("h1"), "got: {said}");
     }
 
     #[test]

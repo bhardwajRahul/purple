@@ -2421,3 +2421,41 @@ fn password_sources_proton_present() {
 fn password_sources_none_remains_last() {
     assert_eq!(super::PASSWORD_SOURCES.last().unwrap().label, "None");
 }
+
+#[test]
+fn cleanup_sweeps_retry_markers_and_leaves_withheld_ones() {
+    // The sweep runs at the end of every listing and every connect, for
+    // whichever host finished. A withheld marker belongs to one alias and is
+    // taken by whoever reads it, so another host's sweep must not take it.
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = crate::runtime::env::Paths::new(home.path());
+    std::fs::create_dir_all(paths.state_dir()).unwrap();
+    let retry = paths.askpass_marker("web1");
+    let withheld = paths.askpass_withheld_marker("db2");
+    std::fs::write(&retry, b"").unwrap();
+    std::fs::write(&withheld, b"").unwrap();
+
+    super::cleanup_marker(Some(&paths), "web1");
+
+    assert!(!retry.exists(), "the retry marker is what the sweep is for");
+    assert!(
+        withheld.exists(),
+        "another host's sweep must not take this one"
+    );
+}
+
+#[test]
+fn taking_a_withheld_marker_removes_it() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = crate::runtime::env::Paths::new(home.path());
+    std::fs::create_dir_all(paths.state_dir()).unwrap();
+    let path = paths.askpass_withheld_marker("db2");
+    std::fs::write(&path, b"").unwrap();
+
+    assert!(super::take_withheld(Some(&paths), "db2"));
+    assert!(!path.exists(), "reading takes it");
+    assert!(
+        !super::take_withheld(Some(&paths), "db2"),
+        "one withheld run accounts for one dialog"
+    );
+}

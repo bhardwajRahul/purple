@@ -120,18 +120,20 @@ impl App {
     }
 
     /// True when ssh's refusal can be attributed to `alias` itself rather
-    /// than to a jump host on the way there. Without a `ProxyJump` there is
-    /// only one host that could have refused, so the name ssh printed does
-    /// not matter. With one, ssh names the hop that refused and only the
+    /// than to a jump host on the way there. Without a bastion there is only
+    /// one host that could have refused, so the name ssh printed does not
+    /// matter. With one, ssh names the hop that refused and only the
     /// target's own refusal is ours to answer: a dialog for a bastion would
-    /// write that bastion's password onto the target.
+    /// write that bastion's password onto the target. A `ProxyCommand`
+    /// counts as a bastion as much as a `ProxyJump` does, since it reaches
+    /// a machine of its own that purple cannot name.
     pub(crate) fn refusal_is_this_host(&self, alias: &str, named: Option<&str>) -> bool {
         let Some(host) = self.hosts_state.list.iter().find(|h| h.alias == alias) else {
-            // Not in the list, so there is no ProxyJump to read. Treat it as
+            // Not in the list, so there is no route to read. Treat it as
             // the plain single-hop case.
             return true;
         };
-        if host.proxy_jump.trim().is_empty() {
+        if host.proxy_jump.trim().is_empty() && !host.has_proxy_command {
             return true;
         }
         // Behind a jump host, so the name decides. A refusal naming nobody
@@ -159,17 +161,56 @@ impl App {
             )
     }
 
-    /// True when a background answer may take the screen: no other dialog is
-    /// waiting, and the user is on a page a dialog returns to rather than
-    /// inside a form, a picker or an overlay. Taking the screen from a form
-    /// would send the keys they are still typing into the password field.
-    /// Anywhere else the question waits until they come back.
+    /// True when a background answer may take the screen. No other dialog
+    /// may be waiting. The user has to be on a page a dialog returns to
+    /// rather than inside a form, a picker or an overlay. Every typing mode
+    /// that lives inside those pages has to be closed as well: the host
+    /// list's search, its tag field and the jump bar. None of the three
+    /// changes `self.screen`, so the screen alone does not rule them out,
+    /// and the jump bar even takes every key ahead of the screen match.
+    /// Opening over one of them would send the rest of what they type into
+    /// the password field, and the Enter that ends a search would submit
+    /// the fragment as a password. Anywhere else the question waits until
+    /// they come back.
     pub(crate) fn can_open_dialog(&self) -> bool {
         !self.dialog_open()
+            && self.search.query().is_none()
+            && self.tags.input().is_none()
+            && self.jump.is_none()
+            && self.tunnels.pending_delete().is_none()
+            && self.snippets.pending_delete().is_none()
+            && !self.file_browser_is_busy()
             && matches!(
                 self.screen,
                 super::Screen::HostList | super::Screen::FileBrowser { .. }
             )
+    }
+
+    /// True while the file browser has a question or a transfer of its own
+    /// on screen. All three render inside `Screen::FileBrowser`, so a
+    /// dialog opening over them would take the answer meant for them.
+    fn file_browser_is_busy(&self) -> bool {
+        self.file_browser_session.as_ref().is_some_and(|fb| {
+            fb.confirm_copy.is_some() || fb.transferring.is_some() || fb.transfer_error.is_some()
+        })
+    }
+
+    /// Drop a prompt whose screen moved on without it. `dialog_open` reads
+    /// the state rather than the screen, so a stranded one would refuse
+    /// every later question for the rest of the session. Returns true when
+    /// one was cleared.
+    pub(crate) fn drop_stranded_password_prompt(&mut self) -> bool {
+        if self.password_prompt.is_none() || matches!(self.screen, super::Screen::PasswordPrompt) {
+            return false;
+        }
+        let alias = self
+            .password_prompt
+            .take()
+            .map(|s| s.alias)
+            .unwrap_or_default();
+        log::warn!("[purple] password prompt: dropped stranded state for alias={alias}");
+        self.notify_warning(crate::messages::askpass::prompt_cancelled(&alias));
+        true
     }
 
     /// True when purple already handed `alias` a password and the server
@@ -473,5 +514,107 @@ mod tests {
             Screen::ConfirmHostKeyTrust { hostname, .. } => assert_eq!(hostname, "ghost"),
             other => panic!("expected trust dialog, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_proxy_command_counts_as_a_bastion_in_front_of_the_host() {
+        // `ProxyCommand ssh -W %h:%p bastion` reaches a second machine just
+        // as `ProxyJump bastion` does. A refusal naming nobody could have
+        // come from either end, so it is not this host's to answer.
+        let app =
+            app_with("Host h\n  HostName db.example.com\n  ProxyCommand ssh -W %h:%p bastion\n");
+        assert!(!app.refusal_is_this_host("h", None));
+        assert!(!app.refusal_is_this_host("h", Some("bastion.example.com")));
+        assert!(app.refusal_is_this_host("h", Some("db.example.com")));
+    }
+
+    #[test]
+    fn a_proxy_command_set_to_none_leaves_the_host_direct() {
+        // `ProxyCommand none` is how a wildcard block is opted out of, so it
+        // puts no machine in front of this host.
+        let app = app_with("Host h\n  HostName db.example.com\n  ProxyCommand none\n");
+        assert!(app.refusal_is_this_host("h", None));
+    }
+
+    #[test]
+    fn a_dialog_waits_while_the_host_list_search_is_open() {
+        // The search input lives inside Screen::HostList, so the screen
+        // alone does not say the user is free to be asked a question.
+        let mut app = app_with("Host h\n  HostName 1.1.1.1\n");
+        app.screen = Screen::HostList;
+        assert!(app.can_open_dialog());
+        app.search.set_query(Some("web".to_string()));
+        assert!(
+            !app.can_open_dialog(),
+            "a half typed search must keep the screen"
+        );
+        app.search.set_query(None);
+        assert!(app.can_open_dialog());
+    }
+
+    #[test]
+    fn a_dialog_waits_while_the_jump_bar_is_open() {
+        // The jump bar takes every key ahead of the screen match, so a
+        // dialog opening under it would collect what the user types at it.
+        let mut app = app_with("Host h\n  HostName 1.1.1.1\n");
+        app.screen = Screen::HostList;
+        app.open_jump(crate::app::JumpMode::Hosts);
+        assert!(!app.can_open_dialog(), "the jump bar keeps the screen");
+    }
+
+    #[test]
+    fn a_dialog_waits_while_another_confirm_is_on_screen() {
+        // A tunnel or snippet delete confirm renders inside the host list
+        // and answers with y or n. Those keys must not reach a password
+        // field that appeared under them.
+        let mut app = app_with("Host h\n  HostName 1.1.1.1\n");
+        app.screen = Screen::HostList;
+        app.tunnels.pending_delete = Some(0);
+        assert!(!app.can_open_dialog(), "a tunnel confirm keeps the screen");
+        app.tunnels.take_pending_delete();
+        assert!(app.can_open_dialog());
+
+        app.snippets.pending_delete = Some(0);
+        assert!(!app.can_open_dialog(), "a snippet confirm keeps the screen");
+        app.snippets.pending_delete = None;
+        assert!(app.can_open_dialog());
+    }
+
+    #[test]
+    fn a_dialog_waits_while_the_tag_input_is_open() {
+        let mut app = app_with("Host h\n  HostName 1.1.1.1\n");
+        app.screen = Screen::HostList;
+        app.tags.open_tag_input("web".to_string());
+        assert!(
+            !app.can_open_dialog(),
+            "a half typed tag must keep the screen"
+        );
+    }
+
+    #[test]
+    fn a_refusal_is_parsed_out_of_stderr_before_it_is_attributed() {
+        // The seam: what ssh printed, through the parser, into the decision
+        // whether this host may be asked for a password.
+        let app = app_with("Host h\n  HostName target.example.com\n  ProxyJump bastion\n");
+        let bastion = "ops@bastion.example.com: Permission denied (publickey,password).\n";
+        let named = crate::connection::denied_host(bastion);
+        assert_eq!(named, Some("bastion.example.com"));
+        assert!(
+            !app.refusal_is_this_host("h", named),
+            "the jump host's refusal is not the target's to answer"
+        );
+
+        let target = "ops@target.example.com: Permission denied (publickey,password).\n";
+        let named = crate::connection::denied_host(target);
+        assert!(app.refusal_is_this_host("h", named));
+    }
+
+    #[test]
+    fn a_bracketed_host_from_the_trust_line_matches_the_target() {
+        let app = app_with("Host h\n  HostName 10.0.0.1\n  ProxyJump bastion\n");
+        let stderr = "No ED25519 host key is known for [10.0.0.1]:2222 and you have requested strict checking.\n";
+        let named = crate::connection::unknown_host_key_host(stderr);
+        assert_eq!(named, Some("[10.0.0.1]:2222"));
+        assert!(app.refusal_is_this_host("h", named));
     }
 }
