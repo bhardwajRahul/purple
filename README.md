@@ -153,6 +153,16 @@ Written in Rust. Single binary. 6700+ tests. MIT license.
 
 [Wiki](https://github.com/erickochen/purple/wiki) · [Cloud Providers](https://github.com/erickochen/purple/wiki/Cloud-Providers) · [MCP Server](https://github.com/erickochen/purple/wiki/MCP-Server) · [FAQ](https://github.com/erickochen/purple/wiki/FAQ) · [Troubleshooting](https://github.com/erickochen/purple/wiki/Troubleshooting) · [Security](SECURITY.md) · [llms.txt](https://getpurple.sh/llms.txt)
 
+## Sponsors
+
+purple is free and open source. These people chip in to keep it that way. Thank you!
+
+<a href="https://github.com/alex2chivas"><img src="https://github.com/alex2chivas.png?size=120" width="60" height="60" alt="Alexis Flores"></a>
+
+[Alexis Flores](https://github.com/alex2chivas)
+
+Want to join them? [Sponsor purple on GitHub](https://github.com/sponsors/erickochen).
+
 ## Credits
 
 Screenshots and the demo are generated from the live TUI in [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by [U.S. Graphics Company](https://usgraphics.com/), recorded with [VHS](https://github.com/charmbracelet/vhs). They regenerate whenever the UI changes on master, so what you see here always matches the current build.
